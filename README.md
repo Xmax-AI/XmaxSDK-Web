@@ -257,7 +257,7 @@ const remoteStream = await realtime.startGeneration({
   localStream,
   context: new RealtimeContext({
     prompt: "视频中角色替换成参考图中角色",
-    referencePath: "https://platform.xmaxai.com/images/source/charx/chatx_image1.jpg",
+    referencePath: "https://cdn.22duck.cn/images/source/charx/chatx_image1.jpg",
   }),
 });
 
