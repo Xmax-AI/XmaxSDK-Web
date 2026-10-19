@@ -1,5 +1,5 @@
 /**
- * 示例页的模式与内置参考图预设（资源托管在平台静态资源域）。
+ * 示例页的模式与内置参考图预设（资源托管在 CDN）。
  */
 
 export interface StylePreset {
@@ -44,7 +44,7 @@ function makePreset(
   imageFile: string,
   referenceFile: string,
 ): StylePreset {
-  const base = `https://platform.xmaxai.com/images/source/${group}`;
+  const base = `https://cdn.22duck.cn/images/source/${group}`;
   return {
     name,
     thumbnail: `${base}/${imageFile}?presetVersion=${version}`,

@@ -232,7 +232,7 @@ const client = new XmaxClient(
 );
 
 const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: RealtimeModel.x2_1_preview })
+  new RealtimeConfiguration({ model: RealtimeModel.x2_1_1_preview_cn })
 );
 
 const localStream = await realtime.createLocalCameraStream({
@@ -257,7 +257,7 @@ const remoteStream = await realtime.startGeneration({
   localStream,
   context: new RealtimeContext({
     prompt: "视频中角色替换成参考图中角色",
-    referencePath: "https://platform.xmaxai.com/images/source/charx/chatx_image1.jpg",
+    referencePath: "https://cdn.22duck.cn/images/source/charx/chatx_image1.jpg",
   }),
 });
 
@@ -432,6 +432,13 @@ workflow are also available through `state.reason` after cleanup completes.
 For camera input, bind the returned video track to a preview view. The SDK enters
 `ready` after it has received a valid frame and the preview view is bound; observe
 this through `setStateListener`.
+
+`startGeneration()` returns a remote stream for mounting; it does not wait for
+the video view to finish preparing. Bind its track to an SDK video component.
+The state remains `RealtimeConnectionState.starting` until the first frame and
+the 1000 ms render warmup are complete, then becomes
+`RealtimeConnectionState.generating` as the video fades in. Use this state to
+dismiss your loading UI. Without an SDK video view, the state stays `starting`.
 
 At generation start, the SDK sends `params.mirror: true` for the front camera
 and `false` for the rear camera, local files, and network videos. The backend

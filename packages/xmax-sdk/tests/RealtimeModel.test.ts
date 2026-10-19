@@ -46,6 +46,8 @@ describe("custom realtime models", () => {
     expect(modelBaseURL(RealtimeModel.x2_0)).toBeUndefined();
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
     expect(maximumInputPixels(RealtimeModel.x2_0)).toBe(1280000);
+    expect(new XmaxClient(new XmaxConfiguration({ apiKey: "test-key" })).createMediaService())
+      .toMatchObject({ model: RealtimeModel.x2_1_1_preview_cn });
   });
 });
 
@@ -54,18 +56,17 @@ describe("preview model variants", () => {
     [RealtimeModel.x2_1_preview_1014, "x2.1-preview-1014", "X2.1-preview-1014", "https://dev.22duck.cn/open/api/v1"],
     [RealtimeModel.x2_1_1_preview_cn, "x2.1.1-preview-cn", "X2.1.1-preview-cn", "https://cloud.xmax.22duck.cn/open/api/v1"],
     [RealtimeModel.x2_1_1_preview_us, "x2.1.1-preview-us", "X2.1.1-preview-us", "https://api.xmax.ai/open/api/v1"],
-  ] as const)("uses the expected endpoint and preview-1014 media defaults for %s", (model, identifier, displayName, baseURL) => {
-    const preview = RealtimeModel.x2_1_preview_1014;
+  ] as const)("uses the expected endpoint and media defaults for %s", (model, identifier, displayName, baseURL) => {
     expect(model).toBe(identifier);
     expect(modelDisplayName(model)).toBe(displayName);
     expect(modelBaseURL(model)).toBe(baseURL);
     expect(supportedRtcProviders(model)).toEqual([RtcProvider.agora]);
     expect(new RealtimeConfiguration({ model })).toMatchObject({ model, provider: RtcProvider.agora });
-    expect(resolutionBuckets(model)).toEqual(resolutionBuckets(preview));
-    expect(defaultCameraVideoFormat(model)).toEqual(defaultCameraVideoFormat(preview));
-    expect(defaultFrameRate(model)).toBe(defaultFrameRate(preview));
-    expect(maximumInputPixels(model)).toBe(maximumInputPixels(preview));
-    expect(minimumInputPixels(model)).toBe(minimumInputPixels(preview));
-    expect(inputSizeAlignment(model)).toBe(inputSizeAlignment(preview));
+    expect(resolutionBuckets(model)).toEqual([{ width: 1024, height: 1920 }, { width: 1920, height: 1024 }]);
+    expect(defaultCameraVideoFormat(model)).toMatchObject({ width: 1024, height: 1920, fps: 30 });
+    expect(defaultFrameRate(model)).toBe(30);
+    expect(maximumInputPixels(model)).toBe(2100000);
+    expect(minimumInputPixels(model)).toBe(600000);
+    expect(inputSizeAlignment(model)).toBe(32);
   });
 });

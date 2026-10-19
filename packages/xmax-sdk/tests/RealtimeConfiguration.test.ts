@@ -7,6 +7,8 @@ describe("RealtimeConfiguration", () => {
   it.each([
     [RealtimeModel.x2_0_trtc, RtcProvider.trtc],
     [RealtimeModel.x2_1_preview, RtcProvider.vertc],
+    [RealtimeModel.x2_1_1_preview_cn, RtcProvider.agora],
+    [RealtimeModel.x2_1_1_preview_us, RtcProvider.agora],
   ] as const)("keeps the public configuration minimal for %s", (model, provider) => {
     expect(new RealtimeConfiguration({ model })).toEqual({ model, provider, isFrameInterpolationEnabled: false });
   });

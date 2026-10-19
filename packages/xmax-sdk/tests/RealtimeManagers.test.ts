@@ -190,9 +190,10 @@ describe("XmaxRealtimeConnectionManager", () => {
       startHeartbeat: vi.fn((_id: string, _handlers: RealtimeSessionHeartbeatHandlers) => {}),
       stopHeartbeat: vi.fn(),
     };
-    const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
+    const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderWarmupCompleted: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
     const render = new RenderController({
       onFrameDisplayed: events.onFrameDisplayed,
+      onRenderWarmupCompleted: events.onRenderWarmupCompleted,
       onAttached: events.onRenderAttached,
       onDetached: events.onRenderDetached,
     });
@@ -203,7 +204,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     });
     const op = operation();
     const options = {
-      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: RealtimeModel.x2_0_trtc,
+      localTrack: new RealtimeVideoTrack({ id: "local", videoFormat }), model: "test-trtc",
       includeLocalAudio: true, ensureCurrent: op.ensureCurrent, onPublished: vi.fn(),
     };
     return { manager, stream, service, events, options, op, session, connection, render };
@@ -237,6 +238,9 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(events.onRenderAttached).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
+    expect(binding.renderWarmupMs).toBe(1000);
+    binding.renderWarmupCompletedHandler?.();
+    expect(events.onRenderWarmupCompleted).toHaveBeenCalledOnce();
     await manager.disconnect();
     expect(manager.currentSessionID).toBeUndefined();
     expect(VideoRenderRegistry.binding(track)).toBeUndefined();
@@ -244,6 +248,8 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(() => manager.makeRemoteStream()).toThrow("unavailable");
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
+    binding.renderWarmupCompletedHandler?.();
+    expect(events.onRenderWarmupCompleted).toHaveBeenCalledOnce();
   });
 
   it("updates the current render target without clearing it on a stale detach", async () => {
@@ -341,7 +347,7 @@ describe("XmaxRealtimeConnectionManager", () => {
 
   it.each([RtcProvider.agora, RtcProvider.vertc] as const)("renews %s credentials through heartbeat and coalesces expiry notifications", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
-    await manager.connect({ ...options, model: RealtimeModel.x2_1_preview });
+    await manager.connect({ ...options, model: RealtimeModel.x2_1_1_preview_cn });
     const refreshed = new RealtimeSession({ id: "session", connection: {
       provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
     } });

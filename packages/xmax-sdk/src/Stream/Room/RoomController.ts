@@ -10,6 +10,7 @@ import type { RtcSessionConnection } from "../../Service/Realtime/RealtimeSessio
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RoomControlling, RoomListener } from "./RoomControlling";
 import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
+import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { RoomHeartbeat } from "./RoomHeartbeat";
 import { RoomMessageCodec } from "./RoomMessageCodec";
 
@@ -93,6 +94,7 @@ export class RoomController implements RoomControlling {
   async join(
     connection: RtcSessionConnection,
     ensureActive: () => void,
+    measureRtcJoin?: () => () => void,
   ): Promise<void> {
     try {
       ensureActive();
@@ -114,7 +116,9 @@ export class RoomController implements RoomControlling {
       if (!this.customCodec) this.codec = new RoomMessageCodec(
         connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
       );
-      await this.rtcManager.joinRoom(toRoomJoinConfiguration(connection));
+      const configuration = toRoomJoinConfiguration(connection);
+      const completeRtcJoin = measureRtcJoin?.();
+      await this.rtcManager.joinRoom(configuration);
       ensureActive();
       if (
         this.state.kind !== "joining" ||
@@ -123,6 +127,8 @@ export class RoomController implements RoomControlling {
       ) {
         throw new XmaxError(XmaxErrorCode.cancelled, "RTC room join was cancelled");
       }
+
+      completeRtcJoin?.();
 
       this.state = { kind: "joined", userID: connection.userID };
       this.heartbeat.start(connection.userID);
@@ -190,6 +196,7 @@ export class RoomController implements RoomControlling {
         mirror: options.mirror ?? false,
         faceRestoration: options.faceRestoration ?? false,
         extraParams: options.extraParams,
+        ...this.downlinkBitrates(options.targetSize ?? options.videoFormat),
       }),
     );
   }
@@ -242,8 +249,20 @@ export class RoomController implements RoomControlling {
         userID: this.requireUserID(),
         taskID: options.taskID,
         targetSize: options.targetSize,
+        ...this.downlinkBitrates(options.targetSize),
       }),
     );
+  }
+
+  /**
+   * 按回传尺寸和 24 fps 估算下行码率，最高值限制在 100～10000 kbps。
+   * 估算不设置服务端帧率，也不沿用显式上传码率。
+   */
+  private downlinkBitrates(size: RoomEventTargetSize): { minimumBitrate: number; maximumBitrate: number } {
+    const { maximum } = EncodingBitratePolicy.resolve(
+      Math.round(size.width), Math.round(size.height), 24,
+    );
+    return { minimumBitrate: 100, maximumBitrate: Math.min(10000, maximum) };
   }
 
   /**

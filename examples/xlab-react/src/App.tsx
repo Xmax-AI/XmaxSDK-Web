@@ -36,7 +36,6 @@ import { compressReferenceImage } from "./compressReferenceImage";
 import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-const ENABLE_QUALITY_DEBUG = true;
 
 interface ModelOption {
   id: string;
@@ -296,6 +295,7 @@ export function App() {
 
   const isConnected =
     stateText === RealtimeConnectionState.connected ||
+    stateText === RealtimeConnectionState.starting ||
     stateText === RealtimeConnectionState.generating;
 
   function attachStateListener(
@@ -309,6 +309,7 @@ export function App() {
       setStateText(state.connectionState);
       if (
         state.connectionState === RealtimeConnectionState.connected ||
+        state.connectionState === RealtimeConnectionState.starting ||
         state.connectionState === RealtimeConnectionState.generating
       ) {
         // 会话建立成功后立刻切换到生成页面，不等待首帧。
@@ -456,27 +457,6 @@ export function App() {
       generationBusyRef.current = false;
       setBusy(false);
       setInterpolationSwitching(false);
-    }
-  }
-
-  /** 临时下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
-  async function handleAdjustDownlinkQuality(direction: "upgrade" | "downgrade") {
-    const realtime = realtimeRef.current;
-    if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
-
-    generationBusyRef.current = true;
-    setBusy(true);
-    setErrorText("");
-
-    try {
-      await realtime.adjustDownlinkQuality(direction);
-    } catch (error) {
-      if (realtimeRef.current === realtime) {
-        setErrorText(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      generationBusyRef.current = false;
-      setBusy(false);
     }
   }
 
@@ -671,9 +651,11 @@ export function App() {
     <>
       <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
         { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
-        { label: "建立连接", value: formatLaunchTiming(launchTiming.connectionMs), title: "含 200ms 相机预热等待" },
+        { label: "创建会话", value: formatLaunchTiming(launchTiming.sessionMs) },
+        { label: "RTC 进房", value: formatLaunchTiming(launchTiming.rtcJoinMs), title: "仅统计 RTC 进房调用耗时" },
         { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
         { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
+        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "首帧后预热 1000 ms，再渐入画面；不含渐入动画" },
         { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
@@ -880,20 +862,6 @@ export function App() {
         </div>
       </header>
 
-      {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
-        <div className="qualityDebug" role="group" aria-label="下行档位调试">
-          <span>下行调试 · 自动调档仍开启</span>
-          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-            onClick={() => handleAdjustDownlinkQuality("downgrade")}>
-            降一档
-          </button>
-          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
-            onClick={() => handleAdjustDownlinkQuality("upgrade")}>
-            升一档
-          </button>
-        </div>
-      )}
-
       <div className="stageRow">
         <div className="stage">
           <XmaxVideo
@@ -936,7 +904,7 @@ export function App() {
             ]} />
           </div>
           <span className="watermark">✦ Xmax</span>
-          {!remoteStream && (
+          {(!remoteStream || stateText !== RealtimeConnectionState.generating) && (
             <span className="stageHint">
               {isConnected ? "Generating…" : "Waiting for connection…"}
             </span>

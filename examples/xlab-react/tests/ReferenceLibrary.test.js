@@ -17,6 +17,19 @@ function deferred() {
 describe("ReferenceLibrary", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("uses the CDN for all built-in thumbnails and generation references", () => {
+    const library = new ReferenceLibrary(vi.fn());
+    expect(library.snapshot.length).toBeGreaterThan(0);
+    for (const item of library.snapshot) {
+      for (const address of [item.thumbnail, item.reference_path]) {
+        const url = new URL(address);
+        expect(url.origin).toBe("https://cdn.22duck.cn");
+        expect(url.pathname).toMatch(new RegExp(`^/images/source/${item.mode}/`));
+        expect(url.searchParams.get("presetVersion")).toBeTruthy();
+      }
+    }
+  });
+
   it("selects the first character preset and generates exactly once without uploading on entry", async () => {
     const upload = vi.fn();
     const library = new ReferenceLibrary(upload);

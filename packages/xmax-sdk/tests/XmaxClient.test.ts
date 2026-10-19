@@ -29,6 +29,16 @@ describe("realtime session endpoint routing", () => {
       apiBaseURL: undefined, expected: "https://dev.22duck.cn/open/api/v1" },
     { model: "x2.0", environment: XmaxEnvironment.global,
       apiBaseURL: undefined, expected: "https://api.xmax.cloud/open/api/v1" },
+    { model: "x2.1-preview", environment: XmaxEnvironment.china,
+      apiBaseURL: undefined, expected: "https://dev.22duck.cn/open/api/v1" },
+    { model: "future-model", environment: XmaxEnvironment.global,
+      apiBaseURL: undefined, expected: "https://dev.22duck.cn/open/api/v1" },
+    { model: "x2.1.1-preview-cn", environment: XmaxEnvironment.china,
+      apiBaseURL: undefined, expected: "https://cloud.xmax.22duck.cn/open/api/v1" },
+    { model: "x2.1.1-preview-us", environment: XmaxEnvironment.global,
+      apiBaseURL: undefined, expected: "https://api.xmax.ai/open/api/v1" },
+    { model: "x2.1.1-preview-cn", environment: XmaxEnvironment.china,
+      apiBaseURL: "https://dev.22duck.cn/open/api/v1", expected: "https://dev.22duck.cn/open/api/v1" },
   ])("routes $model in $environment to $expected (override: $apiBaseURL)", async ({ model, environment, apiBaseURL, expected, provider }) => {
     const fetch = vi.fn().mockResolvedValue({
       status: 200, text: async () => JSON.stringify({ success: true, code: 200, data: {} }),

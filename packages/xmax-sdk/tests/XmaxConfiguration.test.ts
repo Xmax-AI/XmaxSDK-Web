@@ -39,4 +39,9 @@ describe("XmaxConfiguration", () => {
       expect(modelBaseURL(model)).toBeUndefined();
     }
   });
+
+  it("uses the regional endpoint defined by each model", () => {
+    expect(modelBaseURL(RealtimeModel.x2_1_1_preview_cn)).toBe("https://cloud.xmax.22duck.cn/open/api/v1");
+    expect(modelBaseURL(RealtimeModel.x2_1_1_preview_us)).toBe("https://api.xmax.ai/open/api/v1");
+  });
 });
