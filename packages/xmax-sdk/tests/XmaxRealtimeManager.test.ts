@@ -1,7 +1,11 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { RecordingController } from "../src/Media/Recording/RecordingController";
+import { RealtimeRecordingEventType, RealtimeRecordingFinishReason } from "../src/Service/Realtime/RealtimeRecordingEvent";
+import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
 import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
+import { LocalImageController } from "../src/Media/Image/LocalImageController";
 import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
@@ -130,6 +134,7 @@ class CameraControllingStub implements CameraControlling {
 
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
+  getRemoteRecordingTracks = vi.fn(() => undefined);
   activateNetworkVideoCompletion = vi.fn((_onFinish?: () => void): void => {});
   async updateCredentials(): Promise<void> {}
   networkStatisticsListener?: NetworkStatisticsListener;
@@ -316,7 +321,77 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
+describe("XmaxRealtimeManager interaction lifecycle", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview, RealtimeModel.x2_0])("binds %s output gestures only after generation and keeps model coordinates during quality changes", async model => {
+    const s = makeManager(async () => false, false, model);
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({ id: "interaction-session", connection: {
+        provider, appID: "app", roomID: "room", userID: "user", roomToken: "token", botID: "bot",
+      } }));
+    }
+    const send = vi.spyOn(s.stream, "sendTracks");
+    const local = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(local);
+    const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
+    const sample = { points: [{ x: 320, y: 180 }], viewportSize: { width: 640, height: 360 }, contentMode: VideoContentMode.fill, mirrored: false };
+    expect(TrajectoryRegistry.binding(local.videoTrack!)).toBeUndefined();
+    binding.submit(sample);
+    expect(send).not.toHaveBeenCalled();
+
+    const start = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    binding.submit(sample);
+    expect(send).not.toHaveBeenCalled();
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await start;
+    const taskID = s.manager.currentState.taskID;
+    binding.submit(sample);
+    expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+    await Promise.resolve();
+
+    if (provider !== RtcProvider.vertc) {
+      await s.manager.adjustUplinkQuality("downgrade");
+      await s.manager.adjustDownlinkQuality("downgrade");
+      binding.submit(sample);
+      expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+      await Promise.resolve();
+    }
+    await s.manager.startGeneration({ localStream: local, context: new RealtimeContext({ prompt: "drag" }) });
+    binding.submit(sample);
+    expect(send).toHaveBeenLastCalledWith(taskID, [{ x: 640, y: 360 }]);
+    await Promise.resolve();
+    const count = send.mock.calls.length;
+
+    await s.manager.disconnect();
+    expect(TrajectoryRegistry.binding(remote.videoTrack!)).toBeUndefined();
+    binding.submit(sample);
+    expect(send).toHaveBeenCalledTimes(count);
+    expect(local.videoTrack).toBe(s.camera.currentTrack);
+    await s.manager.close();
+  });
+
+  it("never enables interaction after failed generation confirmation", async () => {
+    const s = makeManager(async () => false);
+    const local = makeLocalStream(s.camera);
+    const remote = await s.manager.connect(local);
+    const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
+    const send = vi.spyOn(s.stream, "sendTracks");
+    const start = s.manager.startGeneration({ localStream: local, context: testContext });
+    const rejected = expect(start).rejects.toThrow("generation failed");
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    s.stream.confirmationDeferreds[0]!.reject(new Error("generation failed"));
+    await rejected;
+    binding.submit({ points: [{ x: 1, y: 1 }], viewportSize: { width: 100, height: 100 }, contentMode: VideoContentMode.fill, mirrored: false });
+    expect(send).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager adaptive quality", () => {
+  const adaptiveModel = RealtimeModel.x2_1_preview_1014;
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   function historyStorage() {
@@ -329,11 +404,11 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return storage;
   }
 
-  function setup(fps = 30, model: RealtimeModelName = "x2.0-pro", interpolation = false) {
+  function setup(fps = 30, model: RealtimeModelName = adaptiveModel, interpolation = false) {
     const s = makeManager(async () => true, interpolation, model);
-    if (model === "x2.0-pro" || model === RealtimeModel.x2_1_preview) {
+    if (s.manager.options.provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
-        id: "adaptive-session", connection: { provider: model === RealtimeModel.x2_1_preview ? RtcProvider.vertc : RtcProvider.agora, roomID: "room", appID: "app",
+        id: "adaptive-session", connection: { provider: s.manager.options.provider, roomID: "room", appID: "app",
           userID: "user", roomToken: "token", botID: "bot" },
       }));
     }
@@ -360,6 +435,74 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return { ...s, localStream, sample, samples, start };
   }
 
+  it("keeps TRTC uplink dimensions fixed through manual tiers while downlink still changes resolution", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    expect(s.stream.encoderConfigFormats[0]).toMatchObject({ width: 1920, height: 1024, fps: 24 });
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1440, height: 768 });
+    const rate = vi.spyOn(s.stream, "updateUplinkFrameRate");
+
+    for (const fps of [24, 20, 16]) {
+      await s.manager.adjustUplinkQuality("downgrade");
+      expect(rate).toHaveBeenLastCalledWith(fps);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps,
+        minimumBitrate: 1000, maximumBitrate: 4000 });
+    }
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(rate).toHaveBeenCalledTimes(3);
+    for (const fps of [20, 24, 24, 30]) {
+      await s.manager.adjustUplinkQuality("upgrade");
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps });
+    }
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await s.manager.adjustDownlinkQuality("downgrade");
+    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID,
+      { width: 1200, height: 640 }, expect.any(Function));
+    expect(s.stream.beginCalls).toHaveLength(1);
+    await s.manager.close();
+  });
+
+  it("automatically adjusts TRTC FPS only and restores history with full resolution", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    for (const [count, fps] of [[3, 24], [4, 20], [4, 16]] as const) {
+      for (let i = 0; i < count; i++) await s.sample(5, 3);
+      expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps });
+    }
+    expect(new QualityHistory(RealtimeModel.x2_0_trtc, RtcProvider.trtc).read("uplink")).toBe(5);
+    await s.manager.close();
+
+    const next = setup(30, RealtimeModel.x2_0_trtc); await next.start();
+    expect(next.stream.encoderConfigFormats[0]).toMatchObject({ width: 1920, height: 1024, fps: 16 });
+    for (const count of [5, 6, 6, 6]) {
+      for (let i = 0; i < count; i++) await next.sample(1, 3);
+    }
+    expect(next.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    expect(next.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await next.manager.close();
+  });
+
+  it("preserves TRTC state on FPS failures and cancellation", async () => {
+    historyStorage();
+    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    const rate = vi.spyOn(s.stream, "updateUplinkFrameRate").mockRejectedValueOnce(new Error("fps failed"));
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toThrow("fps failed");
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    const history = new QualityHistory(RealtimeModel.x2_0_trtc, RtcProvider.trtc);
+    expect(history.read("uplink")).toBe(2);
+
+    const gate = makeDeferred<RealtimeVideoFormat>();
+    rate.mockReturnValueOnce(gate.promise);
+    const changing = s.manager.adjustUplinkQuality("upgrade");
+    const rejected = expect(changing).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const closing = s.manager.close();
+    gate.resolve(new RealtimeVideoFormat({ ...previous!, fps: 30 }));
+    await rejected; await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    expect(history.read("uplink")).toBe(2);
+  });
+
   it("restores the last successful tiers in a new manager without changing the original baseline", async () => {
     historyStorage();
     const first = setup();
@@ -367,7 +510,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await first.samples(5, 3);
     await first.manager.adjustDownlinkQuality("downgrade");
     await first.manager.adjustDownlinkQuality("downgrade");
-    const history = new QualityHistory("x2.0-pro");
+    const history = new QualityHistory(adaptiveModel, first.manager.options.provider);
     expect(history.read("uplink")).toBe(3);
     expect(history.read("downlink")).toBe(4);
     await first.manager.close();
@@ -387,7 +530,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.samples(5, 3);
     s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("failed"));
     await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toThrow("failed");
-    const history = new QualityHistory("x2.0-pro");
+    const history = new QualityHistory(adaptiveModel, s.manager.options.provider);
     expect(history.read("uplink")).toBe(2);
     expect(history.read("downlink")).toBe(2);
     await s.manager.close();
@@ -395,7 +538,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
 
   it("does not access quality history for other RTC providers", async () => {
     const storage = historyStorage();
-    const s = setup(30, RealtimeModel.x2_0_trtc); await s.start();
+    const s = setup(30, RealtimeModel.x2_0); await s.start();
     expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
     expect(storage.getItem).not.toHaveBeenCalled();
     expect(storage.setItem).not.toHaveBeenCalled();
@@ -424,6 +567,68 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
+  it("manually changes uplink tiers without replacing the baseline or touching downlink", async () => {
+    historyStorage();
+    const s = setup(); await s.start();
+    const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 4; i++) await s.manager.adjustUplinkQuality("downgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 720, height: 384, fps: 16 });
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(apply).toHaveBeenCalledTimes(5);
+    await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 960, height: 512, fps: 20 });
+
+    for (let i = 0; i < 3; i++) await s.sample(5, 3);
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 720, height: 384, fps: 16 });
+    for (let i = 0; i < 4; i++) await s.manager.adjustUplinkQuality("upgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    const history = new QualityHistory(adaptiveModel, s.manager.options.provider);
+    expect(history.read("uplink")).toBe(1);
+    expect(history.read("downlink")).toBe(2);
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    expect(s.stream.beginCalls).toHaveLength(1);
+    expect(s.stream.updateCalls).toHaveLength(0);
+    await s.manager.close();
+  });
+
+  it("does not commit failed manual uplink changes and allows retry from the previous tier", async () => {
+    historyStorage();
+    const s = setup(); await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "failed");
+    await expect(s.manager.adjustUplinkQuality("downgrade")).rejects.toThrow("failed");
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+    expect(new QualityHistory(adaptiveModel, s.manager.options.provider).read("uplink")).toBe(2);
+    s.stream.failEncoderConfig = undefined;
+    await s.manager.adjustUplinkQuality("downgrade");
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1200, height: 640, fps: 24 });
+    await s.manager.close();
+  });
+
+  it("rejects unavailable uplink adjustments and cancels pending changes on close", async () => {
+    const s = setup();
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await s.start();
+    const previous = s.localStream.videoTrack!.videoFormat;
+    const gate = makeDeferred<void>();
+    vi.spyOn(s.stream, "updateUplinkVideoFormat").mockReturnValueOnce(gate.promise);
+    const changing = s.manager.adjustUplinkQuality("downgrade");
+    const rejected = expect(changing).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await expect(s.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const closing = s.manager.close();
+    gate.resolve(); await rejected; await closing;
+    expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
+
+    const other = setup(30, RealtimeModel.x2_0); await other.start();
+    await expect(other.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await other.manager.close();
+  });
+
   it("retains the target after a manual size send fails", async () => {
     const s = setup(); await s.start();
     s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("send failed"));
@@ -434,14 +639,14 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it("rejects debug size changes without an active Agora generation", async () => {
+  it("rejects debug size changes without an active supported generation", async () => {
     const s = setup();
     await expect(s.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     await s.manager.connect(s.localStream);
     await expect(s.manager.adjustDownlinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await s.manager.close();
-    const other = setup(30, RealtimeModel.x2_0_trtc); await other.start();
+    const other = setup(30, RealtimeModel.x2_0); await other.start();
     await expect(other.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     expect(other.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await other.manager.close();
@@ -518,7 +723,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.connectCalls).toHaveLength(0);
   });
 
-  it("automatically enables Agora adaptation after generation confirmation without a configuration flag", async () => {
+  it("automatically enables adaptation after generation confirmation without a configuration flag", async () => {
     const s = setup();
     await s.manager.connect(s.localStream);
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
@@ -544,7 +749,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview])("does not apply the Agora policy to %s", async (model) => {
+  it.each([RealtimeModel.x2_0, RealtimeModel.x2_1_preview])("does not apply the adaptive policy to VeRTC model %s", async (model) => {
     const s = setup(30, model);
     await s.start();
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
@@ -864,6 +1069,120 @@ describe("XmaxRealtimeManager adaptive quality", () => {
   });
 });
 
+describe("XmaxRealtimeManager external video", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  const videoFormat = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
+
+  function setup(model = RealtimeModel.x2_0_trtc) {
+    const s = makeManager(undefined, false, model);
+    const clone = Object.assign(new EventTarget(), { kind: "video", readyState: "live", stop: vi.fn() });
+    const source = { kind: "video", readyState: "live", clone: vi.fn(() => clone), stop: vi.fn() };
+    const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat };
+    return { ...s, source, clone, options };
+  }
+
+  it.each([RealtimeModel.x2_0_trtc, RealtimeModel.x2_1_preview, RealtimeModel.x2_1_preview_1014, RealtimeModel.x2_0])("publishes video only without preview and preserves caller ownership for %s", async model => {
+    const s = setup(model);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "external-session", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    const local = await s.manager.createExternalVideoStream(s.options);
+    expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: s.clone });
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    expect(s.camera.currentTrack).toBeUndefined();
+    await s.manager.connect(local);
+    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
+      ? new RealtimeVideoFormat({ ...videoFormat, width: 768, height: 1440, fps: 24 })
+      : model === RealtimeModel.x2_0 ? videoFormat.resized(800, 1536)
+      : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...videoFormat, fps: 24 }) : videoFormat);
+    const generating = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    expect(s.stream.beginCalls[0]!.mirror).toBe(false);
+    s.stream.confirmationDeferreds[0]!.resolve();
+    await generating;
+    await expect(s.manager.switchCamera()).rejects.toThrow("managed by the caller");
+    await s.manager.stopLocalCameraStream();
+    expect(s.camera.stopCalls).toBe(0);
+    const format = new RealtimeVideoFormat({ width: 512, height: 960, fps: 20 });
+    await s.manager.updateUplinkVideoFormat(format);
+    expect(local.videoTrack?.videoFormat).toEqual(format);
+    await s.manager.updateUplinkFrameRate(16);
+    expect(local.videoTrack?.videoFormat?.fps).toBe(16);
+    await s.manager.disconnect();
+    expect(s.clone.stop).not.toHaveBeenCalled();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    await s.manager.connect(local);
+    expect(s.stream.connectCalls[1]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    await s.manager.close();
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await expect(s.manager.connect(local)).rejects.toThrow("must be created and started");
+  });
+
+  it("rejects conflicting sources without touching the current input", async () => {
+    const s = setup();
+    await s.manager.createExternalVideoStream(s.options);
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("Close the current local stream");
+    await expect(s.manager.createLocalCameraStream({ videoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toThrow("Close the current local stream");
+    expect(s.clone.stop).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+
+  it("rejects unsupported adapters before cloning", async () => {
+    const s = setup();
+    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("does not support external video");
+    expect(s.source.clone).not.toHaveBeenCalled();
+    expect(s.rtc.initialize).not.toHaveBeenCalled();
+  });
+
+  it.each(["initialize", "setExternalMediaTracks"] as const)("cleans up only owned resources when %s fails and allows retry", async method => {
+    const s = setup();
+    s.rtc[method].mockRejectedValueOnce(new Error("external setup failed"));
+    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("external setup failed");
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    await s.manager.createExternalVideoStream(s.options);
+    await s.manager.close();
+  });
+
+  it("cancels in-flight initialization without publishing or stopping the caller's track", async () => {
+    const s = setup();
+    const deferred = makeDeferred<void>();
+    s.rtc.initialize.mockReturnValueOnce(deferred.promise);
+    const creating = s.manager.createExternalVideoStream(s.options);
+    const rejected = expect(creating).rejects.toThrow();
+    await vi.waitFor(() => expect(s.rtc.initialize).toHaveBeenCalledOnce());
+    const closing = s.manager.close();
+    deferred.resolve();
+    await Promise.all([rejected, closing]);
+    expect(s.rtc.setExternalMediaTracks).not.toHaveBeenCalled();
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+  });
+
+  it("closes the session and releases owned tracks when the source ends", async () => {
+    const s = setup();
+    const local = await s.manager.createExternalVideoStream(s.options);
+    await s.manager.connect(local);
+    s.clone.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(s.rtc.destroy).toHaveBeenCalledOnce());
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.session.closedSessionIDs).toHaveLength(1);
+    await s.manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager local video", () => {
   afterEach(() => vi.restoreAllMocks());
   const options = {
@@ -910,7 +1229,8 @@ describe("XmaxRealtimeManager local video", () => {
     await s.manager.connect(local);
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio, publishLocalMedia: true });
     expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
-      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1440, height: 768, fps: 24 }) : options.videoFormat]);
+      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1440, height: 768, fps: 24 })
+      : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...options.videoFormat, fps: 24 }) : options.videoFormat]);
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.start).not.toHaveBeenCalled();
 
@@ -957,6 +1277,105 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
     await s.manager.createLocalVideoStream(options);
     await s.manager.close();
+  });
+});
+
+describe("XmaxRealtimeManager local image", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const options = {
+    file: new Blob(["image fixture"]),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+  };
+
+  function setupImage(provider = RtcProvider.trtc) {
+    const video = { kind: "video" } as MediaStreamTrack;
+    const track = new RealtimeVideoTrack({ id: "local-image", videoFormat: options.videoFormat });
+    track.mediaStreamTrack = video;
+    let active = false;
+    vi.spyOn(LocalImageController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(LocalImageController.prototype, "isActive", "get").mockImplementation(() => active);
+    const create = vi.spyOn(LocalImageController.prototype, "create").mockImplementation(async () => {
+      active = true;
+      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
+    });
+    const stop = vi.spyOn(LocalImageController.prototype, "stop").mockImplementation(() => { active = false; });
+    const model = { [RtcProvider.trtc]: RealtimeModel.x2_0_trtc, [RtcProvider.agora]: RealtimeModel.x2_1_preview_1014, [RtcProvider.vertc]: RealtimeModel.x2_0 }[provider];
+    const s = makeManager(undefined, false, model);
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "session-image", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    return { ...s, video, track, create, stop };
+  }
+
+  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])(
+    "publishes a silent image through %s and retains it across reconnects",
+    async provider => {
+      const s = setupImage(provider);
+      const local = await s.manager.createLocalImageStream(options);
+      expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: s.video, audioTrack: undefined });
+      expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+      await s.manager.connect(local);
+      expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+      expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+
+      const generating = s.manager.startGeneration({ localStream: local, context: testContext });
+      await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+      expect(s.stream.beginCalls[0]).toMatchObject({ mirror: false, videoFormat: options.videoFormat });
+      expect(s.stream.beginCalls[0]!.onStartSent).toBeUndefined();
+      s.stream.confirmationDeferreds[0]!.resolve();
+      await generating;
+      await s.manager.stopLocalCameraStream();
+      expect(s.stop).not.toHaveBeenCalled();
+      await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("Close the current local stream");
+      const format = new RealtimeVideoFormat({ width: 960, height: 512, fps: 20 });
+      await s.manager.updateUplinkVideoFormat(format);
+      expect(s.track.videoFormat).toBe(format);
+
+      await s.manager.disconnect();
+      expect(s.stop).not.toHaveBeenCalled();
+      expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+      await s.manager.connect(local);
+      expect(s.create).toHaveBeenCalledOnce();
+      await s.manager.close();
+      expect(s.stop).toHaveBeenCalledOnce();
+      expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("rejects adapters without external track support before image decoding", async () => {
+    const s = setupImage();
+    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
+    await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("does not support image video");
+    expect(s.create).not.toHaveBeenCalled();
+    expect(s.rtc.initialize).not.toHaveBeenCalled();
+  });
+
+  it("releases the image when RTC attachment fails, then allows a retry", async () => {
+    const s = setupImage();
+    s.rtc.setExternalMediaTracks.mockRejectedValueOnce(new Error("image track failed"));
+    await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("image track failed");
+    expect(s.stop).toHaveBeenCalledOnce();
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await s.manager.createLocalImageStream(options);
+    await s.manager.close();
+  });
+
+  it("cancels creation during RTC initialization and does not install a stale track", async () => {
+    const s = setupImage();
+    const initializing = makeDeferred<void>();
+    s.rtc.initialize.mockReturnValueOnce(initializing.promise);
+    const creating = s.manager.createLocalImageStream(options);
+    const rejected = expect(creating).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(s.rtc.initialize).toHaveBeenCalled());
+    const closing = s.manager.close();
+    initializing.resolve();
+    await rejected;
+    await closing;
+    expect(s.rtc.setExternalMediaTracks).not.toHaveBeenCalled();
+    expect(s.stop).toHaveBeenCalledOnce();
   });
 });
 
@@ -1105,14 +1524,14 @@ describe("XmaxRealtimeManager video format updates", () => {
     expect(stream.stopGenerationCalls).toHaveLength(0);
     expect(stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
 
-    // 后续更新生成条件与切换插帧仍使用原始生成尺寸。
+    // 生成条件保留原始尺寸；插帧跟随下行 L2，与上行手动更新无关。
     await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "new prompt" }) });
     expect(stream.updateCalls[0]!.videoFormat).toBe(testVideoFormat);
     await manager.setFrameInterpolationEnabled(false);
     await manager.setFrameInterpolationEnabled(true);
     const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
     VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
-    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 1280, height: 720 } }));
+    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 960, height: 540 } }));
     await manager.close();
   });
 
@@ -1129,9 +1548,10 @@ describe("XmaxRealtimeManager video format updates", () => {
     const { manager, camera, stream } = makeManager();
     await manager.connect(makeLocalStream(camera));
     const state = manager.currentState;
+    const previousFormat = camera.currentTrack!.videoFormat;
     stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failure");
     await expect(manager.updateUplinkVideoFormat(updatedFormat)).rejects.toBe(stream.failEncoderConfig);
-    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(previousFormat);
     expect(manager.currentState).toBe(state);
     expect(stream.disconnectCalls).toBe(0);
 
@@ -1172,6 +1592,7 @@ describe("XmaxRealtimeManager video format updates", () => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     await manager.connect(localStream);
+    const previousFormat = localStream.videoTrack!.videoFormat;
     const deferred = makeDeferred<void>();
     vi.spyOn(stream, "updateUplinkVideoFormat").mockReturnValueOnce(deferred.promise);
     const updating = manager.updateUplinkVideoFormat(updatedFormat);
@@ -1179,7 +1600,7 @@ describe("XmaxRealtimeManager video format updates", () => {
     const stopping = manager[method]();
     deferred.resolve();
     await Promise.all([rejected, stopping]);
-    expect(localStream.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(localStream.videoTrack!.videoFormat).toBe(previousFormat);
     await manager.close();
   });
 
@@ -1250,9 +1671,10 @@ describe("XmaxRealtimeManager frame rate updates", () => {
   it("keeps metadata on failure and allows a retry", async () => {
     const { manager, camera, stream } = makeManager();
     await manager.connect(makeLocalStream(camera));
+    const previousFormat = camera.currentTrack!.videoFormat;
     stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "failed");
     await expect(manager.updateUplinkFrameRate(24)).rejects.toBe(stream.failEncoderConfig);
-    expect(camera.currentTrack!.videoFormat).toBe(testVideoFormat);
+    expect(camera.currentTrack!.videoFormat).toBe(previousFormat);
     expect(stream.disconnectCalls).toBe(0);
     stream.failEncoderConfig = undefined;
     await manager.updateUplinkFrameRate(24);
@@ -1264,6 +1686,7 @@ describe("XmaxRealtimeManager frame rate updates", () => {
     const { manager, camera, stream } = makeManager();
     const local = makeLocalStream(camera);
     await manager.connect(local);
+    const previousFormat = local.videoTrack!.videoFormat;
     const pending = makeDeferred<RealtimeVideoFormat>();
     vi.spyOn(stream, "updateUplinkFrameRate").mockReturnValueOnce(pending.promise);
     const updating = manager.updateUplinkFrameRate(24);
@@ -1272,7 +1695,7 @@ describe("XmaxRealtimeManager frame rate updates", () => {
     const stopping = manager[method]();
     pending.resolve(new RealtimeVideoFormat({ ...testVideoFormat, fps: 24 }));
     await Promise.all([rejected, stopping]);
-    expect(local.videoTrack!.videoFormat).toBe(testVideoFormat);
+    expect(local.videoTrack!.videoFormat).toBe(previousFormat);
     await manager.close();
   });
 });
@@ -1296,11 +1719,11 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     return { ...s, localStream, view, binding, rendering: () => rendering };
   }
 
-  it("preserves original resolution and toggles locally without sending size signals or restarting generation", async () => {
+  it("preserves the adaptive target size and toggles locally without sending size signals or restarting generation", async () => {
     const s = await generating();
     expect(s.stream.beginCalls[0]!.videoFormat).toBe(testVideoFormat);
-    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
-    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
+    expect(s.rendering()!.size).toEqual({ width: 960, height: 540 });
     expect(s.manager.isFrameInterpolationEnabled).toBe(true);
     const taskID = s.manager.currentState.taskID;
     await s.manager.setFrameInterpolationEnabled(false);
@@ -1309,7 +1732,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
     await s.manager.setFrameInterpolationEnabled(true);
     expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    expect(s.rendering()!.size).toEqual({ width: 1280, height: 720 });
+    expect(s.rendering()!.size).toEqual({ width: 960, height: 540 });
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     expect(s.stream.beginCalls).toHaveLength(1);
     expect(s.manager.currentState.taskID).toBe(taskID);
@@ -1347,7 +1770,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
   it("defaults to raw video on unsupported devices; explicit enable fails without interrupting generation", async () => {
     const s = await generating(async () => false);
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    expect(s.stream.beginCalls[0]!.targetSize).toBeUndefined();
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
     expect(s.rendering()).toBeUndefined();
     await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
     expect(s.manager.isFrameInterpolationEnabled).toBe(false);
@@ -1366,7 +1789,7 @@ describe("XmaxRealtimeManager frame interpolation", () => {
     initial.onFailure(new Error("late"));
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await s.manager.startGeneration({ localStream: s.localStream, context: testContext });
-    expect(s.stream.updateCalls[0]!.targetSize).toBeUndefined();
+    expect(s.stream.updateCalls[0]!.targetSize).toEqual({ width: 960, height: 540 });
     expect(s.stream.disconnectCalls).toBe(0);
     await s.manager.close();
   });
@@ -2008,6 +2431,266 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
+  describe("recording", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each([undefined, false, true])("only enables recording when explicitly requested: %s", async record => {
+      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
+      const { manager, camera, stream } = makeManager();
+      const localStream = makeLocalStream(camera);
+      const pending = manager.startGeneration({ localStream, context: testContext, record });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      expect(start).not.toHaveBeenCalled();
+      expect(stream.beginCalls[0]).not.toHaveProperty("record");
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+      expect(start).toHaveBeenCalledTimes(record ? 1 : 0);
+      if (record) {
+        expect(start.mock.calls[0]![0]).toBe(manager.currentState.taskID);
+        start.mock.calls[0]![1]();
+        expect(stream.getRemoteRecordingTracks).toHaveBeenCalledOnce();
+      }
+      await manager.close();
+    });
+
+    it("ignores record on condition updates without stopping or restarting a recording", async () => {
+      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
+      const stop = vi.spyOn(RecordingController.prototype, "stop").mockResolvedValue();
+      const { manager, camera, stream } = makeManager();
+      const localStream = makeLocalStream(camera);
+      const pending = manager.startGeneration({ localStream, context: testContext, record: true });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+      for (const record of [false, true, undefined]) {
+        await manager.startGeneration({ localStream, record });
+      }
+      expect(start).toHaveBeenCalledOnce();
+      expect(stop).not.toHaveBeenCalled();
+      expect(stream.updateCalls.every(call => !("record" in call))).toBe(true);
+      await manager.close();
+    });
+
+    it("does not start recording on an update of an unrecorded task", async () => {
+      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
+      const { manager, camera, stream } = makeManager();
+      const localStream = makeLocalStream(camera);
+      const pending = manager.startGeneration({ localStream, context: testContext });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+      await manager.startGeneration({ localStream, record: true });
+      expect(start).not.toHaveBeenCalled();
+      await manager.close();
+    });
+
+    it.each([true, false])("ends the old recording on restart; record=%s never records the new task", async record => {
+      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
+      const stop = vi.spyOn(RecordingController.prototype, "stop").mockResolvedValue();
+      const { manager, camera, stream } = makeManager();
+      const listener = vi.fn();
+      manager.setRecordingListener(listener);
+      const localStream = makeLocalStream(camera);
+      const pending = manager.startGeneration({ localStream, context: testContext, record: true });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+
+      const restarted = manager.startGeneration({ localStream, restart: true, record });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+      expect(stop).toHaveBeenCalledWith(RealtimeRecordingFinishReason.restarted);
+      stream.confirmationDeferreds[1]!.resolve();
+      await restarted;
+      expect(start).toHaveBeenCalledOnce();
+      expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+      expect(listener).toHaveBeenCalledTimes(record ? 1 : 0);
+      if (record) {
+        expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: RealtimeRecordingEventType.failed, taskID: manager.currentState.taskID }));
+      }
+      await manager.close();
+    });
+
+    it("recording preparation failure is isolated from generation", async () => {
+      const { manager, camera, stream } = makeManager();
+      const listener = vi.fn();
+      manager.setRecordingListener(listener);
+      const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext, record: true });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: RealtimeRecordingEventType.failed }));
+      expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+      expect(stream.disconnectCalls).toBe(0);
+      await manager.close();
+    });
+
+    it("stops recording before disconnecting media and waits for its bounded finalization", async () => {
+      const { manager, camera, stream } = makeManager();
+      const localStream = makeLocalStream(camera);
+      await manager.connect(localStream);
+      const done = makeDeferred<void>();
+      const stop = vi.spyOn(RecordingController.prototype, "stop").mockReturnValue(done.promise);
+      const disconnect = vi.spyOn(stream, "disconnect");
+      let closed = false;
+      const closing = manager.close().then(() => { closed = true; });
+      await vi.waitFor(() => expect(disconnect).toHaveBeenCalled());
+      expect(stop.mock.invocationCallOrder[0]!).toBeLessThan(disconnect.mock.invocationCallOrder[0]!);
+      expect(closed).toBe(false);
+      done.resolve();
+      await closing;
+      expect(closed).toBe(true);
+    });
+  });
+
+  it("restarts with a new task on the same connection and only uses this call's extraParams", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext, extraParams: { old: true } });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    const sessionID = manager.currentState.sessionID;
+    const firstTask = manager.currentState.taskID;
+
+    await manager.startGeneration({ localStream, restart: false });
+    expect(stream.updateCalls).toHaveLength(1);
+    const restarted = manager.startGeneration({ localStream, restart: true, extraParams: { static_generate: true } });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]).toMatchObject({ context: testContext, restart: true, extraParams: { static_generate: true } });
+    expect(stream.beginCalls[1]!.taskID).not.toBe(firstTask);
+    expect(stream.updateCalls).toHaveLength(1);
+    expect(session.createCalls).toBe(1);
+    expect(stream.connectCalls).toHaveLength(1);
+    expect(stream.disconnectCalls).toBe(0);
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    expect(manager.currentState.sessionID).toBe(sessionID);
+    expect(manager.currentState.taskID).toBe(stream.beginCalls[1]!.taskID);
+
+    const again = manager.startGeneration({ localStream, restart: true });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(3));
+    expect(stream.beginCalls[2]!.extraParams).toBeUndefined();
+    stream.confirmationDeferreds[2]!.resolve();
+    await again;
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls).toHaveLength(2);
+    expect(stream.beginCalls).toHaveLength(3);
+    await manager.close();
+  });
+
+  it("accepts restart on the first generation", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const pending = manager.startGeneration({ localStream, context: testContext, restart: true });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(stream.stopGenerationCalls).toHaveLength(0);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    await manager.close();
+  });
+
+  it("cleans up the connection when a forced restart fails", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    stream.failBegin = new XmaxError(XmaxErrorCode.rtcError, "restart failed");
+    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toThrow("restart failed");
+    expect(stream.disconnectCalls).toBeGreaterThan(0);
+    expect(session.closedSessionIDs).toHaveLength(1);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    await manager.close();
+  });
+
+  it("cancels an in-flight restart when closing without resurrecting it on late confirmation", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const first = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await first;
+    const pending = manager.startGeneration({ localStream, restart: true });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    await manager.close();
+    await rejected;
+    stream.confirmationDeferreds[1]!.resolve();
+    await Promise.resolve();
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    expect(stream.disconnectCalls).toBeGreaterThan(0);
+  });
+
+  it("forwards extraParams only for the current call, with no reuse on updates or restart", async () => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+    const extraParams = { static_generate: true, static_image_path: "https://example.com/image.jpg" };
+    const pending = manager.startGeneration({ localStream, context: testContext, extraParams });
+    extraParams.static_generate = false;
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    expect(stream.beginCalls[0]!.extraParams).toEqual({ ...extraParams, static_generate: true });
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+
+    await manager.startGeneration({ localStream, extraParams: { custom: [1, false, null] } });
+    expect(stream.updateCalls[0]!.extraParams).toEqual({ custom: [1, false, null] });
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls[1]!.extraParams).toBeUndefined();
+    expect(stream.beginCalls).toHaveLength(1);
+
+    await manager.disconnect();
+    const restarted = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]!.extraParams).toBeUndefined();
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    await manager.close();
+  });
+
+  it("rejects conflicting extraParams before opening a connection", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const localStream = makeLocalStream(camera);
+    await expect(manager.startGeneration({ localStream, context: testContext, extraParams: { mirror: true } }))
+      .rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(session.createCalls).toBe(0);
+    await manager.close();
+  });
+
+  it.each([true, false, undefined])("forwards faceRestoration=%s on start and supports changing it without restarting", async faceRestoration => {
+    const { manager, camera, stream } = makeManager();
+    const localStream = makeLocalStream(camera);
+
+    const pending = manager.startGeneration({ localStream, context: testContext, faceRestoration });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    expect(stream.beginCalls[0]!.faceRestoration).toBe(faceRestoration ?? false);
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+
+    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }), faceRestoration: true });
+    expect(stream.beginCalls).toHaveLength(1);
+    expect(stream.updateCalls[0]!.faceRestoration).toBe(true);
+
+    await manager.startGeneration({ localStream, faceRestoration: false });
+    expect(stream.updateCalls[1]!.faceRestoration).toBe(false);
+
+    await manager.startGeneration({ localStream });
+    expect(stream.updateCalls[2]!.faceRestoration).toBe(false);
+    expect(stream.beginCalls).toHaveLength(1);
+
+    await manager.disconnect();
+    const restarted = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]!.faceRestoration).toBe(false);
+    stream.confirmationDeferreds[1]!.resolve();
+    await restarted;
+    await manager.close();
+  });
+
   it.each([CameraPosition.front, CameraPosition.back])("sends backend mirror according to camera position %s without mirroring the result", async (position) => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);

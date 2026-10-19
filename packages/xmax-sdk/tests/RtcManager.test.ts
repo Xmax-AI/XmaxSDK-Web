@@ -8,6 +8,7 @@ import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
+import { QUALITY_TIERS } from "../src/Stream/Quality/QualityTiers";
 
 class FakeRtcEngine {
   destroyed = false;
@@ -31,6 +32,8 @@ class FakeRtcEngine {
   startRemoteVideoCalls: unknown[] = [];
   stopRemoteVideoCalls: unknown[] = [];
   remoteVideoTrack = { id: "remote-track" } as unknown as MediaStreamTrack;
+  remoteAudioTrack = { id: "remote-audio" } as unknown as MediaStreamTrack;
+  getAudioTrack = vi.fn((_userID: string) => this.remoteAudioTrack);
   muteRemoteAudioCalls: Array<[string, boolean]> = [];
   volumeCalls: Array<[string, number]> = [];
 
@@ -590,6 +593,38 @@ describe("TrtcRtcManager", () => {
     expect(engine.stopLocalVideoCalls).toBe(0);
   });
 
+  it("applies all adaptive tiers through profile updates without restarting capture or publication", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    await manager.startCameraCapture({
+      ...QUALITY_TIERS.L1,
+      position: CameraPosition.front,
+    });
+    await manager.joinRoom(joinConfig);
+    await manager.publishLocalVideo();
+    engine.updateLocalVideoCalls.length = 0;
+
+    for (const tier of Object.values(QUALITY_TIERS)) {
+      await manager.configureVideoEncoding({
+        ...tier,
+        minimumBitrate: 1000,
+        maximumBitrate: 4000,
+        encoderPreference: RtcVideoEncoderPreference.maintainFramerate,
+      });
+      expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ option: {
+        profile: { ...tier, bitrate: 1000 },
+        qosPreference: "smooth",
+      } });
+    }
+
+    expect(engine.updateLocalVideoCalls).toHaveLength(5);
+    expect(engine.startLocalVideoCalls).toHaveLength(1);
+    expect(engine.stopLocalVideoCalls).toBe(0);
+    expect(engine.enterRoomCalls).toHaveLength(1);
+    expect(engine.exitRoomCalls).toBe(0);
+    await manager.destroy();
+  });
+
   it("never enables TRTC encode mirroring, which routes through its canvas pipeline", async () => {
     // mirror: "publish" 会让 TRTC 用内部 canvas 重采每一帧：
     // iOS 上帧率暴跌且竖屏几何异常。镜像只由渲染层 CSS 和服务端处理。
@@ -666,6 +701,8 @@ describe("TrtcRtcManager", () => {
 
     manager.setRemoteAudioVolume(80, "bot001");
     manager.setRemoteAudioVolume(150, "bot001");
+    expect(manager.getRemoteAudioTrack("bot001")).toBe(engine.remoteAudioTrack);
+    expect(engine.getAudioTrack).toHaveBeenCalledWith("bot001");
     expect(engine.volumeCalls).toEqual([
       ["bot001", 80],
       ["bot001", 100],
@@ -687,6 +724,7 @@ describe("TrtcRtcManager", () => {
 
       vi.stubGlobal("navigator", { userAgent: IPHONE_UA, maxTouchPoints: 5 });
       expect(manager.supportsRemoteAudioVolumeControl).toBe(false);
+      expect(() => manager.getRemoteAudioTrack("bot001")).toThrow("cannot preserve remote audio");
     });
 
     it("falls back to mute control on iOS where remote volume is unsupported", async () => {

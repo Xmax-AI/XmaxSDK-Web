@@ -77,6 +77,14 @@ export {
 } from "./Service/Realtime/RealtimeVideoFormat";
 export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFormat";
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
+export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/RealtimeExtraParams";
+export {
+  RealtimeRecordingEventType,
+  RealtimeRecordingFinishReason,
+  type RealtimeRecordingEvent,
+  type RealtimeRecordingResult,
+  type RealtimeRecordingListener,
+} from "./Service/Realtime/RealtimeRecordingEvent";
 
 /**
  * Service / Media
@@ -100,3 +108,5 @@ export { StoredFile } from "./Service/Storage/StoredFile";
 export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
 export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
+export type { TrajectoryEffectRendering } from "./Render/Trajectory/TrajectoryEffectRendering";
+export type { TrajectoryID, TrajectoryPoint } from "./Render/Trajectory/TrajectoryPoint";

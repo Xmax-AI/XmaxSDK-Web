@@ -15,6 +15,7 @@ import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  getRemoteAudioTrack(): MediaStreamTrack | undefined { return undefined; }
   async updateCredentials(): Promise<void> {}
   isInitialized = true;
   joinRoomCalls: RtcRoomJoinConfiguration[] = [];
@@ -200,6 +201,7 @@ describe("RoomController", () => {
     expect(message.uid).toBe("task-001");
     expect(message.params).toMatchObject({
       mirror: mirror ?? false,
+      face_replace: false,
       model: "default",
       size: [832, 1472],
       target_size: [416, 736],

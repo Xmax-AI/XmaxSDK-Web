@@ -27,7 +27,10 @@ export interface RtcCameraCaptureOptions {
    * 首次启动时使用的摄像头位置。
    */
   position: CameraPosition;
-  /** 顺时针校正输入帧；宽高为旋转后的目标尺寸，默认 0。 */
+
+  /**
+   * 顺时针校正输入帧；宽高为旋转后的目标尺寸，默认 0。
+   */
   rotation?: CameraRotation;
 }
 
@@ -151,6 +154,12 @@ export interface RtcManaging {
    * @throws 操作失败时抛出错误。
    */
   subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void>;
+
+  /**
+   * 获取播放音量处理前的远端音轨；尚未订阅到音频时返回空值。
+   * 不支持独立采集与静音播放的平台抛出错误。
+   */
+  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined;
 
   /**
    * 当前平台是否支持远端音量控制。

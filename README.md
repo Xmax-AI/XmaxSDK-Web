@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/images/brand/xmax-sdk.png" alt="XmaxSDK — Realtime Interactive Video Generation" width="880">
+  <img src="./materials/images/brand/xmax-sdk.png" alt="XmaxSDK — Realtime Interactive Video Generation" width="880">
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 
 We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video generation via Xmax models. XmaxSDK implements an end-to-end pipeline covering media acquisition, video streaming, frame-by-frame generation, and on-device rendering, enabling developers to seamlessly integrate low-latency, high-fidelity video transformations into creative applications at a much lower cost than alternative solutions.
 
-<p align="center"><img src="./docs/images/xlab/generation-demo.gif" alt="X-Lab realtime generation demo" width="33%" /><img src="./docs/images/xlab/index-demo.gif" alt="X-Lab index demo" width="33%" /><img src="./docs/images/xlab/storage-demo.gif" alt="X-Lab storage demo" width="33%" /></p>
+<p align="center"><img src="./materials/images/xlab/generation-demo.gif" alt="X-Lab realtime generation demo" width="33%" /><img src="./materials/images/xlab/index-demo.gif" alt="X-Lab index demo" width="33%" /><img src="./materials/images/xlab/storage-demo.gif" alt="X-Lab storage demo" width="33%" /></p>
 
 <br>
 
@@ -30,8 +30,8 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
       Replace anyone in your live feed with a designated avatar in real-time.
     </td>
     <td rowspan="2" width="16%" align="center" valign="middle">
-      <a href="./docs/videos/use-cases/character-swapping.mp4">
-        <img src="./docs/images/use-cases/character-swapping-poster.png" alt="Play the Character Swapping demo" width="120">
+      <a href="./materials/videos/use-cases/character-swapping.mp4">
+        <img src="./materials/images/use-cases/character-swapping-poster.png" alt="Play the Character Swapping demo" width="120">
         <br>
         <sub>▶ Play demo</sub>
       </a>
@@ -53,8 +53,8 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
       authentic fit.
     </td>
     <td rowspan="2" width="16%" align="center" valign="middle">
-      <a href="./docs/videos/use-cases/virtual-try-on.mp4">
-        <img src="./docs/images/use-cases/virtual-try-on-poster.png" alt="Play the Virtual Try-On demo" width="120">
+      <a href="./materials/videos/use-cases/virtual-try-on.mp4">
+        <img src="./materials/images/use-cases/virtual-try-on-poster.png" alt="Play the Virtual Try-On demo" width="120">
         <br>
         <sub>▶ Play demo</sub>
       </a>
@@ -75,8 +75,8 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
       Reimagine your world in any style with an immersive visual experience.
     </td>
     <td rowspan="2" width="16%" align="center" valign="middle">
-      <a href="./docs/videos/use-cases/video-restyling.mp4">
-        <img src="./docs/images/use-cases/video-restyling-poster.png" alt="Play the Video Restyling demo" width="120">
+      <a href="./materials/videos/use-cases/video-restyling.mp4">
+        <img src="./materials/images/use-cases/video-restyling-poster.png" alt="Play the Video Restyling demo" width="120">
         <br>
         <sub>▶ Play demo</sub>
       </a>
@@ -98,8 +98,8 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
       through gestures.
     </td>
     <td rowspan="2" width="16%" align="center" valign="middle">
-      <a href="./docs/videos/use-cases/ai-companions.mp4">
-        <img src="./docs/images/use-cases/ai-companions-poster.png" alt="Play the AI Companions demo" width="120">
+      <a href="./materials/videos/use-cases/ai-companions.mp4">
+        <img src="./materials/images/use-cases/ai-companions-poster.png" alt="Play the AI Companions demo" width="120">
         <br>
         <sub>▶ Play demo</sub>
       </a>
@@ -121,8 +121,8 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
       trajectories.
     </td>
     <td rowspan="2" width="16%" align="center" valign="middle">
-      <a href="./docs/videos/use-cases/live-photo.mp4">
-        <img src="./docs/images/use-cases/live-photo-poster.png" alt="Play the Live Photo demo" width="120">
+      <a href="./materials/videos/use-cases/live-photo.mp4">
+        <img src="./materials/images/use-cases/live-photo-poster.png" alt="Play the Live Photo demo" width="120">
         <br>
         <sub>▶ Play demo</sub>
       </a>
@@ -145,21 +145,21 @@ We introduce XmaxSDK, a JavaScript SDK designed for real-time interactive video 
   <thead>
     <tr>
       <th height="104" align="center" valign="middle">
-        <img src="./docs/images/why/low-latency.svg" alt="Low latency" width="36" height="36"><br>Low latency
+        <img src="./materials/images/why/low-latency.svg" alt="Low latency" width="36" height="36"><br>Low latency
       </th>
       <th height="104" align="center" valign="middle">
-        <img src="./docs/images/why/low-cost.svg" alt="Cost efficiency" width="36" height="36"><br>Cost efficiency
+        <img src="./materials/images/why/low-cost.svg" alt="Cost efficiency" width="36" height="36"><br>Cost efficiency
       </th>
       <th height="104" align="center" valign="middle">
-        <img src="./docs/images/why/high-fidelity.svg" alt="High fidelity" width="36" height="36"><br>High fidelity
+        <img src="./materials/images/why/high-fidelity.svg" alt="High fidelity" width="36" height="36"><br>High fidelity
       </th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td>End-to-end latency is measured in <img src="./docs/images/why/latency-highlight.svg" alt="hundreds of milliseconds" width="192" height="20" align="absmiddle">, ensuring that updates to generation conditions and interaction controls are reflected instantly.</td>
-      <td>Run on a <img src="./docs/images/why/gpu-highlight.svg" alt="single RTX 5090" width="126" height="20" align="absmiddle">, reducing inference costs by orders of magnitude versus datacenter GPUs like H100.</td>
-      <td>Our models support real-time generation at up to <img src="./docs/images/why/resolution-highlight.svg" alt="1080p" width="48" height="20" align="absmiddle">, delivering production-ready, high-quality video output.</td>
+      <td>End-to-end latency is measured in <img src="./materials/images/why/latency-highlight.svg" alt="hundreds of milliseconds" width="192" height="20" align="absmiddle">, ensuring that updates to generation conditions and interaction controls are reflected instantly.</td>
+      <td>Run on a <img src="./materials/images/why/gpu-highlight.svg" alt="single RTX 5090" width="126" height="20" align="absmiddle">, reducing inference costs by orders of magnitude versus datacenter GPUs like H100.</td>
+      <td>Our models support real-time generation at up to <img src="./materials/images/why/resolution-highlight.svg" alt="1080p" width="48" height="20" align="absmiddle">, delivering production-ready, high-quality video output.</td>
     </tr>
   </tbody>
 </table>
@@ -282,6 +282,88 @@ await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
 
 <br>
 
+### Generate from a local image
+
+Use `createLocalImageStream` instead of `createLocalCameraStream` to use a local
+image as the video input. It accepts a browser-decodable `File` or `Blob`, fits the
+image into the model's input dimensions without cropping, and continuously sends
+the same frame without audio. No image upload or camera permission is required.
+
+```javascript
+const localStream = await realtime.createLocalImageStream({
+  file: imageFile, // File from an <input type="file" accept="image/*">.
+  videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }),
+});
+
+const remoteStream = await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Make the scene come alive" }),
+});
+```
+
+Bind the returned tracks to the same video views used for camera input.
+TRTC, Agora, and VeRTC use the existing external-video publishing path.
+`disconnect()` retains the image for reconnection; `close()` releases its resources.
+Animated images are captured as a single still frame.
+
+<br>
+
+### Record a generated clip
+
+Recording is off by default. Set `record: true` when starting a new generation
+to record approximately 20 seconds of the original remote video and audio.
+Register the listener before starting:
+
+```javascript
+import { RealtimeRecordingEventType } from "@xmaxai/web-sdk";
+
+realtime.setRecordingListener(event => {
+  if (event.type === RealtimeRecordingEventType.failed) {
+    console.error("Recording failed", event.taskID, event.error);
+    return;
+  }
+
+  const { blob, hasAudio, reason } = event.result;
+  // Save, upload, or preview blob here. Use blob.type to identify its format.
+  // completed: reached the time limit; interrupted: finalized an earlier end.
+  console.log(event.taskID, blob, hasAudio, reason);
+});
+
+await realtime.startGeneration({
+  localStream,
+  context: new RealtimeContext({ prompt: "Make the scene come alive" }),
+  record: true,
+});
+```
+
+- The timer starts when a remote video frame is available, independently of the
+  attached view. Frame interpolation, interaction effects, and overlays are not recorded.
+- Recording errors do not stop generation. `startGeneration` does not wait for the file.
+- Before delivery, the SDK shortens unusually long video-frame intervals and cuts
+  the same intervals from audio. Cuts align to complete audio-packet boundaries;
+  neither track is re-encoded, and all video frames are preserved. The resulting
+  clip can be shorter than the recording period. Speech during removed intervals
+  is lost, and audio splices can be audible. This does not reconstruct missing
+  motion or smooth visual jumps.
+- Gap removal runs after recording and does not delay RTC cleanup. It requires
+  a supported MP4 or WebM recording; if processing fails or times out, the SDK
+  logs a warning and returns the original clip instead.
+- `record` is ignored on condition updates; it cannot stop or restart a recording.
+- Restarting ends the old recording. `restart: true` with `record: true` reports a
+  recording failure for the new task; generation still restarts normally.
+- An early end returns `interrupted` only if the recorder finalizes a nonempty file
+  without an encoding error. Empty or failed recordings return `failed`.
+- Audio arriving later is included after its arrival. `hasAudio` indicates that an
+  enabled, unmuted remote audio track was observed during recording, not audible speech.
+- Formats depend on browser support; MP4 is not guaranteed. Background scheduling
+  can delay the stop timer, so files are not cropped to exactly 20.000 seconds.
+- Audio processing must be allowed by the browser. TRTC recording on mobile Safari
+  is currently unsupported because playback muting also disables audio reception.
+- Recording buffers are limited to 64 MiB. The SDK does not upload recordings or
+  retain a copy after delivery. Clear the listener with `setRecordingListener(undefined)`.
+
+<br>
+
 ### Using React
 
 Use `XmaxRealtimeVideo` as your primary React view. Store the local and remote
@@ -301,6 +383,23 @@ import { VideoContentMode } from "@xmaxai/web-sdk";
 
 See the [React component](./packages/xmax-sdk/src/react/XmaxRealtimeVideo.tsx) for state binding and the
 [example project](#example-project) for a complete implementation.
+
+### Interact with the generated video
+
+`XmaxVideo` and `XmaxRealtimeVideo` support dragging on the remote output with a
+mouse, pen, or multiple touch points. Interaction becomes available after generation
+starts. The SDK maps the displayed coordinates to the model input and sends the
+trajectory automatically; local previews do not send interaction events.
+
+Set `isInteractionEnabled={false}` to disable interaction without stopping playback.
+The framework-independent views expose the same `isInteractionEnabled` property.
+
+Use `trajectoryRenderer` to supply a `TrajectoryEffectRendering` implementation for
+custom visuals, or leave it undefined to use the default glowing trail. A renderer
+only controls visuals, not sampling or signaling; use a separate instance per view
+and release its animation resources in `reset()`.
+
+The generated response to dragging depends on the model and generation prompt.
 
 <br>
 

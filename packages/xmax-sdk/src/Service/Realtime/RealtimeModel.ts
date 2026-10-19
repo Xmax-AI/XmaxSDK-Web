@@ -9,6 +9,9 @@ export enum RealtimeModel {
   x2_0 = "x2.0",
   x2_0_trtc = "x2.0-trtc",
   x2_1_preview = "x2.1-preview",
+  x2_1_preview_1014 = "x2.1-preview-1014",
+  x2_1_1_preview_cn = "x2.1.1-preview-cn",
+  x2_1_1_preview_us = "x2.1.1-preview-us",
 }
 
 /** 内置模型或服务端新增的模型标识；自定义名称原样传给服务端。 */
@@ -33,13 +36,19 @@ const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
   [RealtimeModel.x2_0]: "X2.0",
   [RealtimeModel.x2_0_trtc]: "X2.1-preview-trtc",
   [RealtimeModel.x2_1_preview]: "X2.1-preview-vertc",
+  [RealtimeModel.x2_1_preview_1014]: "X2.1-preview-1014",
+  [RealtimeModel.x2_1_1_preview_cn]: "X2.1.1-preview-cn",
+  [RealtimeModel.x2_1_1_preview_us]: "X2.1.1-preview-us",
 };
 
 /**
  * 模型专用的会话 API 地址；未配置的模型沿用客户端环境地址。
  */
 const MODEL_BASE_URLS: Readonly<Partial<Record<RealtimeModel, string>>> = {
-  [RealtimeModel.x2_1_preview]: "https://dev.xmaxai.com/open/api/v1",
+  [RealtimeModel.x2_1_preview]: "https://dev.22duck.cn/open/api/v1",
+  [RealtimeModel.x2_1_preview_1014]: "https://dev.22duck.cn/open/api/v1",
+  [RealtimeModel.x2_1_1_preview_cn]: "https://cloud.xmax.22duck.cn/open/api/v1",
+  [RealtimeModel.x2_1_1_preview_us]: "https://api.xmax.ai/open/api/v1",
 };
 
 /**
@@ -63,6 +72,18 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
     { width: 1024, height: 1920 },
     { width: 1920, height: 1024 },
   ],
+  [RealtimeModel.x2_1_preview_1014]: [
+    { width: 1024, height: 1920 },
+    { width: 1920, height: 1024 },
+  ],
+  [RealtimeModel.x2_1_1_preview_cn]: [
+    { width: 1024, height: 1920 },
+    { width: 1920, height: 1024 },
+  ],
+  [RealtimeModel.x2_1_1_preview_us]: [
+    { width: 1024, height: 1920 },
+    { width: 1920, height: 1024 },
+  ],
 };
 
 /**
@@ -72,6 +93,9 @@ const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_0_trtc]: 2100000,
   [RealtimeModel.x2_1_preview]: 2100000,
+  [RealtimeModel.x2_1_preview_1014]: 2100000,
+  [RealtimeModel.x2_1_1_preview_cn]: 2100000,
+  [RealtimeModel.x2_1_1_preview_us]: 2100000,
 };
 
 /**
@@ -142,6 +166,9 @@ const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]
   [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_0_trtc]: Object.freeze([RtcProvider.trtc]),
   [RealtimeModel.x2_1_preview]: Object.freeze([RtcProvider.vertc]),
+  [RealtimeModel.x2_1_preview_1014]: Object.freeze([RtcProvider.agora]),
+  [RealtimeModel.x2_1_1_preview_cn]: Object.freeze([RtcProvider.agora]),
+  [RealtimeModel.x2_1_1_preview_us]: Object.freeze([RtcProvider.agora]),
 };
 
 /**

@@ -4,6 +4,7 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  RealtimeRecordingEventType,
   modelDisplayName,
   RealtimeVideoFormat,
   RtcProvider,
@@ -24,7 +25,7 @@ import {
 import { XmaxVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
 import { createRef, useEffect, useMemo, useRef, useState } from "react";
-import { EXAMPLE_MODES, type ExampleModeKey } from "./presets";
+import { EXAMPLE_MODES, faceRestorationForMode, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
@@ -32,14 +33,16 @@ import { StatisticsToggle } from "./StatisticsToggle";
 import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
+import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
+const ENABLE_QUALITY_DEBUG = true;
 
 interface ModelOption {
   id: string;
   model: RealtimeModelName;
   label: string;
-  apiBaseURL: string;
+  apiBaseURL?: string;
   provider?: RtcProvider;
 }
 
@@ -48,15 +51,21 @@ const MODEL_OPTIONS: readonly ModelOption[] = [
   { id: "trtc-production", model: RealtimeModel.x2_0_trtc, label: "x2.0-trtc",
     apiBaseURL: "https://api.xmaxai.com/open/api/v1" },
   { id: "x2.1-preview-trtc", model: "x2.1-preview-trtc", label: "x2.1-preview-trtc",
-    apiBaseURL: "https://dev.xmaxai.com/open/api/v1", provider: RtcProvider.trtc },
+    apiBaseURL: "https://dev.22duck.cn/open/api/v1", provider: RtcProvider.trtc },
   ...[
     RealtimeModel.x2_1_preview,
     "x2.1-preview-1012",
     "x2.1-preview-1013",
-    "x2.1-preview-1014",
+    RealtimeModel.x2_1_preview_1014,
   ].map((model) => ({
     id: model, model, label: modelDisplayName(model),
-    apiBaseURL: "https://dev.xmaxai.com/open/api/v1",
+    apiBaseURL: "https://dev.22duck.cn/open/api/v1",
+  })),
+  ...[
+    RealtimeModel.x2_1_1_preview_cn,
+    RealtimeModel.x2_1_1_preview_us,
+  ].map((model) => ({
+    id: model, model, label: modelDisplayName(model),
   })),
 ];
 
@@ -119,6 +128,7 @@ export function App() {
   const [interpolationRequested, setInterpolationRequested] = useState(false);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
+  const [recordingFile, setRecordingFile] = useState<RecordingDownloadFile>();
   const [statisticsVisible, setStatisticsVisible] = useState(
     () => !window.matchMedia("(max-width: 720px)").matches,
   );
@@ -128,6 +138,9 @@ export function App() {
   );
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
+  // 停止会话后仍接收其收尾结果；新会话或卸载时才撤销归属。
+  const recordingOwnerRef = useRef<XmaxRealtimeManaging>();
+  const recordingURLRef = useRef<string>();
   const generationBusyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
@@ -255,6 +268,11 @@ export function App() {
     return () => {
       const realtime = realtimeRef.current;
       realtimeRef.current = undefined;
+      recordingOwnerRef.current = undefined;
+      if (recordingURLRef.current) {
+        URL.revokeObjectURL(recordingURLRef.current);
+        recordingURLRef.current = undefined;
+      }
       void realtime?.close();
     };
   }, []);
@@ -333,6 +351,28 @@ export function App() {
       }),
     );
     realtimeRef.current = realtime;
+    recordingOwnerRef.current = realtime;
+    if (recordingURLRef.current) {
+      URL.revokeObjectURL(recordingURLRef.current);
+      recordingURLRef.current = undefined;
+    }
+    setRecordingFile(undefined);
+    realtime.setRecordingListener(event => {
+      if (recordingOwnerRef.current !== realtime) return;
+      if (event.type === RealtimeRecordingEventType.failed) {
+        setErrorText(`录制失败：${event.error.message}`);
+        return;
+      }
+
+      const url = URL.createObjectURL(event.result.blob);
+      if (recordingURLRef.current) URL.revokeObjectURL(recordingURLRef.current);
+      recordingURLRef.current = url;
+      setRecordingFile({
+        url,
+        fileName: recordingFileName(event.taskID, event.result.blob.type),
+        interrupted: event.type === RealtimeRecordingEventType.interrupted,
+      });
+    });
     // 会话建立成功后是否已切换到生成页面。
     let switchedToSession = false;
     try {
@@ -372,10 +412,12 @@ export function App() {
       await references.selectInitialReference(async (reference) => {
         const remote = await realtime.startGeneration({
           localStream: stream,
+          faceRestoration: faceRestorationForMode(reference.mode),
           context: new RealtimeContext({
             prompt: reference.prompt,
             referencePath: reference.reference_path,
           }),
+          record: true,
         });
         if (realtimeRef.current === realtime) setRemoteStream(remote);
       });
@@ -417,16 +459,37 @@ export function App() {
     }
   }
 
+  /** 临时下行调档入口；与生成操作互斥，自动调档仍保持开启。 */
+  async function handleAdjustDownlinkQuality(direction: "upgrade" | "downgrade") {
+    const realtime = realtimeRef.current;
+    if (!realtime || generationBusyRef.current || stateText !== RealtimeConnectionState.generating) return;
+
+    generationBusyRef.current = true;
+    setBusy(true);
+    setErrorText("");
+
+    try {
+      await realtime.adjustDownlinkQuality(direction);
+    } catch (error) {
+      if (realtimeRef.current === realtime) {
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      generationBusyRef.current = false;
+      setBusy(false);
+    }
+  }
+
   /** 提交生成条件：未生成时开始生成，生成中更新条件。 */
   async function handleSubmitPrompt() {
     if (referenceUploading) return;
     // 自由输入的生成条件与其他分类无关，清除原参考图的选中态。
     references.clearOtherModes("free");
-    await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }));
+    await submitContext(new RealtimeContext({ prompt: submitPrompt, referencePath }), "free");
   }
 
   /** 所有选图和文本提交共用生成入口，条件显式传入，避免读取旧的 React state。 */
-  async function submitContext(context: RealtimeContext) {
+  async function submitContext(context: RealtimeContext, mode: ExampleModeKey) {
     const realtime = realtimeRef.current;
     if (!realtime || !localStream || !apiKey || generationBusyRef.current) {
       return;
@@ -437,6 +500,8 @@ export function App() {
       const remote = await realtime.startGeneration({
         localStream,
         context,
+        faceRestoration: faceRestorationForMode(mode),
+        record: true,
       });
       if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
@@ -449,7 +514,7 @@ export function App() {
   /** 上传完成和普通点击均走同一条选中、生成逻辑。 */
   async function applyReference(item: ReferenceItem) {
     if (item.mode === "free") setPrompt(item.prompt);
-    await submitContext(new RealtimeContext({ prompt: item.prompt, referencePath: item.reference_path }));
+    await submitContext(new RealtimeContext({ prompt: item.prompt, referencePath: item.reference_path }), item.mode);
   }
 
   async function handleSelectReference(item: ReferenceItem) {
@@ -636,6 +701,7 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
+            <RecordingDownload file={recordingFile} />
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={modelOptionID} disabled={busy}
                 onChange={(event) => setModelOptionID(event.target.value)}>
@@ -797,6 +863,7 @@ export function App() {
           {!isMobileLayout && (
             <span className="sessionModel" aria-label="当前模型">{modelOption.label}</span>
           )}
+          <RecordingDownload file={recordingFile} />
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
@@ -812,6 +879,20 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {ENABLE_QUALITY_DEBUG && supportedRtcProviders(model)[0] !== RtcProvider.vertc && (
+        <div className="qualityDebug" role="group" aria-label="下行档位调试">
+          <span>下行调试 · 自动调档仍开启</span>
+          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+            onClick={() => handleAdjustDownlinkQuality("downgrade")}>
+            降一档
+          </button>
+          <button type="button" disabled={busy || stateText !== RealtimeConnectionState.generating}
+            onClick={() => handleAdjustDownlinkQuality("upgrade")}>
+            升一档
+          </button>
+        </div>
+      )}
 
       <div className="stageRow">
         <div className="stage">
@@ -831,6 +912,7 @@ export function App() {
             <div className="remoteVideo" key={remoteStream.id}>
               <XmaxVideo
                 track={remoteStream.videoTrack}
+                isInteractionEnabled
                 style={{ width: "100%", height: "100%" }}
               />
             </div>

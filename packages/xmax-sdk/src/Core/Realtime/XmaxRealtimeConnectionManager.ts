@@ -1,6 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import type { RemoteFrameInterpolationOptions } from "../../Render/Video/RemoteVideoFramePipeline";
+import type { RenderControlling } from "../../Render/RenderControlling";
+import type { InteractionFrame } from "../../Media/Interaction/InteractionFrame";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeModelName } from "../../Service/Realtime/RealtimeModel";
 import { connectionAppID } from "../../Service/Realtime/RealtimeSessionConnection";
@@ -8,7 +9,6 @@ import { RealtimeSession } from "../../Service/Realtime/RealtimeSession";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
-import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
 import type { RemoteStreamBinding, StreamControlling } from "../../Stream/StreamControlling";
 import type { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
@@ -31,7 +31,6 @@ export class XmaxRealtimeConnectionManager {
    * 远端轨道与渲染绑定
    */
   private activeRemoteTrack?: RealtimeVideoTrack;
-  private remoteTarget?: VideoRenderTarget;
 
   /**
    * 注入会话、传输、计时和渲染回调依赖；连接资源在 connect 时创建。
@@ -47,9 +46,8 @@ export class XmaxRealtimeConnectionManager {
       timing: RealtimeLaunchTimer;
       remoteAudioVolume: () => number;
       onHeartbeatFailure: (sessionID: string, error: XmaxError) => void;
-      onFrameDisplayed: () => void;
-      onRenderAttached: () => void;
-      onRenderDetached: () => void;
+      renderController: RenderControlling;
+      onInteraction: (frame: InteractionFrame) => void;
     }
   ) {}
 
@@ -67,12 +65,21 @@ export class XmaxRealtimeConnectionManager {
    * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
    * 进房结束即记录连接耗时；可选 beforePublish 检查阻塞发布，计入连接耗时；
    * 发布本地流单独计时。
+   * @param options.localTrack 当前本地媒体轨道。
+   * @param options.remoteVideoFormat 原始生成及远端画面规格，缺省使用本地轨道规格。
+   * @param options.localVideoFormat 发布前实际应用的上行编码格式；与原始生成及远端格式分开。
+   * @param options.onVideoEncoderConfigured 上行编码配置成功后的回调。
+   * @param options.model 创建业务会话使用的模型名称。
+   * @param options.includeLocalAudio 是否发布本地音频。
+   * @param options.ensureCurrent 校验当前操作仍有效。
+   * @param options.onPublished 本地发布完成后的回调。
+   * @param options.beforePublish 发布前的可选异步检查。
+   * @param options.publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
    * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
    */
   async connect(options: {
     localTrack: RealtimeVideoTrack;
     remoteVideoFormat?: RealtimeVideoTrack["videoFormat"];
-    /** 发布前实际应用的上行编码格式；与原始生成/远端格式分开。 */
     localVideoFormat?: RealtimeVideoTrack["videoFormat"];
     onVideoEncoderConfigured?: () => void;
     model: RealtimeModelName;
@@ -151,23 +158,16 @@ export class XmaxRealtimeConnectionManager {
       videoFormat: options.remoteVideoFormat ?? options.localTrack.videoFormat,
     });
     this.activeRemoteTrack = remoteTrack;
-    this.registerRemoteBinding(remoteTrack);
+    this.dependencies.renderController.registerRemoteTrack(remoteTrack, this.dependencies.onInteraction);
     streamController.setRemoteAudioVolume(this.dependencies.remoteAudioVolume());
 
     return new RealtimeMediaStream({ id: StreamID.remote, videoTrack: remoteTrack });
   }
 
   /**
-   * 更新已绑定远端视图的插帧配置；传 undefined 停用插帧。
-   */
-  setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
-    this.remoteTarget?.setFrameInterpolation?.(options);
-  }
-
-  /**
    * 清空远端视图的媒体流，保留轨道与视图绑定以供统一清理。
    */
-  clearRemoteMedia(): void { this.remoteTarget?.setMediaStream(null); }
+  clearRemoteMedia(): void { this.dependencies.renderController.setRemoteMedia(null); }
   /**
    * 停止会话心跳；未配置会话服务时不执行操作。
    */
@@ -250,7 +250,7 @@ export class XmaxRealtimeConnectionManager {
       if (track) {
         track.mediaStreamTrack = undefined;
       }
-      this.remoteTarget?.setMediaStream(null);
+      this.dependencies.renderController.setRemoteMedia(null);
       return;
     }
 
@@ -262,39 +262,7 @@ export class XmaxRealtimeConnectionManager {
     }
 
     track.mediaStreamTrack = binding.videoTrack;
-    this.remoteTarget?.setMediaStream(new MediaStream([binding.videoTrack]));
-  }
-
-  /**
-   * 为远端轨道注册渲染绑定：attach 时挂流占位，媒体轨到达后送入画面。
-   */
-  private registerRemoteBinding(track: RealtimeVideoTrack): void {
-    VideoRenderRegistry.register(track, {
-      frameDisplayHandler: () => {
-        if (this.activeRemoteTrack === track) {
-          this.dependencies.onFrameDisplayed();
-        }
-      },
-      attachHandler: (view) => {
-        this.remoteTarget?.setFrameInterpolation?.(undefined);
-
-        // 输入镜像由 start.params.mirror 告知后端，生成结果不再二次翻转。
-        view.isMirrored = false;
-        this.remoteTarget = view;
-        this.dependencies.onRenderAttached();
-
-        const mediaTrack = track.mediaStreamTrack;
-        view.setMediaStream(mediaTrack ? new MediaStream([mediaTrack]) : null);
-      },
-      detachHandler: (view) => {
-        if (this.remoteTarget === view) {
-          this.dependencies.onRenderDetached();
-          this.remoteTarget = undefined;
-        }
-        view.setFrameInterpolation?.(undefined);
-        view.setMediaStream(null);
-      },
-    });
+    this.dependencies.renderController.setRemoteMedia(binding.videoTrack);
   }
 
   /**
@@ -381,13 +349,12 @@ export class XmaxRealtimeConnectionManager {
 
     const track = this.activeRemoteTrack;
     if (track) {
-      VideoRenderRegistry.unregister(track);
+      this.dependencies.renderController.resetRemoteTrack();
       track.mediaStreamTrack = undefined;
     }
 
     this.activeSession = undefined;
     this.activeRemoteTrack = undefined;
-    this.remoteTarget = undefined;
 
     if (sessionID && this.dependencies.sessionService) {
       try {

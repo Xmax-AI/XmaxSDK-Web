@@ -2,6 +2,8 @@ import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPositio
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
+import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
+import type { RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -17,6 +19,11 @@ import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
  */
 export interface XmaxRealtimeManaging {
+  /**
+   * 监听录制完成、中断或失败；传入 undefined 清除监听，不停止正在进行的录制。
+   */
+  setRecordingListener(listener?: RealtimeRecordingListener): void;
+
   /**
    * 实时能力配置。
    */
@@ -38,7 +45,15 @@ export interface XmaxRealtimeManaging {
   setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
 
   /**
-   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora 会话。
+   * 手动升/降一档上行配置；仅支持正在生成的 Agora、TRTC 会话。
+   * Agora 调整分辨率、帧率和编码码率；TRTC 临时只调整帧率，保留尺寸和码率配置。
+   * 保留原始 L1 基准，不改变下行尺寸；自动调档仍保持开启。
+   * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
+   */
+  adjustUplinkQuality(direction: "upgrade" | "downgrade"): Promise<void>;
+
+  /**
+   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora、TRTC 会话。
    * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；自动调档仍保持开启。
    * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
    */
@@ -106,6 +121,11 @@ export interface XmaxRealtimeManaging {
    *
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
+   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.position 前置或后置摄像头。
+   * @param options.useMicrophone 是否采集并发布麦克风音频。
+   * @param options.rotation 输入帧顺时针旋转角度，默认 0；非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
+   * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */
@@ -113,14 +133,7 @@ export interface XmaxRealtimeManaging {
     videoFormat: RealtimeVideoFormat;
     position: CameraPosition;
     useMicrophone: boolean;
-    /**
-     * 输入帧顺时针旋转角度，默认 0；videoFormat 指旋转后的目标规格。
-     * 非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
-     */
     rotation?: CameraRotation;
-    /**
-     * 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
-     */
     enableFrameValidation?: boolean;
   }): Promise<RealtimeMediaStream>;
 
@@ -128,6 +141,7 @@ export interface XmaxRealtimeManaging {
    * 创建服务端直接读取的 HTTP/HTTPS 网络视频源，不采集或发布本地音视频。
    * 本地预览静音播放一次，独立于服务端进度；创建源不会开始生成。
    * 地址必须可由服务端直接访问，不转发浏览器 Cookie 或自定义鉴权头。
+   * @param options.url 服务端可直接访问的 HTTP/HTTPS 视频地址。
    * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
    * @param options.sampleMethod 服务端采样方式，默认 time。
    * @param options.onFinish 当前任务收到服务端完成消息且生成就绪后调用一次，不代表尾帧已播放完。
@@ -144,6 +158,7 @@ export interface XmaxRealtimeManaging {
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
    * 通过 Canvas 等比缩放补黑边，文件音频独立上行，本地预览始终静音。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
+   * @param options.file 包含可解码视频的本地 File 或 Blob。
    * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
    * @param options.loop 是否循环播放文件音视频，默认 true。
    * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
@@ -157,15 +172,42 @@ export interface XmaxRealtimeManaging {
   }): Promise<RealtimeMediaStream>;
 
   /**
+   * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
+   * 等比缩放并居中补黑边，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
+   * 创建后可直接预览，仍需调用 startGeneration 开始生成；disconnect 保留图片源，close 释放全部资源。
+   * @param options.file 包含浏览器可解码图片的本地 File 或 Blob；动图仅取解码时的静止快照。
+   * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
+   * @throws 文件或格式无效、浏览器无法解码、Canvas 采集不可用或已有活动源时抛错。
+   */
+  createLocalImageStream(options: {
+    file: Blob;
+    videoFormat: RealtimeVideoFormat;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
+   * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
+   * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
+   * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
+   * 副本共享底层媒体源；调用方仍负责停止原始采集。设备源结束时 SDK 上报错误并关闭。
+   * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
+   * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
+   * @throws 非 live 视频轨、不支持的格式、已有活动媒体源或 RTC 初始化失败时抛错。
+   */
+  createExternalVideoStream(options: {
+    videoTrack: MediaStreamTrack;
+    videoFormat: RealtimeVideoFormat;
+  }): Promise<RealtimeMediaStream>;
+
+  /**
    * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
    * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
    * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
-   * Agora 上行自适应以本次成功应用的完整格式作为新的 L1 基准，后续五档按比例调整尺寸和帧率。
+   * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 临时仅调帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
-   * @throws 无本地相机或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   * @throws 无本地相机、外部、图片或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
   updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
 
@@ -199,7 +241,7 @@ export interface XmaxRealtimeManaging {
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
+   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地图片、本地视频文件或网络视频源。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
@@ -220,17 +262,26 @@ export interface XmaxRealtimeManaging {
   /**
    * 按需建立连接并开始生成。
    *
-   * 尚未连接时先建立实时连接；已在生成时仅更新生成条件，不重启生成。
+   * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    *
-   * @param options.localStream 由当前 Manager 创建的摄像头、本地文件或网络视频源。
+   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
+   * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
+   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
+   * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
+   * @param options.record 是否录制远端原始音视频约 20 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
    * @returns 承载远端生成画面的媒体流。
+   * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
    */
   startGeneration(options: {
     localStream: RealtimeMediaStream;
     context?: RealtimeContext;
+    restart?: boolean;
+    faceRestoration?: boolean;
+    extraParams?: RealtimeExtraParams;
+    record?: boolean;
   }): Promise<RealtimeMediaStream>;
 }
