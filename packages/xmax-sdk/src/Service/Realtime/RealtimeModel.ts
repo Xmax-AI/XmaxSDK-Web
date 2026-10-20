@@ -79,11 +79,11 @@ export function modelDisplayName(model: RealtimeModelName): string {
 }
 
 /**
- * 模型专用的会话 API Base URL；未知模型沿用 x2.1.1-preview-cn 的地址。
+ * 模型专用的会话 API Base URL；未知模型使用测试环境地址。
  * 已知模型返回 undefined 时使用客户端环境的默认地址。
  */
 export function modelBaseURL(model: RealtimeModelName): string | undefined {
-  return MODEL_BASE_URLS[modelDefaults(model)];
+  return isKnownModel(model) ? MODEL_BASE_URLS[model] : "https://dev.22duck.cn/open/api/v1";
 }
 
 /**

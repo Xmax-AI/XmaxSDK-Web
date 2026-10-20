@@ -11,11 +11,10 @@ import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguratio
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 
 describe("custom realtime models", () => {
-  it.each(["future-model", "toString", "__proto__", "constructor"])("uses preview defaults without replacing the identifier %s", (model) => {
+  it.each(["future-model", "toString", "__proto__", "constructor"])("uses the test endpoint and preview media defaults without replacing the identifier %s", (model) => {
     const preview = RealtimeModel.x2_1_1_preview_cn;
     expect(modelDisplayName(model)).toBe(model);
-    expect(modelBaseURL(model)).toBe(modelBaseURL(preview));
-    expect(modelBaseURL(model)).toBe("https://cloud.xmax.22duck.cn/open/api/v1");
+    expect(modelBaseURL(model)).toBe("https://dev.22duck.cn/open/api/v1");
     expect(resolutionBuckets(model)).toEqual(resolutionBuckets(preview));
     expect(defaultCameraVideoFormat(model)).toEqual(defaultCameraVideoFormat(preview));
     expect(defaultFrameRate(model)).toBe(defaultFrameRate(preview));
@@ -33,6 +32,10 @@ describe("custom realtime models", () => {
     }
     expect(() => media.resolveModelInputSize({ width: 640, height: 360 })).toThrow("does not support input resolution");
     expect(new MediaService(model).model).toBe(model);
+  });
+
+  it.each(["", "   "])("rejects an empty model name instead of using the test endpoint: %j", model => {
+    expect(() => modelBaseURL(model)).toThrow("non-empty string");
   });
 
   it("exposes only CN and US models", () => {
