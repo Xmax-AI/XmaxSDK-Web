@@ -184,6 +184,7 @@ export class RoomController implements RoomControlling {
     targetSize?: RoomEventTargetSize;
     mirror?: boolean;
     faceRestoration?: boolean;
+    paddingContain?: boolean;
     extraParams?: RealtimeExtraParams;
   }): Promise<void> {
     return this.send(
@@ -195,6 +196,7 @@ export class RoomController implements RoomControlling {
         targetSize: options.targetSize,
         mirror: options.mirror ?? false,
         faceRestoration: options.faceRestoration ?? false,
+        paddingContain: options.paddingContain,
         extraParams: options.extraParams,
         ...this.downlinkBitrates(options.targetSize ?? options.videoFormat),
       }),
@@ -218,6 +220,7 @@ export class RoomController implements RoomControlling {
     context: RealtimeContext;
     targetSize?: RoomEventTargetSize;
     faceRestoration?: boolean;
+    paddingContain?: boolean;
     extraParams?: RealtimeExtraParams;
   }): Promise<void> {
     return this.send(
@@ -228,6 +231,7 @@ export class RoomController implements RoomControlling {
         context: options.context,
         targetSize: options.targetSize,
         faceRestoration: options.faceRestoration ?? false,
+        paddingContain: options.paddingContain,
         extraParams: options.extraParams,
       }),
     );

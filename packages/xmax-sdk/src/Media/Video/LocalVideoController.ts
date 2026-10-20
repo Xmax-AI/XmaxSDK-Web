@@ -1,8 +1,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import type { MediaService } from "../../Service/Media/MediaService";
+import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
-import { resolveLocalMediaVideoFormat } from "../LocalMediaVideoFormat";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
@@ -74,14 +73,14 @@ export class LocalVideoController {
     videoFormat: RealtimeVideoFormat;
     loop?: boolean;
     includeAudio?: boolean;
-  }, mediaService: MediaService, signal: AbortSignal): Promise<RealtimeMediaStream> {
+  }, mediaService: MediaServicing, signal: AbortSignal): Promise<RealtimeMediaStream> {
     if (this.source) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local video before creating another one");
     }
     if (!(options.file instanceof Blob) || options.file.size === 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video requires a non-empty File or Blob");
     }
-    const format = resolveLocalMediaVideoFormat(options.videoFormat, mediaService);
+    options.videoFormat.validate();
     if (signal.aborted) {
       throw this.cancelled();
     }
@@ -95,8 +94,6 @@ export class LocalVideoController {
     if (!context || typeof canvas.captureStream !== "function") {
       throw new XmaxError(XmaxErrorCode.mediaError, "Canvas video capture is unavailable");
     }
-    canvas.width = format.width;
-    canvas.height = format.height;
     const source: LocalVideoSource = {
       video, canvas, context, url: URL.createObjectURL(options.file),
       abort: new AbortController(), targets: new Set(),
@@ -130,6 +127,10 @@ export class LocalVideoController {
       if (!video.videoWidth || !video.videoHeight || !Number.isFinite(video.duration) || video.duration <= 0) {
         throw new XmaxError(XmaxErrorCode.mediaError, "The file has no playable finite video stream");
       }
+      const size = mediaService.resolveMediaSize({ width: video.videoWidth, height: video.videoHeight }, "video");
+      const format = options.videoFormat.resized(size.width, size.height);
+      canvas.width = size.width;
+      canvas.height = size.height;
       await this.rewind(source, signal);
 
       this.draw(source);
@@ -303,19 +304,16 @@ export class LocalVideoController {
   }
 
   /**
-   * 等比缩放并居中补黑边，保留完整画面，不按设备方向转置文件尺寸。
+   * 将完整画面缩放到已解析的媒体尺寸，不补模型画布、不按设备方向转置文件尺寸。
    */
   private draw(source: LocalVideoSource): void {
     const { video, canvas, context } = source;
     if (video.readyState < 2) {
       return;
     }
-    const scale = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
-    const width = video.videoWidth * scale;
-    const height = video.videoHeight * scale;
     context.fillStyle = "black";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
   }
 
   /**

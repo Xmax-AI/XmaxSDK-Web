@@ -1,5 +1,5 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { MediaService } from "../../Service/Media/MediaService";
+import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
@@ -18,7 +18,7 @@ export class ExternalVideoController {
     return this.track;
   }
 
-  create(options: { videoTrack: MediaStreamTrack; videoFormat: RealtimeVideoFormat }, mediaService: MediaService): RealtimeMediaStream {
+  create(options: { videoTrack: MediaStreamTrack; videoFormat: RealtimeVideoFormat }, mediaService: MediaServicing): RealtimeMediaStream {
     if (this.track) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current external video first");
     const { videoTrack, videoFormat } = options;
     if (!videoTrack || videoTrack.kind !== "video" || videoTrack.readyState !== "live" || typeof videoTrack.clone !== "function") {

@@ -1,11 +1,10 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { MediaService } from "../../Service/Media/MediaService";
+import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
 import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
-import { resolveLocalMediaVideoFormat } from "../LocalMediaVideoFormat";
 
 /**
  * 图片解码、静止画面输出及预览资源。
@@ -56,14 +55,14 @@ export class LocalImageController {
   async create(options: {
     file: Blob;
     videoFormat: RealtimeVideoFormat;
-  }, mediaService: MediaService, signal: AbortSignal): Promise<RealtimeMediaStream> {
+  }, mediaService: MediaServicing, signal: AbortSignal): Promise<RealtimeMediaStream> {
     if (this.source) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local image before creating another one");
     }
     if (!(options.file instanceof Blob) || options.file.size === 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local image requires a non-empty File or Blob");
     }
-    const format = resolveLocalMediaVideoFormat(options.videoFormat, mediaService);
+    options.videoFormat.validate();
     if (signal.aborted) {
       throw this.cancelled();
     }
@@ -77,8 +76,6 @@ export class LocalImageController {
     if (!context || typeof canvas.captureStream !== "function") {
       throw new XmaxError(XmaxErrorCode.mediaError, "Canvas video capture is unavailable");
     }
-    canvas.width = format.width;
-    canvas.height = format.height;
     const source: LocalImageSource = {
       image, canvas, url: URL.createObjectURL(options.file),
       abort: new AbortController(), targets: new Set(),
@@ -94,13 +91,15 @@ export class LocalImageController {
         throw new XmaxError(XmaxErrorCode.mediaError, "The image has no valid dimensions");
       }
 
+      const size = mediaService.resolveMediaSize({ width: image.naturalWidth, height: image.naturalHeight }, "image");
+      const format = options.videoFormat.resized(size.width, size.height);
+      canvas.width = size.width;
+      canvas.height = size.height;
+
       // 仅在解码完成时绘制一次图片；后续发送同一快照，动图也不会继续播放。
-      const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-      const width = image.naturalWidth * scale;
-      const height = image.naturalHeight * scale;
       context.fillStyle = "black";
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
       source.stream = canvas.captureStream(format.fps);
       const nativeTrack = source.stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
       if (!nativeTrack || nativeTrack.readyState !== "live") {

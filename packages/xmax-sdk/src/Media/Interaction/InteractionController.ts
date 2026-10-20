@@ -6,13 +6,17 @@ import type { InteractionFrame } from "./InteractionFrame";
 import type { InteractionControlling, InteractionListener } from "./InteractionControlling";
 
 /**
- * 将视口采样转换为模型坐标，串行提交且只保留最新待发送帧。
+ * 将视口采样转换为媒体坐标，串行提交且只保留最新待发送帧。
  */
 export class InteractionController implements InteractionControlling {
   /**
    * 活动任务与待发送采样；上下文对象身份隔离任务切换。
    */
-  private active?: { taskID: string; videoFormat: RealtimeVideoFormat };
+  private active?: {
+    taskID: string;
+    videoFormat: RealtimeVideoFormat;
+    coordinateSpace: "normalized" | "pixels";
+  };
   private pending?: { context: NonNullable<InteractionController["active"]>; points: RealtimePoint[] };
   private draining?: NonNullable<InteractionController["active"]>;
 
@@ -24,10 +28,14 @@ export class InteractionController implements InteractionControlling {
   /**
    * 激活或更新任务输入格式，清除旧采样。
    */
-  startInteraction(taskID: string, videoFormat: RealtimeVideoFormat): void {
+  startInteraction(
+    taskID: string,
+    videoFormat: RealtimeVideoFormat,
+    coordinateSpace: "normalized" | "pixels" = "normalized",
+  ): void {
     this.stopInteraction();
     if (taskID) {
-      this.active = { taskID, videoFormat };
+      this.active = { taskID, videoFormat, coordinateSpace };
     }
   }
 
@@ -50,7 +58,7 @@ export class InteractionController implements InteractionControlling {
     }
 
     const points = frame.points.flatMap(point => {
-      const mapped = InteractionCoordinateMapper.map(point, frame, context.videoFormat);
+      const mapped = InteractionCoordinateMapper.map(point, frame, context.videoFormat, context.coordinateSpace);
       return mapped ? [mapped] : [];
     });
     if (!points.length) {

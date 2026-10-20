@@ -156,10 +156,10 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
-   * 通过 Canvas 等比缩放补黑边，文件音频独立上行，本地预览始终静音。
+   * Canvas 保留完整内容并按媒体尺寸规则缩放，文件音频独立上行，本地预览始终静音。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
    * @param options.file 包含可解码视频的本地 File 或 Blob。
-   * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
+   * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从文件读取。
    * @param options.loop 是否循环播放文件音视频，默认 true。
    * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
    * @throws 提供方不支持、文件/格式无效、浏览器无法解码或播放受限时抛错。
@@ -173,10 +173,10 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
-   * 等比缩放并居中补黑边，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
+   * 保留完整内容并按媒体尺寸规则缩放，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
    * 创建后可直接预览，仍需调用 startGeneration 开始生成；disconnect 保留图片源，close 释放全部资源。
    * @param options.file 包含浏览器可解码图片的本地 File 或 Blob；动图仅取解码时的静止快照。
-   * @param options.videoFormat 期望的视频规格；尺寸自动匹配最接近宽高比的模型档位，等距时优先横屏。
+   * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从图片读取。
    * @throws 文件或格式无效、浏览器无法解码、Canvas 采集不可用或已有活动源时抛错。
    */
   createLocalImageStream(options: {

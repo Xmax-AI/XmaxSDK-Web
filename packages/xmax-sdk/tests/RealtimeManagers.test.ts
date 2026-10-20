@@ -99,6 +99,30 @@ describe("XmaxRealtimeGenerationManager", () => {
     expect(stream.stopGeneration).toHaveBeenCalledOnce();
   });
 
+  it("separates the generation canvas from the media used for interaction", async () => {
+    const { methods: stream, controller } = makeStream();
+    const interaction = new InteractionController(async () => {});
+    const render = new RenderController();
+    const startInteraction = vi.spyOn(interaction, "startInteraction");
+    const setInteractionEnabled = vi.spyOn(render, "setInteractionEnabled");
+    const manager = new XmaxRealtimeGenerationManager(controller, interaction, render, () => "media-task");
+    const generationVideoFormat = videoFormat.resized(1920, 1024);
+    const formats = { videoFormat, generationVideoFormat, paddingContain: true, targetSize: { width: 1024, height: 576 } };
+    const taskID = await manager.start({ ...operation(), ...formats, context, waitUntilRemoteReady: async () => {} });
+    expect(stream.beginGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      videoFormat: generationVideoFormat, paddingContain: true, targetSize: formats.targetSize,
+    }));
+    expect(startInteraction).toHaveBeenLastCalledWith(taskID, videoFormat);
+    expect(setInteractionEnabled).toHaveBeenLastCalledWith(true, videoFormat);
+
+    await manager.update(taskID, { ...formats, context });
+    expect(stream.updateGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      videoFormat: generationVideoFormat, paddingContain: true, targetSize: formats.targetSize,
+    }));
+    expect(startInteraction).toHaveBeenLastCalledWith(taskID, videoFormat);
+    await manager.reset();
+  });
+
   it("waits for confirmation and remote readiness before activating audio", async () => {
     const { manager, stream, options } = setup();
     const confirmed = deferred<void>(), ready = deferred<void>();

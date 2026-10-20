@@ -1,6 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import type { MediaService } from "../../Service/Media/MediaService";
+import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import { RealtimeVideoSampleMethod, type RealtimeReferenceVideo } from "../../Service/Realtime/RealtimeReferenceVideo";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
@@ -34,7 +34,7 @@ export class NetworkVideoController {
     videoFormat: RealtimeVideoFormat;
     sampleMethod?: RealtimeVideoSampleMethod;
     onFinish?: () => void;
-  }, mediaService: MediaService): RealtimeMediaStream {
+  }, mediaService: MediaServicing): RealtimeMediaStream {
     let url: URL;
     try {
       url = new URL(options.url);

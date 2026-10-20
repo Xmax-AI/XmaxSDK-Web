@@ -401,6 +401,7 @@ export class StreamController implements StreamControlling {
         targetSize: options.targetSize,
         mirror: options.mirror ?? false,
         faceRestoration: options.faceRestoration ?? false,
+        paddingContain: options.paddingContain,
         extraParams: options.extraParams,
       });
       const state = this.state;
@@ -476,6 +477,7 @@ export class StreamController implements StreamControlling {
         context: options.context,
         targetSize: options.targetSize,
         faceRestoration: options.faceRestoration ?? false,
+        paddingContain: options.paddingContain,
         extraParams: options.extraParams,
       });
     } catch (error) {

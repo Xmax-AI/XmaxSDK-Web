@@ -10,10 +10,10 @@ import {
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "./MediaServicing";
 import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
+import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 
 /**
- * 提供模型输入尺寸和平台媒体能力相关的业务规则。
- * 模型输入尺寸与远端插帧能力。
+ * 统一计算本地媒体、生成画布及回传尺寸，并查询平台媒体能力。
  */
 export class MediaService implements MediaServicing {
   /**
@@ -28,6 +28,68 @@ export class MediaService implements MediaServicing {
    */
   constructor(model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn) {
     this.model = model;
+  }
+
+  /**
+   * 解析固定媒体基准：保留完整内容、不放大、限制面积并按 4 对齐。
+   * 摄像头请求尺寸须先匹配模型桶；文件媒体不受模型桶比例限制。
+   */
+  resolveMediaSize(sourceMediaSize: ModelSize, source: "camera" | "image" | "video"): ModelSize {
+    this.validateIntegralSize(sourceMediaSize);
+    const buckets = resolutionBuckets(this.model);
+    if (source === "camera" && buckets.length > 0) {
+      this.resolveModelInputSize(sourceMediaSize);
+    }
+
+    const pixels = sourceMediaSize.width * sourceMediaSize.height;
+    const scale = Math.min(1, Math.sqrt(maximumInputPixels(this.model) / pixels));
+    return alignedVideoSize(sourceMediaSize, scale, 4);
+  }
+
+  /**
+   * 选择比例最接近的模型生成画布；无固定桶时按模型像素预算和对齐规则计算。
+   */
+  resolveGenerationSize(resolvedMediaSize: ModelSize): ModelSize {
+    this.validateIntegralSize(resolvedMediaSize);
+    const buckets = resolutionBuckets(this.model);
+    if (buckets.length === 0) {
+      return this.resolveModelInputSize(resolvedMediaSize);
+    }
+
+    const aspect = resolvedMediaSize.width / resolvedMediaSize.height;
+    let best = buckets[0]!;
+    let distance = Math.abs(Math.log(aspect / (best.width / best.height)));
+    for (const bucket of buckets.slice(1)) {
+      const candidate = Math.abs(Math.log(aspect / (bucket.width / bucket.height)));
+      if (candidate < distance) {
+        best = bucket;
+        distance = candidate;
+      }
+    }
+    return { width: best.width, height: best.height };
+  }
+
+  /**
+   * 综合下行宽高上限计算回传尺寸，不放大、优先保持比例并按 4 对齐。
+   * 插帧在 WebGPU 内部补边，不因开启插帧额外缩小回传画面。
+   */
+  resolveTargetSize(resolvedMediaSize: ModelSize, maximumSize: ModelSize): ModelSize {
+    this.validateIntegralSize(resolvedMediaSize);
+    if (![maximumSize.width, maximumSize.height].every(value => Number.isFinite(value) && value > 0)) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Target bounds must be positive and finite");
+    }
+    const scale = Math.min(1, maximumSize.width / resolvedMediaSize.width, maximumSize.height / resolvedMediaSize.height);
+    return alignedVideoSize(resolvedMediaSize, scale, 4);
+  }
+
+  /**
+   * 拒绝无效或不能安全参与面积计算的媒体像素尺寸。
+   */
+  private validateIntegralSize(size: ModelSize): void {
+    if (![size.width, size.height].every(value => Number.isSafeInteger(value) && value > 0) ||
+      !Number.isSafeInteger(size.width * size.height)) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Media dimensions must be positive safe integers");
+    }
   }
 
   /**

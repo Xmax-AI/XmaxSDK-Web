@@ -57,6 +57,7 @@ export interface RoomControlling {
     targetSize?: RoomEventTargetSize;
     mirror?: boolean;
     faceRestoration?: boolean;
+    paddingContain?: boolean;
     extraParams?: RealtimeExtraParams;
   }): Promise<void>;
 
@@ -77,6 +78,7 @@ export interface RoomControlling {
     context: RealtimeContext;
     targetSize?: RoomEventTargetSize;
     faceRestoration?: boolean;
+    paddingContain?: boolean;
     extraParams?: RealtimeExtraParams;
   }): Promise<void>;
 

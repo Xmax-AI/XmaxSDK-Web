@@ -33,7 +33,7 @@ import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { StreamController } from "../../Stream/StreamController";
 import { QualityController } from "../../Stream/Quality/QualityController";
-import { qualityVideoFormat, qualityVideoSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
+import { qualityVideoFormat, qualityVideoMaximumSize, qualityVideoSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
 import { QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
 import { QualityHistory } from "../../Stream/Quality/QualityHistory";
 import type { StreamControlling } from "../../Stream/StreamControlling";
@@ -89,9 +89,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly recordingController = new RecordingController();
 
   /**
-   * 本地流创建时的生成格式；上行编码调整不改变模型输入配置与远端插帧尺寸。
+   * 本地流创建时解析的固定媒体基准；不被上行调档、生成画布或回传尺寸覆盖。
    */
-  private generationVideoFormat?: RealtimeVideoFormat;
+  private resolvedMediaVideoFormat?: RealtimeVideoFormat;
 
   /**
    * 插帧能力、用户配置与渲染版本
@@ -296,7 +296,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async setFrameInterpolationEnabled(enabled: boolean): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
-      const format = this.downlinkQualityState?.size ?? this.generationVideoFormat ?? this.currentLocalTrack?.videoFormat;
+      const format = this.downlinkQualityState?.size ?? this.resolvedMediaVideoFormat ?? this.currentLocalTrack?.videoFormat;
       const size = format && enabled ? this.mediaService.resolveFrameInterpolationSize(format) : undefined;
       if (enabled && !await this.checkInterpolationSupport(size, token)) {
         token.ensureCurrent();
@@ -365,7 +365,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     ensureActive();
 
     // 上行调档不改变生成和下行尺寸，也不覆盖原始 L1 基准。
-    this.generationVideoFormat ??= state.baseline;
+    this.resolvedMediaVideoFormat ??= state.baseline;
     track.updateVideoFormat(format);
     state.level = level;
     this.qualityHistory?.write("uplink", level);
@@ -401,7 +401,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     };
     ensureActive();
     if (!state) return;
-    const size = qualityVideoSize(state.baseline, level);
+    const size = this.resolveTargetSize(state.baseline, level);
     await this.streamController.updateDownlinkVideoResolution(state.taskID, size, ensureActive);
     ensureActive();
     state.level = level;
@@ -692,7 +692,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
 
         token.ensureCurrent();
-        this.generationVideoFormat = stream.videoTrack?.videoFormat;
+        this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
         completeCamera();
 
         // 收到有效帧且预览视图绑定后进入 ready。
@@ -722,7 +722,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       await this.mediaController.prepareSource(() => token.ensureCurrent());
       token.ensureCurrent();
-      this.generationVideoFormat = stream.videoTrack?.videoFormat;
+      this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
       return stream;
     });
@@ -748,7 +748,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       token.ensureCurrent();
       await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-      this.generationVideoFormat = stream.videoTrack?.videoFormat;
+      this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
       return stream;
     });
@@ -769,7 +769,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       token.ensureCurrent();
       await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-      this.generationVideoFormat = stream.videoTrack?.videoFormat;
+      this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
       return stream;
     });
@@ -793,7 +793,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-      this.generationVideoFormat = stream.videoTrack?.videoFormat;
+      this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
 
       return stream;
@@ -838,7 +838,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       await this.streamController.updateUplinkVideoFormat(videoFormat);
       token.ensureCurrent();
 
-      this.generationVideoFormat ??= previousFormat;
+      this.resolvedMediaVideoFormat ??= previousFormat;
       track.updateVideoFormat(videoFormat);
       this.qualityStates.set(track, { baseline: videoFormat, level: 1 });
       this.qualityHistory?.write("uplink", 1);
@@ -873,7 +873,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
     const format = await this.streamController.updateUplinkFrameRate(fps);
     token.ensureCurrent();
-    this.generationVideoFormat ??= previous;
+    this.resolvedMediaVideoFormat ??= previous;
     track.updateVideoFormat(format);
   }
 
@@ -937,7 +937,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.disposePermissionWatch();
         await this.mediaController.stopLocalCameraStream();
         token.ensureCurrent();
-        this.generationVideoFormat = undefined;
+        this.resolvedMediaVideoFormat = undefined;
         await this.coordinator.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
           token,
@@ -1043,7 +1043,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             "The local stream must be created and started by this realtime manager",
           );
         }
-        const videoFormat = this.generationVideoFormat ?? localTrack.videoFormat;
+        const videoFormat = this.resolvedMediaVideoFormat ?? localTrack.videoFormat;
         if (!videoFormat) {
           throw new XmaxError(
             XmaxErrorCode.invalidConfiguration,
@@ -1057,8 +1057,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (hasGeneration && options.restart !== true) {
           await this.generationManager.update(currentState.taskID, {
             videoFormat,
+            ...this.resolveGenerationFormat(videoFormat),
             context: options.context,
-            targetSize: this.downlinkQualityController ? this.downlinkQualityState?.size : undefined,
+            targetSize: this.mediaController.usesResolvedMediaSize || this.downlinkQualityController
+              ? this.downlinkQualityState?.size
+              : undefined,
             faceRestoration: options.faceRestoration ?? false,
             extraParams,
           });
@@ -1120,10 +1123,35 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /** TRTC 临时只按档位调整帧率；启动时也保留原始分辨率。 */
   private uplinkQualityFormat(baseline: RealtimeVideoFormat, level: number): RealtimeVideoFormat {
-    const format = qualityVideoFormat(baseline, level);
+    const format = qualityVideoFormat(baseline, level, this.mediaController.usesResolvedMediaSize);
     return this.options.provider === RtcProvider.trtc
       ? format.resized(baseline.width, baseline.height)
       : format;
+  }
+
+  /**
+   * 文件媒体单独选择生成画布；摄像头及尚未迁移的来源沿用媒体规格。
+   */
+  private resolveGenerationFormat(videoFormat: RealtimeVideoFormat): {
+    generationVideoFormat: RealtimeVideoFormat;
+    paddingContain: boolean;
+  } {
+    const paddingContain = this.mediaController.usesContainPadding;
+    const size = paddingContain ? this.mediaService.resolveGenerationSize(videoFormat) : undefined;
+    return {
+      generationVideoFormat: size ? videoFormat.resized(size.width, size.height) : videoFormat,
+      paddingContain,
+    };
+  }
+
+  /**
+   * 从固定媒体基准计算下行尺寸；网络视频和外部轨道保留原有偶数取整规则。
+   */
+  private resolveTargetSize(videoFormat: RealtimeVideoFormat, level: number): ModelSize {
+    if (!this.mediaController.usesResolvedMediaSize) {
+      return qualityVideoSize(videoFormat, level, false);
+    }
+    return this.mediaService.resolveTargetSize(videoFormat, qualityVideoMaximumSize(videoFormat, level));
   }
 
   /** 仅为尚无档位记录的本地上行选择初始档位；不应用配置或覆盖重连状态。 */
@@ -1195,11 +1223,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         : undefined;
       const remote = await this.connectionManager.connect({
         localTrack,
-        remoteVideoFormat: this.generationVideoFormat ?? localTrack.videoFormat,
+        remoteVideoFormat: this.resolvedMediaVideoFormat ?? localTrack.videoFormat,
         localVideoFormat: initialFormat,
         onVideoEncoderConfigured: () => {
           if (!initialQuality || !initialFormat) return;
-          this.generationVideoFormat ??= initialQuality.baseline;
+          this.resolvedMediaVideoFormat ??= initialQuality.baseline;
           localTrack.updateVideoFormat(initialFormat);
           this.qualityStates.set(localTrack, initialQuality);
           this.qualityHistory?.write("uplink", initialQuality.level);
@@ -1233,7 +1261,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。
    *
    * @param token 当前生成操作的取消与状态控制令牌。
-   * @param videoFormat 模型生成使用的视频规格。
+   * @param videoFormat 固定本地媒体基准，用于派生生成画布、回传尺寸和交互坐标。
    * @param context 本次已解析的生成条件。
    * @param restart 是否替换当前生成任务并重新发送 start。
    * @param faceRestoration 是否回贴原始人脸。
@@ -1267,7 +1295,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
 
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
-    const targetSize = this.downlinkQualityController ? qualityVideoSize(videoFormat, initialLevel) : undefined;
+    const targetSize = this.downlinkQualityController || this.mediaController.usesResolvedMediaSize
+      ? this.resolveTargetSize(videoFormat, initialLevel)
+      : undefined;
     await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
@@ -1282,6 +1312,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const taskID = await this.generationManager.start({
       videoFormat,
+      ...this.resolveGenerationFormat(videoFormat),
       signal: token.signal,
       ensureCurrent: () => token.ensureCurrent(),
       waitUntilRemoteReady: () => this.connectionManager.waitUntilRemoteTrackReady(
@@ -1394,7 +1425,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await recordingFinished;
 
     if (scope === RealtimeTerminationScope.all) {
-      this.generationVideoFormat = undefined;
+      this.resolvedMediaVideoFormat = undefined;
       this.disposePermissionWatch();
       try {
         await this.mediaController.stopLocalStream();

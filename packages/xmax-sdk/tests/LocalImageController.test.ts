@@ -53,8 +53,8 @@ afterEach(() => {
 });
 
 describe("LocalImageController", () => {
-  it.each([[1280, 720, 1920, 1024], [720, 1280, 1024, 1920], [600, 600, 1920, 1024]])(
-    "fits %s×%s to %s×%s, freezes the image and releases preview resources",
+  it.each([[1280, 720, 1280, 720], [720, 1280, 720, 1280], [600, 600, 600, 600], [3840, 2160, 1920, 1080]])(
+    "resolves %s×%s to %s×%s, freezes the image and releases preview resources",
     async (width, height, targetWidth, targetHeight) => {
       const s = setup();
       s.image.naturalWidth = width;
@@ -63,9 +63,7 @@ describe("LocalImageController", () => {
       const local = await s.create({ videoFormat: format });
       expect(local.videoTrack?.videoFormat).toEqual(format.resized(targetWidth, targetHeight));
       expect(s.canvas.captureStream).toHaveBeenCalledWith(24);
-      const scale = Math.min(targetWidth / width, targetHeight / height);
-      expect(s.context.drawImage).toHaveBeenNthCalledWith(1, s.image,
-        (targetWidth - width * scale) / 2, (targetHeight - height * scale) / 2, width * scale, height * scale);
+      expect(s.context.drawImage).toHaveBeenNthCalledWith(1, s.image, 0, 0, targetWidth, targetHeight);
       expect(s.context.fillStyle).toBe("black");
       expect(local.videoTrack?.mediaStreamTrack).toBe(s.native);
       const view = { isMirrored: true, setMediaStream: vi.fn() };
@@ -94,17 +92,14 @@ describe("LocalImageController", () => {
     },
   );
 
-  it("preserves flexible model sizing and does not change camera sizing rules", async () => {
+  it("reads the actual image dimensions instead of requested dimensions and keeps camera validation", async () => {
     const s = setup();
     const buckets = ModelDefinition.resolutionBuckets;
     vi.spyOn(ModelDefinition, "resolutionBuckets").mockImplementation(model => model === "test-flexible" ? [] : buckets(model));
     const media = new MediaService("test-flexible");
     const local = await s.controller.create(options, media, s.signal.signal);
-    expect(local.videoTrack?.videoFormat).toEqual(options.videoFormat.resized(
-      media.resolveModelInputSize(options.videoFormat).width,
-      media.resolveModelInputSize(options.videoFormat).height,
-    ));
-    expect(() => new MediaService().resolveModelInputSize(options.videoFormat)).toThrow("does not support input resolution");
+    expect(local.videoTrack?.videoFormat).toEqual(options.videoFormat.resized(640, 360));
+    expect(() => new MediaService().resolveMediaSize(options.videoFormat, "camera")).toThrow("does not support input resolution");
   });
 
   it("refreshes the snapshot without requestFrame support", async () => {

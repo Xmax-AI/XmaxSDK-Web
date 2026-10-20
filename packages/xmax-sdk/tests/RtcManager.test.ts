@@ -596,15 +596,20 @@ describe("TrtcRtcManager", () => {
   it("applies all adaptive tiers through profile updates without restarting capture or publication", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
+    const tiers = Object.values(QUALITY_TIERS).map(tier => ({
+      width: Math.floor(1024 * tier.scale / 2) * 2,
+      height: Math.floor(1920 * tier.scale / 2) * 2,
+      frameRate: tier.frameRate,
+    }));
     await manager.startCameraCapture({
-      ...QUALITY_TIERS.L1,
+      ...tiers[0]!,
       position: CameraPosition.front,
     });
     await manager.joinRoom(joinConfig);
     await manager.publishLocalVideo();
     engine.updateLocalVideoCalls.length = 0;
 
-    for (const tier of Object.values(QUALITY_TIERS)) {
+    for (const tier of tiers) {
       await manager.configureVideoEncoding({
         ...tier,
         minimumBitrate: 1000,

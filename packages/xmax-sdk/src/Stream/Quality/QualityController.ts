@@ -8,9 +8,10 @@ export interface QualityChange {
   /** 切档前后的档位编号，范围 1～5；不能仅靠帧率区分档位。 */
   from: number;
   to: number;
-  /** 基准竖屏尺寸，实际发送尺寸由调用方按原始宽高比和方向换算。 */
-  width: number;
-  height: number;
+  /**
+   * 相对固定媒体基准的缩放比例，实际尺寸由调用方解析。
+   */
+  scale: number;
   frameRate: number;
   reason: "poorNetwork" | "probeUpgrade" | "failedProbe";
 }

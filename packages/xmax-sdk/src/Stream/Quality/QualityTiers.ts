@@ -6,11 +6,14 @@ export const INITIAL_QUALITY_LEVEL = 2;
  */
 export const MINIMUM_QUALITY_SHORT_SIDE = 240;
 
-/** 上下行共用的五档基准规格；网络质量等级不与档位直接映射。 */
+/**
+ * 上下行共用的五档缩放比例与上行帧率上限；具体尺寸由媒体基准计算。
+ * 网络质量等级不与档位直接映射。
+ */
 export const QUALITY_TIERS = {
-  L1: { scale: 1, width: 1024, height: 1920, frameRate: 30 },
-  L2: { scale: 0.8, width: 818, height: 1536, frameRate: 24 },
-  L3: { scale: 0.65, width: 664, height: 1248, frameRate: 24 },
-  L4: { scale: 0.5, width: 512, height: 960, frameRate: 20 },
-  L5: { scale: 0.4, width: 408, height: 768, frameRate: 16 },
+  L1: { scale: 1, frameRate: 30 },
+  L2: { scale: 0.8, frameRate: 24 },
+  L3: { scale: 0.65, frameRate: 24 },
+  L4: { scale: 0.5, frameRate: 20 },
+  L5: { scale: 0.4, frameRate: 16 },
 } as const;

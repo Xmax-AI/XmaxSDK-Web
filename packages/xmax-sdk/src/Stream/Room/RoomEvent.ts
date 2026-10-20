@@ -43,6 +43,11 @@ export interface RoomEventGenerationOptions {
   /** 是否回贴原始人脸，默认 false。 */
   faceRestoration?: boolean;
 
+  /**
+   * 是否由服务端保留媒体比例并填充生成画布。
+   */
+  paddingContain?: boolean;
+
   /** 合并到本次生成信令的 params，不缓存。 */
   extraParams?: RealtimeExtraParams;
 }
@@ -79,6 +84,7 @@ export class RoomEvent {
     maximumBitrate: number;
     mirror?: boolean;
     faceRestoration?: boolean;
+    paddingContain?: boolean;
     extraParams?: RealtimeExtraParams;
   }): string {
     return RoomEvent.encode({
@@ -199,6 +205,7 @@ export class RoomEvent {
       model: "default",
       face_replace: options.faceRestoration ?? false,
       size: [options.videoFormat.width, options.videoFormat.height],
+      ...(options.paddingContain && { padding: "contain" }),
       target_size: options.targetSize
         ? [
             Math.round(options.targetSize.width),

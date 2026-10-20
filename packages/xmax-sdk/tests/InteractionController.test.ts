@@ -10,30 +10,35 @@ const frame: InteractionFrame = { viewportSize: { width: 960, height: 512 }, poi
 afterEach(() => vi.restoreAllMocks());
 
 describe("InteractionCoordinateMapper", () => {
-  it("maps CSS pixels to model pixels and clamps the far edge", () => {
-    expect(InteractionCoordinateMapper.map(frame.points[0]!, frame, format)).toEqual({ x: 960, y: 512 });
-    expect(InteractionCoordinateMapper.map({ x: 960, y: 512 }, frame, format)).toEqual({ x: 1919, y: 1023 });
+  it("normalizes CSS pixels and clamps the far edge", () => {
+    expect(InteractionCoordinateMapper.map(frame.points[0]!, frame, format)).toEqual({ x: 0.5, y: 0.5 });
+    expect(InteractionCoordinateMapper.map({ x: 960, y: 512 }, frame, format)).toEqual({ x: 1, y: 1 });
     expect(InteractionCoordinateMapper.map({ x: -5, y: -5 }, frame, format)).toEqual({ x: 0, y: 0 });
   });
 
   it("handles letterboxing, cover cropping and mirrored display", () => {
     const square = { ...frame, viewportSize: { width: 100, height: 100 } };
     const video = { width: 200, height: 100 };
-    expect(InteractionCoordinateMapper.map({ x: 0, y: 50 }, square, video)).toEqual({ x: 50, y: 50 });
-    expect(InteractionCoordinateMapper.map({ x: 0, y: 50 }, { ...square, mirrored: true }, video)).toEqual({ x: 150, y: 50 });
+    expect(InteractionCoordinateMapper.map({ x: 0, y: 50 }, square, video)).toEqual({ x: 0.25, y: 0.5 });
+    expect(InteractionCoordinateMapper.map({ x: 0, y: 50 }, { ...square, mirrored: true }, video)).toEqual({ x: 0.75, y: 0.5 });
     const fit = { ...square, contentMode: VideoContentMode.fit };
     expect(InteractionCoordinateMapper.map({ x: 50, y: 10 }, fit, video)).toBeUndefined();
-    expect(InteractionCoordinateMapper.map({ x: 50, y: 25 }, fit, video)).toEqual({ x: 100, y: 0 });
+    expect(InteractionCoordinateMapper.map({ x: 50, y: 25 }, fit, video)).toEqual({ x: 0.5, y: 0 });
   });
 
   it("maps portrait video and rejects non-finite or empty dimensions", () => {
     const portrait = { width: 1024, height: 1920 };
-    expect(InteractionCoordinateMapper.map({ x: 480, y: 256 }, frame, portrait)).toEqual({ x: 512, y: 960 });
+    expect(InteractionCoordinateMapper.map({ x: 480, y: 256 }, frame, portrait)).toEqual({ x: 0.5, y: 0.5 });
     for (const value of [0, -1, NaN, Infinity]) {
       expect(InteractionCoordinateMapper.map({ x: 0, y: 0 }, frame, { width: value, height: 100 })).toBeUndefined();
       expect(InteractionCoordinateMapper.map({ x: 0, y: 0 }, { ...frame, viewportSize: { width: 100, height: value } }, format)).toBeUndefined();
     }
     expect(InteractionCoordinateMapper.map({ x: NaN, y: 0 }, frame, format)).toBeUndefined();
+  });
+
+  it("retains pixel coordinates when explicitly requested", () => {
+    expect(InteractionCoordinateMapper.map(frame.points[0]!, frame, format, "pixels")).toEqual({ x: 960, y: 512 });
+    expect(InteractionCoordinateMapper.map({ x: 960, y: 512 }, frame, format, "pixels")).toEqual({ x: 1919, y: 1023 });
   });
 });
 
@@ -47,7 +52,7 @@ describe("InteractionController", () => {
     controller.submitInteraction({ ...frame, points: [] });
     expect(send).not.toHaveBeenCalled();
     controller.submitInteraction({ ...frame, points: [...frame.points, { x: 240, y: 128 }] });
-    expect(send).toHaveBeenCalledWith("task", [{ x: 960, y: 512 }, { x: 480, y: 256 }]);
+    expect(send).toHaveBeenCalledWith("task", [{ x: 0.5, y: 0.5 }, { x: 0.25, y: 0.25 }]);
     await Promise.resolve();
     controller.stopInteraction();
     controller.submitInteraction(frame);
@@ -66,7 +71,7 @@ describe("InteractionController", () => {
     expect(send).toHaveBeenCalledTimes(1);
     finish();
     await Promise.resolve();
-    expect(send).toHaveBeenLastCalledWith("task", [{ x: 200, y: 2 }]);
+    expect(send).toHaveBeenLastCalledWith("task", [{ x: 100 / 960, y: 1 / 512 }]);
     expect(send).toHaveBeenCalledTimes(2);
     controller.stopInteraction();
     finish();
@@ -87,9 +92,9 @@ describe("InteractionController", () => {
     expect(send).toHaveBeenCalledTimes(2);
     finish();
     await Promise.resolve();
-    expect(send).toHaveBeenNthCalledWith(1, "old", [{ x: 960, y: 512 }]);
+    expect(send).toHaveBeenNthCalledWith(1, "old", [{ x: 0.5, y: 0.5 }]);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send).toHaveBeenLastCalledWith("new", [{ x: 640, y: 360 }]);
+    expect(send).toHaveBeenLastCalledWith("new", [{ x: 0.5, y: 0.5 }]);
   });
 
   it("drops stopped pending samples and recovers from send failures", async () => {

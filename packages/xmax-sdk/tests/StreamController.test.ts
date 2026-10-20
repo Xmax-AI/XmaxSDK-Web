@@ -629,6 +629,34 @@ describe("StreamController", () => {
     await controller.disconnect();
   });
 
+  it.each([true, false, undefined])("serializes paddingContain=%s without changing generation or target sizes", async paddingContain => {
+    const { controller, rtc } = makeStream();
+    await controller.connect(connection, false, noopEnsureActive);
+    const generationFormat = videoFormat.resized(1920, 1024);
+    const options = {
+      taskID: "padding-task", videoFormat: generationFormat, context, paddingContain,
+      targetSize: { width: 1024, height: 576 },
+    };
+    const confirmation = controller.beginGeneration(options);
+    await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
+    emitRemoteVideo(rtc, "bot001", true);
+    await confirmation;
+    await controller.updateGeneration(options);
+    const messages = rtc.sentMessages.map(raw => JSON.parse(raw))
+      .filter(event => event.event === "start" || event.event === "change_condition");
+    expect(messages).toHaveLength(2);
+    for (const message of messages) {
+      expect(message.params).toMatchObject({ size: [1920, 1024], target_size: [1024, 576] });
+      if (paddingContain) {
+        expect(message.params.padding).toBe("contain");
+      } else {
+        expect(message.params).not.toHaveProperty("padding");
+      }
+      expect(message.params).not.toHaveProperty("paddingContain");
+    }
+    await controller.disconnect();
+  });
+
   it.each([true, false])("forwards mirror=%s and confirms generation when the bot publishes", async (mirror) => {
     const { controller, rtc, bindings } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);

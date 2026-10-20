@@ -111,11 +111,11 @@ describe("QualityController", () => {
   it("distinguishes L2 and L3 even though both use 24 fps", async () => {
     const s = setup(); s.controller.start(2);
     await s.samples(5, 3);
-    expect(s.controller.snapshot).toMatchObject({ level: 3, frameRate: 24, width: 664, height: 1248 });
+    expect(s.controller.snapshot).toMatchObject({ level: 3, frameRate: 24, scale: 0.65 });
     expect(s.apply).toHaveBeenLastCalledWith(expect.objectContaining({ from: 2, to: 3, frameRate: 24 }), expect.any(AbortSignal));
     await s.sample(1);
     await s.samples(1, 5);
-    expect(s.controller.snapshot).toMatchObject({ level: 2, frameRate: 24, width: 818, height: 1536 });
+    expect(s.controller.snapshot).toMatchObject({ level: 2, frameRate: 24, scale: 0.8 });
   });
 
   it("resets after sample gaps and ignores duplicate timestamps", async () => {

@@ -41,7 +41,7 @@ export interface StreamGenerationOptions {
   taskID: string;
 
   /**
-   * 当前本地媒体使用的视频格式。
+   * 服务端模型生成使用的视频格式，与本地媒体尺寸独立。
    */
   videoFormat: RealtimeVideoFormat;
 
@@ -61,6 +61,11 @@ export interface StreamGenerationOptions {
 
   /** 原始人脸回贴，用于 start 和 change_condition，默认 false。 */
   faceRestoration?: boolean;
+
+  /**
+   * 是否由服务端按包含模式适配生成画布。
+   */
+  paddingContain?: boolean;
 
   /** 开始信令发送成功后的回调，不等待生成确认；更新条件时不调用。 */
   onStartSent?: () => Promise<void>;

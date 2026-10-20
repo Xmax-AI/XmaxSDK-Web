@@ -285,9 +285,9 @@ await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
 ### Generate from a local image
 
 Use `createLocalImageStream` instead of `createLocalCameraStream` to use a local
-image as the video input. It accepts a browser-decodable `File` or `Blob`, fits the
-image into the model's input dimensions without cropping, and continuously sends
-the same frame without audio. No image upload or camera permission is required.
+image as the video input. It accepts a browser-decodable `File` or `Blob`, preserves
+the complete image, and continuously sends the same frame without audio.
+No image upload or camera permission is required.
 
 ```javascript
 const localStream = await realtime.createLocalImageStream({
@@ -305,6 +305,18 @@ Bind the returned tracks to the same video views used for camera input.
 TRTC, Agora, and VeRTC use the existing external-video publishing path.
 `disconnect()` retains the image for reconnection; `close()` releases its resources.
 Animated images are captured as a single still frame.
+
+For local images and local videos, the SDK reads the actual media dimensions,
+limits the pixel area, and aligns the result to multiples of 4 without enlarging it.
+The `videoFormat` width and height remain accepted for compatibility; frame rate
+and encoding settings are retained. The server adapts the media to a separate model
+canvas using `padding: "contain"`, while the requested output follows the media's
+aspect ratio and downlink quality tier.
+
+Camera, local-image, and local-video gestures use normalized coordinates in `[0, 1]`
+relative to the resolved media, independent of encoding quality changes.
+Network video and external tracks retain their existing sizing and pixel-coordinate
+behavior.
 
 <br>
 

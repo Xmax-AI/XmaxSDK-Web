@@ -1,6 +1,6 @@
 import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
-import type { MediaService } from "../Service/Media/MediaService";
+import type { MediaServicing } from "../Service/Media/MediaServicing";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import { CameraController } from "./Camera/CameraController";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
@@ -32,7 +32,7 @@ export class MediaController implements MediaControlling {
    */
   constructor(private readonly dependencies: {
     rtcManager: RtcManaging;
-    mediaService: MediaService;
+    mediaService: MediaServicing;
     cameraController?: CameraControlling;
     onCameraError: (error: XmaxError) => void;
     onVideoError: (error: XmaxError) => void;
@@ -86,6 +86,20 @@ export class MediaController implements MediaControlling {
     }
 
     return undefined;
+  }
+
+  /**
+   * 文件媒体保留自身比例，生成画布由服务端填充。
+   */
+  get usesContainPadding(): boolean {
+    return this.source === "localImage" || this.source === "localVideo";
+  }
+
+  /**
+   * 网络视频与外部轨道暂时保持原有尺寸和交互约定。
+   */
+  get usesResolvedMediaSize(): boolean {
+    return this.source === "camera" || this.usesContainPadding;
   }
 
   /**
@@ -254,10 +268,10 @@ export class MediaController implements MediaControlling {
     }
   }
   /**
-   * 使用生成格式启用交互，不读取弱网调档后的上行规格。
+   * 使用固定媒体基准启用交互，不读取调档后的编码规格或生成画布。
    */
   startInteraction(taskID: string, format: RealtimeVideoFormat): void {
-    this.interaction.startInteraction(taskID, format);
+    this.interaction.startInteraction(taskID, format, this.usesResolvedMediaSize ? "normalized" : "pixels");
   }
 
   /**

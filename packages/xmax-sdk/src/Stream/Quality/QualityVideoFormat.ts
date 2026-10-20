@@ -1,9 +1,12 @@
 import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { MINIMUM_QUALITY_SHORT_SIDE, QUALITY_TIERS } from "./QualityTiers";
+import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 
-/** 上下行共用的尺寸换算；保持原始方向，不改变帧率或码率。 */
-export function qualityVideoSize(baseline: RealtimeVideoFormat, level: number): { width: number; height: number } {
+/**
+ * 计算档位的浮点尺寸上限；最终对齐由媒体或编码尺寸规则完成。
+ */
+export function qualityVideoMaximumSize(baseline: RealtimeVideoFormat, level: number): { width: number; height: number } {
   const tier = Object.values(QUALITY_TIERS)[level - 1];
   if (!Number.isInteger(level) || !tier) {
     throw new Error("Unsupported quality level");
@@ -12,8 +15,24 @@ export function qualityVideoSize(baseline: RealtimeVideoFormat, level: number): 
   const shortSide = Math.min(baseline.width, baseline.height);
   const minimum = Math.min(shortSide, MINIMUM_QUALITY_SHORT_SIDE);
   const scale = Math.max(tier.scale, minimum / shortSide);
+  return { width: baseline.width * scale, height: baseline.height * scale };
+}
+
+/**
+ * 计算上行偶数对齐尺寸，优先保持精确比例；未迁移来源可继续使用旧的分别取整规则。
+ */
+export function qualityVideoSize(
+  baseline: RealtimeVideoFormat,
+  level: number,
+  preserveAspectRatio = true,
+): { width: number; height: number } {
+  const maximum = qualityVideoMaximumSize(baseline, level);
+  if (preserveAspectRatio) {
+    return alignedVideoSize(baseline, Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height), 2);
+  }
+
   const even = (value: number) => Math.max(2, Math.floor(value / 2 + 1e-9) * 2);
-  return { width: even(baseline.width * scale), height: even(baseline.height * scale) };
+  return { width: even(maximum.width), height: even(maximum.height) };
 }
 
 /**
@@ -25,12 +44,12 @@ export function supportsQualityEncoding(format: RealtimeVideoFormat): boolean {
 }
 
 /**
- * 以用户初始/手动配置为 L1，按统一比例缩小；标准源恰好对应预设五档。
+ * 以用户初始/手动配置为 L1，按统一比例缩小并对齐。
  * 不读取 RTC 实际发送统计，避免自动降档后丢失恢复上限。
  * 显式码率沿用用户约束；缺省码率保持 undefined，由编码层按目标尺寸和帧率解析。
  */
-export function qualityVideoFormat(baseline: RealtimeVideoFormat, level: number): RealtimeVideoFormat {
-  const size = qualityVideoSize(baseline, level);
+export function qualityVideoFormat(baseline: RealtimeVideoFormat, level: number, preserveAspectRatio = true): RealtimeVideoFormat {
+  const size = qualityVideoSize(baseline, level, preserveAspectRatio);
   const tier = Object.values(QUALITY_TIERS)[level - 1]!;
   return new RealtimeVideoFormat({
     ...baseline,

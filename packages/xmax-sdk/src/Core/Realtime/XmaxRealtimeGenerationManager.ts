@@ -10,8 +10,16 @@ import type { InteractionControlling } from "../../Media/Interaction/Interaction
 import type { RenderControlling } from "../../Render/RenderControlling";
 
 interface GenerationOptions {
-  /** 模型生成使用的视频规格。 */
+  /** 固定本地媒体规格，用于交互坐标。 */
   videoFormat: RealtimeVideoFormat;
+  /**
+   * 模型生成画布；缺省时与本地媒体规格一致。
+   */
+  generationVideoFormat?: RealtimeVideoFormat;
+  /**
+   * 是否由服务端按包含模式适配生成画布。
+   */
+  paddingContain?: boolean;
   /** 生成条件，缺省复用最近缓存的上下文。 */
   context?: RealtimeContext;
   /** 服务端生成后的回传尺寸，缺省时不发送。 */
@@ -61,7 +69,9 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 发送生成指令并等待确认、远端就绪和音频激活，成功后返回任务标识。
    * 条件上下文在生成确认后缓存；启动失败时尽力停止本次任务并保留原始错误。
-   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.videoFormat 固定本地媒体规格，用于交互坐标。
+   * @param options.generationVideoFormat 模型生成画布，缺省沿用媒体规格。
+   * @param options.paddingContain 是否由服务端按包含模式适配画布。
    * @param options.signal 取消本次生成启动的信号。
    * @param options.ensureCurrent 校验当前操作仍有效。
    * @param options.waitUntilRemoteReady 等待远端生成流就绪。
@@ -76,6 +86,8 @@ export class XmaxRealtimeGenerationManager {
    */
   async start(options: {
     videoFormat: RealtimeVideoFormat;
+    generationVideoFormat?: RealtimeVideoFormat;
+    paddingContain?: boolean;
     signal: AbortSignal;
     ensureCurrent: () => void;
     waitUntilRemoteReady: () => Promise<void>;
@@ -101,7 +113,8 @@ export class XmaxRealtimeGenerationManager {
     try {
       const confirmation = this.streamController.beginGeneration({
         taskID,
-        videoFormat: options.videoFormat,
+        videoFormat: options.generationVideoFormat ?? options.videoFormat,
+        paddingContain: options.paddingContain,
         context,
         restart: options.restart,
         ...(options.targetSize && { targetSize: options.targetSize }),
@@ -135,7 +148,9 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 更新活动任务的生成条件；信令发送成功后才覆盖缓存，无任务或上下文时抛错。
    * @param taskID 当前活动任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
+   * @param options.videoFormat 固定本地媒体规格，用于交互坐标。
+   * @param options.generationVideoFormat 模型生成画布，缺省沿用媒体规格。
+   * @param options.paddingContain 是否由服务端按包含模式适配画布。
    * @param options.context 生成条件，缺省复用最近缓存的上下文。
    * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
@@ -149,7 +164,8 @@ export class XmaxRealtimeGenerationManager {
 
     await this.streamController.updateGeneration({
       taskID,
-      videoFormat: options.videoFormat,
+      videoFormat: options.generationVideoFormat ?? options.videoFormat,
+      paddingContain: options.paddingContain,
       context,
       ...(options.targetSize && { targetSize: options.targetSize }),
       faceRestoration: options.faceRestoration ?? false,

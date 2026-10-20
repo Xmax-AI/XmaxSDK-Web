@@ -356,10 +356,10 @@ export class CameraController implements CameraControlling {
    */
   private resolveVideoFormat(videoFormat: RealtimeVideoFormat): RealtimeVideoFormat {
     videoFormat.validate();
-    const targetSize = this.mediaService.resolveModelInputSize({
+    const targetSize = this.mediaService.resolveMediaSize({
       width: videoFormat.width,
       height: videoFormat.height,
-    });
+    }, "camera");
     const resolvedFormat = videoFormat.resized(targetSize.width, targetSize.height);
     resolvedFormat.validate();
     return resolvedFormat;

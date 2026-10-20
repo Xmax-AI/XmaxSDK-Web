@@ -1,37 +1,37 @@
 export interface RealtimePointInit {
   /**
-   * 模型输入像素横坐标。
+   * 媒体横坐标；摄像头和本地文件为 [0, 1] 归一化值。
    */
   x: number;
 
   /**
-   * 模型输入像素纵坐标。
+   * 媒体纵坐标；摄像头和本地文件为 [0, 1] 归一化值。
    */
   y: number;
 }
 
 /**
- * 模型输入像素坐标系中的二维点。
+ * 媒体坐标系中的二维点；网络视频和外部轨道暂时保留像素坐标。
  */
 export class RealtimePoint {
   /**
    * 坐标
    */
   /**
-   * 模型输入像素横坐标。
+   * 媒体横坐标。
    */
   readonly x: number;
 
   /**
-   * 模型输入像素纵坐标。
+   * 媒体纵坐标。
    */
   readonly y: number;
 
   /**
-   * 创建模型输入像素坐标点。
+   * 创建媒体坐标点。
    *
-   * @param init.x 模型输入像素横坐标。
-   * @param init.y 模型输入像素纵坐标。
+   * @param init.x 媒体横坐标。
+   * @param init.y 媒体纵坐标。
    */
   constructor(init: RealtimePointInit) {
     this.x = init.x;

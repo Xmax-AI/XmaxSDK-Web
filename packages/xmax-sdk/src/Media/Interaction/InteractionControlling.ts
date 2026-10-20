@@ -3,7 +3,7 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { InteractionFrame } from "./InteractionFrame";
 
 /**
- * 提交当前任务的模型像素坐标；由 Core 装配到 Stream 层。
+ * 提交当前任务的媒体坐标；由 Core 装配到 Stream 层。
  */
 export type InteractionListener = (taskID: string, points: RealtimePoint[]) => Promise<void>;
 
@@ -15,10 +15,12 @@ export interface InteractionControlling {
    * 激活任务或更新输入格式；使旧任务的待发送采样失效。
    */
   startInteraction(taskID: string, videoFormat: RealtimeVideoFormat): void;
+
   /**
    * 停用交互并丢弃待发送采样。
    */
   stopInteraction(): void;
+
   /**
    * 提交视口采样；无活动任务时忽略。
    */
