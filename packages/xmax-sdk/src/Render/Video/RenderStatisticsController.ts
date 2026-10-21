@@ -1,3 +1,13 @@
+//
+//  RenderStatisticsController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { VideoRenderStatistics } from "./VideoRenderStatistics";
 
 /**
@@ -5,40 +15,69 @@ import type { VideoRenderStatistics } from "./VideoRenderStatistics";
  * 不控制视频播放或插帧，仅观察原视频帧与画布呈现提交。 @internal
  */
 export class RenderStatisticsController {
+
   /**
    * 统计回调
    */
-  handler?: (statistics?: VideoRenderStatistics) => void;
+  handler?: (
+    statistics?: VideoRenderStatistics
+  ) => void;
 
   /**
    * 帧观察与采样生命周期
    */
   private timer?: ReturnType<typeof setInterval>;
+
+  /**
+   * 当前视频帧回调的取消句柄。
+   */
   private callbackID?: number;
+
+  /**
+   * 当前统计周期标识，阻止旧回调继续累计。
+   */
   private sequence = 0;
 
   /**
    * 采样窗口与输出方式
    */
   private startedAt = 0;
+
+  /**
+   * 当前统计窗口累计的原始帧数。
+   */
   private originalFrames = 0;
+
+  /**
+   * 当前统计窗口累计的插值帧数。
+   */
   private interpolatedFrames = 0;
+
+  /**
+   * 当前画面是否由插帧管线呈现。
+   */
   private interpolationActive = false;
+
+  /**
+   * 上一次观察到的浏览器累计呈现帧数。
+   */
   private previousPresentedFrames?: number;
 
   /**
    * 绑定用于观察原视频帧的元素，调用 start 后才开始采集。
    */
-  constructor(private readonly video: HTMLVideoElement) {}
+  constructor(
+    private readonly video: HTMLVideoElement
+  ) { }
 
   /**
    * 独立于统计面板可见性采集；没有监听者时不占用定时器。
    */
   start(): void {
     if (this.timer !== undefined ||
-        (!this.video.srcObject && !this.video.getAttribute("src")) ||
-        !this.handler ||
-        typeof this.video.requestVideoFrameCallback !== "function") {
+      (!this.video.srcObject && !this.video.getAttribute("src")) ||
+      !this.handler ||
+      typeof this.video.requestVideoFrameCallback !== "function") {
       return;
     }
 
@@ -66,7 +105,9 @@ export class RenderStatisticsController {
   /**
    * 切换输出方式并清空采样窗口，避免原视频和画布重复计数。
    */
-  setInterpolationActive(active: boolean): void {
+  setInterpolationActive(
+    active: boolean
+  ): void {
     this.interpolationActive = active;
     this.reset();
   }
@@ -74,7 +115,9 @@ export class RenderStatisticsController {
   /**
    * 记录实际提交到画布的原帧或插值帧，不统计未呈现的计算结果。
    */
-  recordCanvasFrame(interpolated: boolean): void {
+  recordCanvasFrame(
+    interpolated: boolean
+  ): void {
     if (interpolated) {
       this.interpolatedFrames++;
     } else {
@@ -85,7 +128,9 @@ export class RenderStatisticsController {
   /**
    * 按浏览器累计呈现帧数的增量统计，包含两次回调之间已呈现但未回调的帧。
    */
-  private recordVideoFrames(presentedFrames: number): void {
+  private recordVideoFrames(
+    presentedFrames: number
+  ): void {
     if (!Number.isSafeInteger(presentedFrames) || presentedFrames < 0) {
       this.previousPresentedFrames = undefined;
       return;
@@ -154,9 +199,11 @@ export class RenderStatisticsController {
   /**
    * 隔离接入方回调异常，避免影响播放和后续采样。
    */
-  private notify(statistics?: VideoRenderStatistics): void {
+  private notify(
+    statistics?: VideoRenderStatistics
+  ): void {
     try {
       this.handler?.(statistics);
-    } catch {}
+    } catch { }
   }
 }

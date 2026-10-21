@@ -1,3 +1,13 @@
+//
+//  MediaController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { MediaServicing } from "../Service/Media/MediaServicing";
@@ -17,29 +27,60 @@ import type { MediaControlling } from "./MediaControlling";
  * 统一持有本地媒体及交互组件；Core 负责串行业务操作，本层管理源和 RTC 资源。
  */
 export class MediaController implements MediaControlling {
+
   /**
    * 本地媒体与交互组件
    */
   private readonly camera: CameraControlling;
+
+  /**
+   * 本地文件视频的播放与音视频输出组件。
+   */
   private readonly video: LocalVideoController;
+
+  /**
+   * 本地静止图片的视频输出组件。
+   */
   private readonly image: LocalImageController;
+
+  /**
+   * 服务端读取的网络视频源控制器。
+   */
   private readonly network = new NetworkVideoController();
+
+  /**
+   * 外部视频轨的所有权和结束事件管理组件。
+   */
   private readonly external: ExternalVideoController;
+
+  /**
+   * 交互坐标转换与串行发送组件。
+   */
   private readonly interaction: InteractionController;
 
   /**
    * 注入基础能力与错误、交互输出，不自行创建跨层业务组件。
    */
-  constructor(private readonly dependencies: {
-    rtcManager: RtcManaging;
-    mediaService: MediaServicing;
-    cameraController?: CameraControlling;
-    onCameraError: (error: XmaxError) => void;
-    onVideoError: (error: XmaxError) => void;
-    onExternalError: (error: XmaxError) => void;
-    onImageError: (error: XmaxError) => void;
-    interactionListener: InteractionListener;
-  }) {
+  constructor(
+    private readonly dependencies: {
+      rtcManager: RtcManaging;
+      mediaService: MediaServicing;
+      cameraController?: CameraControlling;
+      onCameraError: (
+        error: XmaxError
+      ) => void;
+      onVideoError: (
+        error: XmaxError
+      ) => void;
+      onExternalError: (
+        error: XmaxError
+      ) => void;
+      onImageError: (
+        error: XmaxError
+      ) => void;
+      interactionListener: InteractionListener;
+    }
+  ) {
     this.camera = dependencies.cameraController ?? new CameraController({
       rtcManager: dependencies.rtcManager,
       mediaService: dependencies.mediaService,
@@ -96,7 +137,7 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 网络视频与外部轨道暂时保持原有尺寸和交互约定。
+   * 摄像头、本地图片和本地视频使用固定媒体尺寸及归一化交互坐标。
    */
   get usesResolvedMediaSize(): boolean {
     return this.source === "camera" || this.usesContainPadding;
@@ -142,7 +183,9 @@ export class MediaController implements MediaControlling {
   /**
    * 保持现有外部轨道能力校验与错误语义。
    */
-  validateExternalMediaSupport(kind: "local" | "external" | "image"): void {
+  validateExternalMediaSupport(
+    kind: "local" | "external" | "image"
+  ): void {
     if (!this.dependencies.rtcManager.setExternalMediaTracks) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, `The RTC provider does not support ${kind} video streams`);
     }
@@ -151,21 +194,30 @@ export class MediaController implements MediaControlling {
   /**
    * 创建相机流，由相机组件管理 RTC 和预览。
    */
-  createLocalCameraStream(options: Parameters<MediaControlling["createLocalCameraStream"]>[0]) {
+  createLocalCameraStream(
+    options: Parameters<MediaControlling["createLocalCameraStream"]>[0]
+  ) {
     this.ensureNoLocalSource();
     return this.camera.createLocalCameraStream(options);
   }
+
   /**
    * 同步准备网络视频源；地址校验失败不初始化 RTC。
    */
-  createNetworkVideoStream(options: Parameters<MediaControlling["createNetworkVideoStream"]>[0]) {
+  createNetworkVideoStream(
+    options: Parameters<MediaControlling["createNetworkVideoStream"]>[0]
+  ) {
     this.ensureNoLocalSource();
     return this.network.create(options, this.dependencies.mediaService);
   }
+
   /**
    * 先解锁用户触发的播放，再由 prepareSource 初始化 RTC。
    */
-  createLocalVideoStream(options: Parameters<MediaControlling["createLocalVideoStream"]>[0], signal: AbortSignal) {
+  createLocalVideoStream(
+    options: Parameters<MediaControlling["createLocalVideoStream"]>[0],
+    signal: AbortSignal
+  ) {
     this.ensureNoLocalSource();
     return this.video.create(options, this.dependencies.mediaService, signal);
   }
@@ -173,7 +225,10 @@ export class MediaController implements MediaControlling {
   /**
    * 解码本地图片并准备静止视频轨，不申请设备权限。
    */
-  createLocalImageStream(options: Parameters<MediaControlling["createLocalImageStream"]>[0], signal: AbortSignal) {
+  createLocalImageStream(
+    options: Parameters<MediaControlling["createLocalImageStream"]>[0],
+    signal: AbortSignal
+  ) {
     this.ensureNoLocalSource();
     return this.image.create(options, this.dependencies.mediaService, signal);
   }
@@ -181,14 +236,19 @@ export class MediaController implements MediaControlling {
   /**
    * 接管外部视频轨副本，不停止调用方原始轨道。
    */
-  createExternalVideoStream(options: Parameters<MediaControlling["createExternalVideoStream"]>[0]) {
+  createExternalVideoStream(
+    options: Parameters<MediaControlling["createExternalVideoStream"]>[0]
+  ) {
     this.ensureNoLocalSource();
     return this.external.create(options, this.dependencies.mediaService);
   }
+
   /**
    * 初始化 RTC 并绑定非相机轨道；取消后不继续安装轨道。
    */
-  async prepareSource(ensureCurrent: () => void): Promise<void> {
+  async prepareSource(
+    ensureCurrent: () => void
+  ): Promise<void> {
     const rtc = this.dependencies.rtcManager;
     await rtc.initialize();
     ensureCurrent();
@@ -199,17 +259,22 @@ export class MediaController implements MediaControlling {
       ensureCurrent();
     }
   }
+
   /**
    * 设置相机预览就绪通知。
    */
-  setCameraPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void {
+  setCameraPreviewReadyHandler(
+    handler?: CameraPreviewReadyHandler
+  ): void {
     this.camera.setPreviewReadyHandler(handler);
   }
 
   /**
    * 等待相机预热。
    */
-  waitForValidCameraFrame(signal: AbortSignal): Promise<void> {
+  waitForValidCameraFrame(
+    signal: AbortSignal
+  ): Promise<void> {
     return this.camera.waitForValidCameraFrame(signal);
   }
 
@@ -222,6 +287,7 @@ export class MediaController implements MediaControlling {
     }
     return this.camera.switchCamera();
   }
+
   /**
    * 停止相机资源。
    */
@@ -232,7 +298,9 @@ export class MediaController implements MediaControlling {
   /**
    * 生成开始后启动文件播放。
    */
-  startLocalVideo(signal: AbortSignal): Promise<void> {
+  startLocalVideo(
+    signal: AbortSignal
+  ): Promise<void> {
     return this.video.start(signal);
   }
 
@@ -267,10 +335,14 @@ export class MediaController implements MediaControlling {
       }
     }
   }
+
   /**
    * 使用固定媒体基准启用交互，不读取调档后的编码规格或生成画布。
    */
-  startInteraction(taskID: string, format: RealtimeVideoFormat): void {
+  startInteraction(
+    taskID: string,
+    format: RealtimeVideoFormat
+  ): void {
     this.interaction.startInteraction(taskID, format, this.usesResolvedMediaSize ? "normalized" : "pixels");
   }
 
@@ -284,7 +356,9 @@ export class MediaController implements MediaControlling {
   /**
    * 接收渲染层快照并交给坐标与发送队列处理。
    */
-  submitInteraction(frame: InteractionFrame): void {
+  submitInteraction(
+    frame: InteractionFrame
+  ): void {
     this.interaction.submitInteraction(frame);
   }
 }

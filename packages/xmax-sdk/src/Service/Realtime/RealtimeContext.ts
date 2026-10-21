@@ -1,10 +1,25 @@
+//
+//  RealtimeContext.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { RealtimeReferenceVideo } from "./RealtimeReferenceVideo";
 
+/**
+ * 实时生成指令和参考资源。
+ */
 export interface RealtimeContextInit {
+
   /**
    * 服务端直接读取的网络视频。
    */
   referenceVideo?: RealtimeReferenceVideo;
+
   /**
    * 实时生成使用的文本条件。
    */
@@ -20,13 +35,12 @@ export interface RealtimeContextInit {
  * 单次实时生成任务的文本和参考资源上下文。
  */
 export class RealtimeContext {
+
   /**
    * 服务端直接读取的网络视频。
    */
   readonly referenceVideo?: RealtimeReferenceVideo;
-  /**
-   * 生成条件
-   */
+
   /**
    * 实时生成使用的文本条件。
    */
@@ -40,7 +54,9 @@ export class RealtimeContext {
   /**
    * 创建实时生成条件并规范化文本和参考路径。
    */
-  constructor(init: RealtimeContextInit) {
+  constructor(
+    init: RealtimeContextInit
+  ) {
     this.referenceVideo = init.referenceVideo && Object.freeze({ ...init.referenceVideo });
     this.prompt = init.prompt.trim();
     const normalizedReferencePath = init.referencePath?.trim();

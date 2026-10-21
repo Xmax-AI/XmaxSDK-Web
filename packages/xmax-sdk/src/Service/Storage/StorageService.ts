@@ -1,3 +1,13 @@
+//
+//  StorageService.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { ApiServicing } from "../Network/ApiServicing";
@@ -8,10 +18,30 @@ import type { StorageServicing, StorageUploadOptions } from "./StorageServicing"
  * `/cos/sts` 返回的临时存储配置。
  */
 interface TemporaryStoragePayload {
+
+  /**
+   * 对象存储桶名称。
+   */
   bucket?: string;
+
+  /**
+   * 对象存储桶所在区域。
+   */
   region?: string;
+
+  /**
+   * 对象存储访问域名。
+   */
   endpoint?: string;
+
+  /**
+   * 上传对象的键名前缀。
+   */
   prefix?: string;
+
+  /**
+   * 对象存储临时鉴权凭据。
+   */
   credentials?: {
     accessKeyId?: string;
     secretAccessKey?: string;
@@ -23,10 +53,30 @@ interface TemporaryStoragePayload {
  * 解析后的临时存储配置。
  */
 interface TemporaryStorageConfiguration {
+
+  /**
+   * 对象存储桶名称。
+   */
   bucket: string;
+
+  /**
+   * 对象存储桶所在区域。
+   */
   region: string;
+
+  /**
+   * 对象存储访问域名。
+   */
   endpoint?: string;
+
+  /**
+   * 上传对象的键名前缀。
+   */
   prefix: string;
+
+  /**
+   * 对象存储临时鉴权凭据。
+   */
   credentials: {
     accessKeyID: string;
     secretAccessKey: string;
@@ -38,6 +88,7 @@ interface TemporaryStorageConfiguration {
  * 对象存储直传客户端需要的最小接口。
  */
 export interface StorageObjectClient {
+
   /**
    * 将文件直传到指定桶和对象键，通过回调报告错误或访问地址，并可上报上传进度。
    */
@@ -48,11 +99,21 @@ export interface StorageObjectClient {
       Key: string;
       Body: Blob;
       ContentType: string;
-      onProgress?: (info: { loaded: number; total: number }) => void;
+      onProgress?: (
+        info: {
+          loaded: number;
+          total: number
+        }
+      ) => void;
     },
     callback: (
-      error: { message?: string } | null,
-      data?: { Location?: string; ETag?: string },
+      error: {
+        message?: string
+      } | null,
+      data?: {
+        Location?: string;
+        ETag?: string
+      },
     ) => void,
   ): void;
 }
@@ -64,7 +125,11 @@ export type StorageObjectClientFactory = (
   configuration: TemporaryStorageConfiguration,
 ) => Promise<StorageObjectClient>;
 
+/**
+ * 对象存储上传所需的接口与客户端依赖。
+ */
 export interface StorageServiceOptions {
+
   /**
    * Xmax API 请求组件。
    */
@@ -115,6 +180,7 @@ const CONTENT_TYPES: Record<string, string> = {
  * endpoint 或默认 COS 域名依次解析。
  */
 export class StorageService implements StorageServicing {
+
   /**
    * 服务层组件
    */
@@ -129,6 +195,10 @@ export class StorageService implements StorageServicing {
    * 标识生成
    */
   private readonly dateGenerator: () => Date;
+
+  /**
+   * 生成上传对象键名中的唯一标识。
+   */
   private readonly identifierGenerator: () => string;
 
   /**
@@ -139,7 +209,9 @@ export class StorageService implements StorageServicing {
    * @param options.dateGenerator 时间来源（可替换，测试用）。
    * @param options.identifierGenerator 标识来源（可替换，测试用）。
    */
-  constructor(options: StorageServiceOptions) {
+  constructor(
+    options: StorageServiceOptions
+  ) {
     this.apiService = options.apiService;
     this.clientFactory = options.clientFactory ?? StorageService.cosClientFactory;
     this.dateGenerator = options.dateGenerator ?? (() => new Date());
@@ -150,21 +222,27 @@ export class StorageService implements StorageServicing {
   /**
    * 上传图片并返回访问地址。
    */
-  async uploadImage(options: StorageUploadOptions): Promise<StoredFile> {
+  async uploadImage(
+    options: StorageUploadOptions
+  ): Promise<StoredFile> {
     return this.upload(options, "Image");
   }
 
   /**
    * 普通上传原始视频并返回访问地址，不进行转码、压缩或分片。
    */
-  async uploadVideo(options: StorageUploadOptions): Promise<StoredFile> {
+  async uploadVideo(
+    options: StorageUploadOptions
+  ): Promise<StoredFile> {
     return this.upload(options, "Video");
   }
 
   /**
    * 下载原始视频文件并交给浏览器保存，支持取消网络下载。
    */
-  async downloadVideo(options: Parameters<StorageServicing["downloadVideo"]>[0]): Promise<void> {
+  async downloadVideo(
+    options: Parameters<StorageServicing["downloadVideo"]>[0]
+  ): Promise<void> {
     const fileName = StorageService.validateFileName(options.fileName);
     let url: URL;
     try {
@@ -234,7 +312,10 @@ export class StorageService implements StorageServicing {
   /**
    * 获取临时凭证并通过 COS putObject 上传文件，统一处理进度、结果和错误。
    */
-  private async upload(options: StorageUploadOptions, mediaType: "Image" | "Video"): Promise<StoredFile> {
+  private async upload(
+    options: StorageUploadOptions,
+    mediaType: "Image" | "Video"
+  ): Promise<StoredFile> {
     const startedAt = Date.now();
     try {
       const safeName = StorageService.validateFileName(options.fileName);
@@ -324,7 +405,10 @@ export class StorageService implements StorageServicing {
   /**
    * 生成对象键：`${prefix}${毫秒时间戳}_${标识}_${文件名}`。
    */
-  private makeObjectKey(prefix: string, fileName: string): string {
+  private makeObjectKey(
+    prefix: string,
+    fileName: string
+  ): string {
     const milliseconds = Math.round(this.dateGenerator().getTime());
     return `${prefix}${milliseconds}_${this.identifierGenerator()}_${fileName}`;
   }
@@ -350,7 +434,10 @@ export class StorageService implements StorageServicing {
   private static putObject(
     client: StorageObjectClient,
     params: Parameters<StorageObjectClient["putObject"]>[0],
-  ): Promise<{ Location?: string; ETag?: string }> {
+  ): Promise<{
+    Location?: string;
+    ETag?: string
+  }> {
     return new Promise((resolve, reject) => {
       client.putObject(params, (error, data) => {
         if (error) {
@@ -412,7 +499,9 @@ export class StorageService implements StorageServicing {
   /**
    * 校验文件名非空且不包含路径分隔符。
    */
-  private static validateFileName(fileName: string): string {
+  private static validateFileName(
+    fileName: string
+  ): string {
     const safeName = fileName.trim();
     if (!safeName || safeName.includes("/") || safeName.includes("\\")) {
       throw new XmaxError(
@@ -426,7 +515,9 @@ export class StorageService implements StorageServicing {
   /**
    * 按文件名后缀推断内容类型。
    */
-  private static inferContentType(fileName: string): string {
+  private static inferContentType(
+    fileName: string
+  ): string {
     const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
     return CONTENT_TYPES[extension] ?? "application/octet-stream";
   }
@@ -434,7 +525,9 @@ export class StorageService implements StorageServicing {
   /**
    * 格式化字节数用于日志输出。
    */
-  private static formatByteCount(bytes: number): string {
+  private static formatByteCount(
+    bytes: number
+  ): string {
     if (bytes < 1024) {
       return `${bytes} B`;
     }
@@ -447,7 +540,9 @@ export class StorageService implements StorageServicing {
   /**
    * 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。
    */
-  private static nonEmpty(value?: string): string | undefined {
+  private static nonEmpty(
+    value?: string
+  ): string | undefined {
     const normalized = value?.trim();
     return normalized || undefined;
   }

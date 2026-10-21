@@ -1,3 +1,13 @@
+//
+//  XmaxClient.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import type { ApiServicing } from "../Service/Network/ApiServicing";
 import { ApiService } from "../Service/Network/ApiService";
@@ -19,9 +29,7 @@ import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManag
  * SDK 的统一入口，负责创建实时、非实时和媒体服务组件。
  */
 export class XmaxClient {
-  /**
-   * 客户端配置
-   */
+
   /**
    * 客户端使用的全局配置。
    */
@@ -38,7 +46,9 @@ export class XmaxClient {
    * 本地相机预览不依赖 API Key 校验；连接与生成等涉及服务端的操作
    * 在实际调用时校验 API Key。
    */
-  constructor(configuration: XmaxConfiguration) {
+  constructor(
+    configuration: XmaxConfiguration
+  ) {
     this.configuration = configuration;
     XmaxLogger.configure(
       configuration.loggerOptions,
@@ -57,7 +67,9 @@ export class XmaxClient {
    * @param options 实时生成模型等业务配置。
    * @returns 可用于本地相机预览、实时连接与生成的实时 Manager。
    */
-  createRealtimeManager(options: RealtimeConfiguration): XmaxRealtimeManaging {
+  createRealtimeManager(
+    options: RealtimeConfiguration
+  ): XmaxRealtimeManaging {
     const baseURL = modelBaseURL(options.model);
     const apiService = baseURL
       ? new ApiService({ apiKey: this.configuration.apiKey, baseURL })
@@ -87,7 +99,9 @@ export class XmaxClient {
    *
    * @param model 媒体输入规则使用的模型，默认为 `x2.1.1-preview-cn`。
    */
-  createMediaService(model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn): MediaServicing {
+  createMediaService(
+    model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn
+  ): MediaServicing {
     return new MediaService(model);
   }
 

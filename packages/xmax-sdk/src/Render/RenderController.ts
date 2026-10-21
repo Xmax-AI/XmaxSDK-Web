@@ -1,3 +1,13 @@
+//
+//  RenderController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { InteractionFrame } from "../Media/Interaction/InteractionFrame";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -11,23 +21,38 @@ import { TrajectoryRegistry } from "./Trajectory/TrajectoryRegistry";
  * 统一管理远端轨道的画面、插帧配置转交与交互绑定，不管理生成任务。
  */
 export class RenderController implements RenderControlling {
+
   /**
    * 当前轨道与唯一渲染目标
    */
   private track?: RealtimeVideoTrack;
+
+  /**
+   * 当前远端轨道的渲染绑定目标。
+   */
   private target?: VideoRenderTarget;
+
+  /**
+   * 当前生成任务是否允许轨迹交互。
+   */
   private interactionEnabled = false;
+
+  /**
+   * 当前远端视图是否已完成渲染预热。
+   */
   private ready = false;
 
   /**
    * 注入显示生命周期通知，不持有 Core 对象。
    */
-  constructor(private readonly callbacks: {
-    onFrameDisplayed?: () => void;
-    onRenderWarmupCompleted?: () => void;
-    onAttached?: () => void;
-    onDetached?: () => void;
-  } = {}) {}
+  constructor(
+    private readonly callbacks: {
+      onFrameDisplayed?: () => void;
+      onRenderWarmupCompleted?: () => void;
+      onAttached?: () => void;
+      onDetached?: () => void;
+    } = {}
+  ) { }
 
   /**
    * 当前远端视图是否已完成渲染预热。
@@ -47,7 +72,12 @@ export class RenderController implements RenderControlling {
   /**
    * 注册新轨道并使旧绑定失效；本地轨道不经过该入口。
    */
-  registerRemoteTrack(track: RealtimeVideoTrack, listener: (frame: InteractionFrame) => void): void {
+  registerRemoteTrack(
+    track: RealtimeVideoTrack,
+    listener: (
+      frame: InteractionFrame
+    ) => void
+  ): void {
     this.resetRemoteTrack();
     this.track = track;
     if (track.videoFormat) {
@@ -55,7 +85,7 @@ export class RenderController implements RenderControlling {
     }
 
     VideoRenderRegistry.register(track, {
-      // 临时缓解生成开头卡顿：首帧后继续播放 1000 ms，再渐入。
+      // 首帧后继续播放 1000 ms 完成渲染预热，再开始渐入。
       renderWarmupMs: 1000,
       renderWarmupCompletedHandler: () => {
         if (this.track === track) {
@@ -95,7 +125,9 @@ export class RenderController implements RenderControlling {
   /**
    * 更新媒体画面；暂停显示时同时禁用交互。
    */
-  setRemoteMedia(track: MediaStreamTrack | null): void {
+  setRemoteMedia(
+    track: MediaStreamTrack | null
+  ): void {
     this.ready = false;
     if (this.track) {
       TrajectoryRegistry.binding(this.track)?.update(!!track && this.interactionEnabled);
@@ -106,14 +138,19 @@ export class RenderController implements RenderControlling {
   /**
    * 转交插帧配置，不重建交互视图。
    */
-  setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
+  setFrameInterpolation(
+    options?: RemoteFrameInterpolationOptions
+  ): void {
     this.target?.setFrameInterpolation?.(options);
   }
 
   /**
    * 更新交互绑定的输入格式和可用性。
    */
-  setInteractionEnabled(enabled: boolean, format?: RealtimeVideoFormat): void {
+  setInteractionEnabled(
+    enabled: boolean,
+    format?: RealtimeVideoFormat
+  ): void {
     this.interactionEnabled = enabled;
     if (this.track) {
       TrajectoryRegistry.binding(this.track)?.update(enabled, format);

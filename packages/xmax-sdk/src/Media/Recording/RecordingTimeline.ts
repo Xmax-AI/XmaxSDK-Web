@@ -1,8 +1,26 @@
+//
+//  RecordingTimeline.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * 原始录制时间线上的区间，单位为秒。
  */
 export interface RecordingTimeRange {
+
+  /**
+   * 区间起点，单位为秒。
+   */
   start: number;
+
+  /**
+   * 区间终点，单位为秒。
+   */
   end: number;
 }
 
@@ -10,25 +28,42 @@ export interface RecordingTimeRange {
  * 视频长帧裁剪计划。音视频共用同一映射，避免分别累计时间造成漂移。
  */
 export class RecordingTimeline {
+
   /**
    * 长间隔判定与默认帧时长
    */
   private static readonly minimumGap = 0.12;
+
+  /**
+   * 相对正常帧间隔的长间隔判定倍数。
+   */
   private static readonly gapMultiplier = 3;
+
+  /**
+   * 无法估算帧间隔时使用的默认帧时长，单位为秒。
+   */
   private static readonly fallbackFrameDuration = 1 / 30;
 
   /**
    * 原始时长、正常帧时长与待删除区间
    */
   readonly frameDuration: number;
+
+  /**
+   * 需要从音视频共同时间线上删除的等待区间。
+   */
   readonly cuts: readonly RecordingTimeRange[];
 
   /**
    * 从显示时间戳估计正常帧间隔，只裁掉显著超长的等待部分。
    */
-  constructor(timestamps: readonly number[], readonly duration: number, audioPackets?: readonly RecordingTimeRange[]) {
+  constructor(
+    timestamps: readonly number[],
+    readonly duration: number,
+    audioPackets?: readonly RecordingTimeRange[]
+  ) {
     if (!Number.isFinite(duration) || duration <= 0 || timestamps.length === 0 ||
-        timestamps.some(value => !Number.isFinite(value) || value < 0 || value > duration)) {
+      timestamps.some(value => !Number.isFinite(value) || value < 0 || value > duration)) {
       throw new Error("Invalid recording timeline");
     }
 
@@ -60,7 +95,9 @@ export class RecordingTimeline {
   /**
    * 将原始时间映射到裁剪后的时间；删除区间内的时刻映射到同一接缝。
    */
-  map(time: number): number {
+  map(
+    time: number
+  ): number {
     let removed = 0;
     for (const cut of this.cuts) {
       if (time <= cut.start) {
@@ -74,7 +111,10 @@ export class RecordingTimeline {
   /**
    * 判断一个音频包是否位于删除区间；区间已对齐包边界，不会切断压缩数据。
    */
-  removes(start: number, end: number): boolean {
+  removes(
+    start: number,
+    end: number
+  ): boolean {
     return this.cuts.some(cut => start >= cut.start && end <= cut.end);
   }
 }

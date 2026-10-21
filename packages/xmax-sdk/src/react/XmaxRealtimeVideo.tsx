@@ -1,3 +1,13 @@
+//
+//  XmaxRealtimeVideo.tsx
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import {
   VideoContentMode,
   XmaxRealtimeVideoView,
@@ -10,7 +20,11 @@ import {
   type CSSProperties,
 } from "react";
 
+/**
+ * 实时视频 React 组件的本地、远端轨道及显示选项。
+ */
 export interface XmaxRealtimeVideoProps {
+
   /**
    * 当前显示的本地视频轨道。
    */
@@ -50,7 +64,9 @@ export interface XmaxRealtimeVideoProps {
 /**
  * 本地预览和远端生成画面自动切换的 React 组件。
  */
-export function XmaxRealtimeVideo(props: XmaxRealtimeVideoProps) {
+export function XmaxRealtimeVideo(
+  props: XmaxRealtimeVideoProps
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<XmaxRealtimeVideoView | undefined>(undefined);
 

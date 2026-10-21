@@ -1,3 +1,13 @@
+//
+//  TrajectoryOverlayView.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { InteractionCoordinateMapper } from "../../Media/Interaction/InteractionCoordinateMapper";
@@ -10,40 +20,106 @@ import type { TrajectoryPoint } from "./TrajectoryPoint";
  * 采集鼠标、触屏和触控笔输入，驱动效果并以约 30Hz 提交视口采样。
  */
 export class TrajectoryOverlayView {
+
   /**
    * 视图与显示配置
    */
   readonly element = document.createElement("div");
+
+  /**
+   * 当前轨道提供的交互绑定。
+   */
   private binding?: TrajectoryBinding;
+
+  /**
+   * 交互坐标换算使用的固定媒体规格。
+   */
   private format?: RealtimeVideoFormat;
+
+  /**
+   * 画面在视口中的缩放与裁剪方式。
+   */
   private contentMode = VideoContentMode.fill;
+
+  /**
+   * 是否对显示画面应用水平镜像。
+   */
   private mirrored = false;
+
+  /**
+   * 接入方是否请求启用轨迹交互。
+   */
   private requested = true;
+
+  /**
+   * 当前绑定是否允许提交交互采样。
+   */
   private enabled = false;
 
   /**
    * 手势采样与生命周期资源
    */
   private readonly pointers = new Map<number, TrajectoryPoint>();
+
+  /**
+   * 下一条轨迹使用的标识。
+   */
   private nextID = 0;
+
+  /**
+   * 下一次动画刷新任务的句柄。
+   */
   private animation?: number;
+
+  /**
+   * 等待按显示节拍提交的最新触点快照。
+   */
   private lastSample = 0;
+
+  /**
+   * 同步交互层视口尺寸的观察器。
+   */
   private resizeObserver?: ResizeObserver;
-  private viewport?: { width: number; height: number };
+
+  /**
+   * 当前交互视口的 CSS 像素尺寸。
+   */
+  private viewport?: {
+    width: number;
+    height: number
+  };
+
+  /**
+   * 页面隐藏时结束活动轨迹并清理采样。
+   */
   private readonly visibilityChanged = () => {
     if (document.hidden) {
       this.cancel();
     }
     this.updateStyle();
   };
+
+  /**
+   * 处理触点按下并创建新轨迹。
+   */
   private readonly onDown = (event: PointerEvent) => this.begin(event);
+
+  /**
+   * 处理触点移动并更新采样。
+   */
   private readonly onMove = (event: PointerEvent) => this.move(event);
+
+  /**
+   * 结束触点及对应轨迹。
+   */
   private readonly onEnd = (event: PointerEvent) => this.end(event.pointerId);
 
   /**
    * 安装透明交互层及独立 Renderer；只有任务就绪时接管指针。
    */
-  constructor(private readonly renderer: TrajectoryEffectRendering) {
+  constructor(
+    private readonly renderer: TrajectoryEffectRendering
+  ) {
     Object.assign(this.element.style, { position: "absolute", inset: "0", zIndex: "2", overflow: "hidden" });
     Object.assign(renderer.element.style, { position: "absolute", inset: "0", width: "100%", height: "100%", pointerEvents: "none" });
     this.element.appendChild(renderer.element);
@@ -63,7 +139,11 @@ export class TrajectoryOverlayView {
   /**
    * 更新任务绑定，清除旧任务手势和采样。
    */
-  setBinding(binding?: TrajectoryBinding, format?: RealtimeVideoFormat, enabled = false): void {
+  setBinding(
+    binding?: TrajectoryBinding,
+    format?: RealtimeVideoFormat,
+    enabled = false
+  ): void {
     this.cancel();
     this.binding = binding;
     this.format = format;
@@ -74,7 +154,11 @@ export class TrajectoryOverlayView {
   /**
    * 同步显示配置；配置变化后旧坐标不再继续发送。
    */
-  configure(mode: VideoContentMode, mirrored: boolean, enabled: boolean): void {
+  configure(
+    mode: VideoContentMode,
+    mirrored: boolean,
+    enabled: boolean
+  ): void {
     if (this.contentMode !== mode || this.mirrored !== mirrored || this.requested !== enabled) {
       this.cancel();
     }
@@ -113,7 +197,11 @@ export class TrajectoryOverlayView {
   /**
    * 根据实际显示区域拒绝黑边，移动到视口外时限制在可见视频边缘。
    */
-  private point(event: PointerEvent, id: number, clamp: boolean): TrajectoryPoint | undefined {
+  private point(
+    event: PointerEvent,
+    id: number,
+    clamp: boolean
+  ): TrajectoryPoint | undefined {
     const viewport = this.element.getBoundingClientRect();
     if (!this.format) {
       return undefined;
@@ -144,7 +232,9 @@ export class TrajectoryOverlayView {
   /**
    * 按下立即采样，不等待定时窗口；只接受鼠标主键。
    */
-  private begin(event: PointerEvent): void {
+  private begin(
+    event: PointerEvent
+  ): void {
     if (!this.requested || !this.enabled || !this.binding || document.hidden || event.button !== 0) {
       return;
     }
@@ -167,7 +257,9 @@ export class TrajectoryOverlayView {
   /**
    * 高频指针事件只更新最新位置及视觉效果，不直接发送网络消息。
    */
-  private move(event: PointerEvent): void {
+  private move(
+    event: PointerEvent
+  ): void {
     const previous = this.pointers.get(event.pointerId);
     if (!previous) {
       return;
@@ -182,7 +274,9 @@ export class TrajectoryOverlayView {
   /**
    * 释放单个指针，多指交互继续；最后一个指针释放后停止采样。
    */
-  private end(pointerID: number): void {
+  private end(
+    pointerID: number
+  ): void {
     const point = this.pointers.get(pointerID);
     if (!point) {
       return;
@@ -238,7 +332,10 @@ export class TrajectoryOverlayView {
   /**
    * 固定频率发送所有活动触点的快照，布局变化时取消而非发送旧坐标。
    */
-  private sample(now: number, force = false): void {
+  private sample(
+    now: number,
+    force = false
+  ): void {
     if (document.hidden) {
       this.cancel();
       return;
@@ -264,7 +361,9 @@ export class TrajectoryOverlayView {
   /**
    * 自定义效果异常不影响触点采集和网络发送。
    */
-  private render(action: () => void): void {
+  private render(
+    action: () => void
+  ): void {
     try {
       action();
     } catch {

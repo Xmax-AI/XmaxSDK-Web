@@ -1,3 +1,13 @@
+//
+//  MediaControlling.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
 import type { LocalVideoController } from "./Video/LocalVideoController";
 import type { NetworkVideoController } from "./Video/NetworkVideoController";
@@ -12,15 +22,40 @@ import type { RealtimeReferenceVideo } from "../Service/Realtime/RealtimeReferen
  * 媒体层统一入口，不向 Core 暴露内部媒体控制器。
  */
 export interface MediaControlling extends InteractionControlling {
+
   /**
    * 活动源及可发布轨道；网络视频没有本地上行轨。
    */
   readonly currentTrack?: RealtimeVideoTrack;
+
+  /**
+   * 实际发布到 RTC 的本地视频轨；网络视频没有上行轨。
+   */
   readonly uplinkTrack?: RealtimeVideoTrack;
+
+  /**
+   * 当前活动媒体源类型。
+   */
   readonly source?: "camera" | "localVideo" | "localImage" | "networkVideo" | "externalVideo";
+
+  /**
+   * 当前媒体源是否提供可发布的音频轨。
+   */
   readonly hasAudio: boolean;
+
+  /**
+   * 是否在摄像头发布前等待亮度合格的帧。
+   */
   readonly isFrameValidationEnabled: boolean;
+
+  /**
+   * 服务端读取的网络视频地址及采样配置。
+   */
   readonly referenceVideo?: RealtimeReferenceVideo;
+
+  /**
+   * 网络视频生成完成时的业务通知。
+   */
   readonly onNetworkVideoFinish?: () => void;
 
   /**
@@ -41,47 +76,67 @@ export interface MediaControlling extends InteractionControlling {
   /**
    * 验证 RTC 支持外部媒体输入。
    */
-  validateExternalMediaSupport(kind: "local" | "external" | "image"): void;
+  validateExternalMediaSupport(
+    kind: "local" | "external" | "image"
+  ): void;
 
   /**
    * 创建相机采集及预览。
    */
-  createLocalCameraStream(options: Parameters<CameraControlling["createLocalCameraStream"]>[0]): Promise<RealtimeMediaStream>;
+  createLocalCameraStream(
+    options: Parameters<CameraControlling["createLocalCameraStream"]>[0]
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 创建服务端读取的网络视频源，RTC 初始化由 prepareSource 完成。
    */
-  createNetworkVideoStream(options: Parameters<NetworkVideoController["create"]>[0]): RealtimeMediaStream;
+  createNetworkVideoStream(
+    options: Parameters<NetworkVideoController["create"]>[0]
+  ): RealtimeMediaStream;
 
   /**
    * 创建文件视频源并解锁播放，RTC 初始化由 prepareSource 完成。
    */
-  createLocalVideoStream(options: Parameters<LocalVideoController["create"]>[0], signal: AbortSignal): Promise<RealtimeMediaStream>;
+  createLocalVideoStream(
+    options: Parameters<LocalVideoController["create"]>[0],
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 创建本地图片静止视频源，RTC 初始化由 prepareSource 完成。
    */
-  createLocalImageStream(options: Parameters<LocalImageController["create"]>[0], signal: AbortSignal): Promise<RealtimeMediaStream>;
+  createLocalImageStream(
+    options: Parameters<LocalImageController["create"]>[0],
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 创建外部轨道副本，RTC 初始化由 prepareSource 完成。
    */
-  createExternalVideoStream(options: Parameters<ExternalVideoController["create"]>[0]): RealtimeMediaStream;
+  createExternalVideoStream(
+    options: Parameters<ExternalVideoController["create"]>[0]
+  ): RealtimeMediaStream;
 
   /**
    * 初始化当前非相机源的 RTC 并安装外部轨道，每个异步边界检查操作有效性。
    */
-  prepareSource(ensureCurrent: () => void): Promise<void>;
+  prepareSource(
+    ensureCurrent: () => void
+  ): Promise<void>;
 
   /**
    * 设置相机预览就绪通知。
    */
-  setCameraPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void;
+  setCameraPreviewReadyHandler(
+    handler?: CameraPreviewReadyHandler
+  ): void;
 
   /**
    * 等待相机预热，可随连接取消。
    */
-  waitForValidCameraFrame(signal: AbortSignal): Promise<void>;
+  waitForValidCameraFrame(
+    signal: AbortSignal
+  ): Promise<void>;
 
   /**
    * 切换相机，外部轨道由调用方管理。
@@ -96,7 +151,9 @@ export interface MediaControlling extends InteractionControlling {
   /**
    * 生成开始后启动文件视频播放。
    */
-  startLocalVideo(signal: AbortSignal): Promise<void>;
+  startLocalVideo(
+    signal: AbortSignal
+  ): Promise<void>;
 
   /**
    * 暂停文件视频，保留本地资源。

@@ -1,3 +1,13 @@
+//
+//  RtcStatsLogger.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
 import { XmaxLogger, XmaxLoggerOption } from "../Logging/XmaxLogger";
 
@@ -5,21 +15,38 @@ import { XmaxLogger, XmaxLoggerOption } from "../Logging/XmaxLogger";
  * TRTC 5.20 的类型声明尚未包含运行时可能提供的 point2pointDelay。
  */
 interface PlaybackStats {
+
+  /**
+   * RTC 原生播放缓冲延迟，单位为毫秒。
+   */
   jitterBufferDelay?: number;
+
+  /**
+   * RTC 原生媒体端到端延迟，单位为毫秒。
+   */
   point2pointDelay?: number;
 }
 
+/**
+ * TRTC 原生音频运行统计。
+ */
 type AudioStats = TRTCStatistics["localStatistics"]["audio"] & PlaybackStats;
+/**
+ * TRTC 原生视频运行统计。
+ */
 type VideoStats = TRTCStatistics["localStatistics"]["video"][number] & PlaybackStats;
 
 /**
  * 将 TRTC 运行统计按 performance 开关输出到默认可见的 console.info。 @internal
  */
 export class RtcStatsLogger {
+
   /**
    * 按上下行及音视频分组输出白名单统计指标，仅在 performance 日志启用时格式化。
    */
-  static logStatistics(stats: TRTCStatistics): void {
+  static logStatistics(
+    stats: TRTCStatistics
+  ): void {
     XmaxLogger.rtc.info(() => {
       const blocks = [this.block("RTC 运行统计 (RTC Statistics)", [
         `RTT: ${this.value(stats.rtt, "ms")}`,
@@ -55,7 +82,9 @@ export class RtcStatsLogger {
   /**
    * 输出上下行网络质量等级、RTT 和丢包率，遵循 performance 日志开关。
    */
-  static logNetworkQuality(stats: NetworkQuality): void {
+  static logNetworkQuality(
+    stats: NetworkQuality
+  ): void {
     XmaxLogger.rtc.info(() => this.block("网络质量 (Network Quality Metrics)", [
       `${XmaxLogger.localized("本地上行：", "Local Uplink: ")}${this.quality(stats.uplinkNetworkQuality)}, RTT ${this.value(stats.uplinkRTT, "ms")}, ${XmaxLogger.localized("丢包率 ", "Loss ")}${this.value(stats.uplinkLoss, "%")}`,
       `${XmaxLogger.localized("本地下行（平均）：", "Local Downlink (Average): ")}${this.quality(stats.downlinkNetworkQuality)}, RTT ${this.value(stats.downlinkRTT, "ms")}, ${XmaxLogger.localized("丢包率 ", "Loss ")}${this.value(stats.downlinkLoss, "%")}`,
@@ -65,7 +94,11 @@ export class RtcStatsLogger {
   /**
    * 格式化音频码率和音量；远端音频额外包含播放延迟。
    */
-  private static audioBlock(title: string, stats: AudioStats, remote: boolean): string {
+  private static audioBlock(
+    title: string,
+    stats: AudioStats,
+    remote: boolean
+  ): string {
     return this.block(title, [
       `${XmaxLogger.localized("码率：", "Bitrate: ")}${this.value(stats.bitrate, "kbps")}`,
       `${XmaxLogger.localized("音量（0–1）：", "Audio Level (0–1): ")}${this.value(stats.audioLevel)}`,
@@ -76,7 +109,11 @@ export class RtcStatsLogger {
   /**
    * 格式化视频流类型、尺寸、帧率和码率；远端视频额外包含播放延迟。
    */
-  private static videoBlock(title: string, stats: VideoStats, remote: boolean): string {
+  private static videoBlock(
+    title: string,
+    stats: VideoStats,
+    remote: boolean
+  ): string {
     return this.block(title, [
       `${XmaxLogger.localized("流类型：", "Stream Type: ")}${stats.videoType ?? "—"}`,
       `${XmaxLogger.localized("分辨率：", "Resolution: ")}${this.value(stats.width)} × ${this.value(stats.height)}`,
@@ -89,7 +126,9 @@ export class RtcStatsLogger {
   /**
    * 格式化 TRTC 播放缓冲及估算端到端延迟，缺失或无效指标显示占位符。
    */
-  private static playbackLines(stats: PlaybackStats): string[] {
+  private static playbackLines(
+    stats: PlaybackStats
+  ): string[] {
     return [
       `${XmaxLogger.localized("播放缓冲延迟：", "Jitter Buffer Delay: ")}${this.value(stats.jitterBufferDelay, "ms")}`,
       `${XmaxLogger.localized("RTC 端到端延迟（估算）：", "RTC End-to-End Delay (Estimated): ")}${this.value(stats.point2pointDelay, "ms")}`,
@@ -99,14 +138,20 @@ export class RtcStatsLogger {
   /**
    * 为指标列表添加标题和树形行前缀，生成一个控制台日志分组。
    */
-  private static block(title: string, lines: string[]): string {
+  private static block(
+    title: string,
+    lines: string[]
+  ): string {
     return [title, ...lines.map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`)].join("\n");
   }
 
   /**
    * TRTC 丢包率已是百分数，无需再乘 100。
    */
-  private static value(value: number | undefined, unit = ""): string {
+  private static value(
+    value: number | undefined,
+    unit = ""
+  ): string {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
       return "—";
     }
@@ -116,7 +161,9 @@ export class RtcStatsLogger {
   /**
    * 将 TRTC 质量等级映射为本地化文案；未知等级回退为“未知”。
    */
-  private static quality(value: number): string {
+  private static quality(
+    value: number
+  ): string {
     const names = [
       ["未知", "Unknown"],
       ["极好", "Excellent"],

@@ -1,3 +1,13 @@
+//
+//  RoomEvent.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { RuntimeInfo } from "../../Foundation/Runtime/RuntimeInfo";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -9,7 +19,15 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
  * 生成或回传使用的整数像素尺寸。
  */
 export interface RoomEventTargetSize {
+
+  /**
+   * 视频宽度，单位为像素。
+   */
   width: number;
+
+  /**
+   * 视频高度，单位为像素。
+   */
   height: number;
 }
 
@@ -17,6 +35,7 @@ export interface RoomEventTargetSize {
  * 生成条件类信令的公共参数。
  */
 export interface RoomEventGenerationOptions {
+
   /**
    * 业务用户标识。
    */
@@ -37,10 +56,14 @@ export interface RoomEventGenerationOptions {
    */
   context: RealtimeContext;
 
-  /** 服务端生成后的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。 */
+  /**
+   * 服务端生成后的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。
+   */
   targetSize?: RoomEventTargetSize;
 
-  /** 是否回贴原始人脸，默认 false。 */
+  /**
+   * 是否回贴原始人脸，默认 false。
+   */
   faceRestoration?: boolean;
 
   /**
@@ -48,7 +71,9 @@ export interface RoomEventGenerationOptions {
    */
   paddingContain?: boolean;
 
-  /** 合并到本次生成信令的 params，不缓存。 */
+  /**
+   * 合并到本次生成信令的 params，不缓存。
+   */
   extraParams?: RealtimeExtraParams;
 }
 
@@ -59,6 +84,7 @@ export interface RoomEventGenerationOptions {
  * 编码失败时抛出 `internalError`。
  */
 export class RoomEvent {
+
   /**
    * 生成开始信令。
    *
@@ -74,19 +100,21 @@ export class RoomEvent {
    * @param options.extraParams 已校验的本次扩展参数，合并到 params。
    * @returns 序列化后的 start 房间消息。
    */
-  static start(options: {
-    userID: string;
-    taskID: string;
-    videoFormat: RealtimeVideoFormat;
-    context: RealtimeContext;
-    targetSize?: RoomEventTargetSize;
-    minimumBitrate: number;
-    maximumBitrate: number;
-    mirror?: boolean;
-    faceRestoration?: boolean;
-    paddingContain?: boolean;
-    extraParams?: RealtimeExtraParams;
-  }): string {
+  static start(
+    options: {
+      userID: string;
+      taskID: string;
+      videoFormat: RealtimeVideoFormat;
+      context: RealtimeContext;
+      targetSize?: RoomEventTargetSize;
+      minimumBitrate: number;
+      maximumBitrate: number;
+      mirror?: boolean;
+      faceRestoration?: boolean;
+      paddingContain?: boolean;
+      extraParams?: RealtimeExtraParams;
+    }
+  ): string {
     return RoomEvent.encode({
       event: "start",
       params: {
@@ -121,7 +149,9 @@ export class RoomEvent {
    * @param options.extraParams 已校验的本次扩展参数，合并到 params。
    * @returns 序列化后的 change_condition 房间消息。
    */
-  static changeCondition(options: RoomEventGenerationOptions): string {
+  static changeCondition(
+    options: RoomEventGenerationOptions
+  ): string {
     return RoomEvent.encode({
       event: "change_condition",
       params: RoomEvent.generationParameters(options),
@@ -133,13 +163,15 @@ export class RoomEvent {
   /**
    * 回传尺寸和码率范围调整信令，码率单位为 kbps。
    */
-  static changeTargetSize(options: {
-    userID: string;
-    taskID: string;
-    targetSize: RoomEventTargetSize;
-    minimumBitrate: number;
-    maximumBitrate: number;
-  }): string {
+  static changeTargetSize(
+    options: {
+      userID: string;
+      taskID: string;
+      targetSize: RoomEventTargetSize;
+      minimumBitrate: number;
+      maximumBitrate: number;
+    }
+  ): string {
     return RoomEvent.encode({
       event: "change_target_size",
       params: {
@@ -158,7 +190,12 @@ export class RoomEvent {
   /**
    * 生成停止信令。
    */
-  static stop(options: { userID: string; taskID: string }): string {
+  static stop(
+    options: {
+      userID: string;
+      taskID: string
+    }
+  ): string {
     return RoomEvent.encode({
       event: "stop",
       user_id: options.userID,
@@ -169,11 +206,13 @@ export class RoomEvent {
   /**
    * 交互轨迹信令。
    */
-  static tracks(options: {
-    userID: string;
-    taskID: string;
-    points: RealtimePoint[];
-  }): string {
+  static tracks(
+    options: {
+      userID: string;
+      taskID: string;
+      points: RealtimePoint[];
+    }
+  ): string {
     return RoomEvent.encode({
       event: "tracks",
       tracks: options.points.map((point) => [point.x, point.y]),
@@ -185,7 +224,11 @@ export class RoomEvent {
   /**
    * 房间心跳信令。
    */
-  static heartbeat(options: { userID: string }): string {
+  static heartbeat(
+    options: {
+      userID: string
+    }
+  ): string {
     return RoomEvent.encode({
       event: "heartbeat",
       user_id: options.userID,
@@ -208,9 +251,9 @@ export class RoomEvent {
       ...(options.paddingContain && { padding: "contain" }),
       target_size: options.targetSize
         ? [
-            Math.round(options.targetSize.width),
-            Math.round(options.targetSize.height),
-          ]
+          Math.round(options.targetSize.width),
+          Math.round(options.targetSize.height),
+        ]
         : undefined,
       prompt: options.context.prompt,
       ref_image_path: options.context.referencePath,
@@ -221,7 +264,9 @@ export class RoomEvent {
   /**
    * 业务字段外加 `runtime` 运行环境信息并序列化为 JSON 文本。
    */
-  private static encode(payload: Record<string, unknown>): string {
+  private static encode(
+    payload: Record<string, unknown>
+  ): string {
     try {
       return JSON.stringify({ ...payload, runtime: RuntimeInfo.toJSON() });
     } catch {

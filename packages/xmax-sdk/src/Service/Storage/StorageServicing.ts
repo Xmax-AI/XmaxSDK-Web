@@ -1,9 +1,20 @@
+//
+//  StorageServicing.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { StoredFile } from "./StoredFile";
 
 /**
  * 上传图片或视频的参数。
  */
 export interface StorageUploadOptions {
+
   /**
    * 文件数据；File 作为 Blob 的子类可直接传入。
    */
@@ -22,13 +33,17 @@ export interface StorageUploadOptions {
   /**
    * 上传进度回调（已传字节数、总字节数）。
    */
-  onProgress?: (transferred: number, total: number) => void;
+  onProgress?: (
+    transferred: number,
+    total: number
+  ) => void;
 }
 
 /**
  * 定义图片、视频上传和视频下载能力。
  */
 export interface StorageServicing {
+
   /**
    * 上传图片。
    *
@@ -37,7 +52,9 @@ export interface StorageServicing {
    * @returns 已存储文件信息。
    * @throws 参数无效、凭证获取失败或上传失败时抛出错误。
    */
-  uploadImage(options: StorageUploadOptions): Promise<StoredFile>;
+  uploadImage(
+    options: StorageUploadOptions
+  ): Promise<StoredFile>;
 
   /**
    * 上传视频。
@@ -48,7 +65,9 @@ export interface StorageServicing {
    * @returns 已存储文件信息。
    * @throws 参数无效、凭证获取失败或上传失败时抛出错误。
    */
-  uploadVideo(options: StorageUploadOptions): Promise<StoredFile>;
+  uploadVideo(
+    options: StorageUploadOptions
+  ): Promise<StoredFile>;
 
   /**
    * 下载完整视频文件并触发浏览器保存；跨域地址需要允许 CORS。
@@ -59,9 +78,11 @@ export interface StorageServicing {
    * @returns 文件读取完成并已触发浏览器保存，不代表文件已写入磁盘。
    * @throws 参数无效、非浏览器环境、下载失败或主动取消时抛出错误。
    */
-  downloadVideo(options: {
-    url: string;
-    fileName: string;
-    signal?: AbortSignal;
-  }): Promise<void>;
+  downloadVideo(
+    options: {
+      url: string;
+      fileName: string;
+      signal?: AbortSignal;
+    }
+  ): Promise<void>;
 }

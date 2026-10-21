@@ -1,3 +1,13 @@
+//
+//  XmaxRealtimeGenerationManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -9,24 +19,44 @@ import { RealtimeCoordinator } from "./RealtimeCoordinator";
 import type { InteractionControlling } from "../../Media/Interaction/InteractionControlling";
 import type { RenderControlling } from "../../Render/RenderControlling";
 
+/**
+ * 生成画布、媒体基准和本次生成条件。
+ */
 interface GenerationOptions {
-  /** 固定本地媒体规格，用于交互坐标。 */
+
+  /**
+   * 固定本地媒体规格，用于交互坐标。
+   */
   videoFormat: RealtimeVideoFormat;
+
   /**
    * 模型生成画布；缺省时与本地媒体规格一致。
    */
   generationVideoFormat?: RealtimeVideoFormat;
+
   /**
    * 是否由服务端按包含模式适配生成画布。
    */
   paddingContain?: boolean;
-  /** 生成条件，缺省复用最近缓存的上下文。 */
+
+  /**
+   * 生成条件，缺省复用最近缓存的上下文。
+   */
   context?: RealtimeContext;
-  /** 服务端生成后的回传尺寸，缺省时不发送。 */
+
+  /**
+   * 服务端生成后的回传尺寸，缺省时不发送。
+   */
   targetSize?: RoomEventTargetSize;
-  /** 是否回贴原始人脸，默认 false。 */
+
+  /**
+   * 是否回贴原始人脸，默认 false。
+   */
   faceRestoration?: boolean;
-  /** 合并到本次生成信令的 params，不缓存。 */
+
+  /**
+   * 合并到本次生成信令的 params，不缓存。
+   */
   extraParams?: RealtimeExtraParams;
 }
 
@@ -34,16 +64,24 @@ interface GenerationOptions {
  * 内部生成管理器：拥有生成任务与上下文，管理信令、确认和取消；不持有会话或公开状态。
  */
 export class XmaxRealtimeGenerationManager {
+
   /**
    * 当前生成条件与任务标识
    */
   private currentContext?: RealtimeContext;
+
+  /**
+   * 当前生成任务标识。
+   */
   private activeTaskID?: string;
 
   /**
    * 并发停止操作的共享结果
    */
-  private pendingStop?: { taskID: string; completion: Promise<void> };
+  private pendingStop?: {
+    taskID: string;
+    completion: Promise<void>
+  };
 
   /**
    * 注入房间传输组件和任务标识生成器，不创建会话或启动生成。
@@ -53,12 +91,14 @@ export class XmaxRealtimeGenerationManager {
     private readonly interactionController: InteractionControlling,
     private readonly renderController: RenderControlling,
     private readonly taskIDGenerator: () => string = XmaxRealtimeGenerationManager.createTaskID,
-  ) {}
+  ) { }
 
   /**
    * 首次请求在建立连接前校验条件；后续请求可复用缓存。
    */
-  validateContext(context?: RealtimeContext): RealtimeContext {
+  validateContext(
+    context?: RealtimeContext
+  ): RealtimeContext {
     const resolved = context ?? this.currentContext;
     if (!resolved) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A realtime context is required for the first generation");
@@ -84,22 +124,26 @@ export class XmaxRealtimeGenerationManager {
    * @param options.onRemoteReady 远端视频就绪后通知任务标识，不等待录制等附加功能。
    * @param options.extraParams 合并到本次 start 的 params，不缓存。
    */
-  async start(options: {
-    videoFormat: RealtimeVideoFormat;
-    generationVideoFormat?: RealtimeVideoFormat;
-    paddingContain?: boolean;
-    signal: AbortSignal;
-    ensureCurrent: () => void;
-    waitUntilRemoteReady: () => Promise<void>;
-    context?: RealtimeContext;
-    restart?: boolean;
-    targetSize?: RoomEventTargetSize;
-    mirror?: boolean;
-    faceRestoration?: boolean;
-    onStartSent?: () => Promise<void>;
-    onRemoteReady?: (taskID: string) => void;
-    extraParams?: RealtimeExtraParams;
-  }): Promise<string> {
+  async start(
+    options: {
+      videoFormat: RealtimeVideoFormat;
+      generationVideoFormat?: RealtimeVideoFormat;
+      paddingContain?: boolean;
+      signal: AbortSignal;
+      ensureCurrent: () => void;
+      waitUntilRemoteReady: () => Promise<void>;
+      context?: RealtimeContext;
+      restart?: boolean;
+      targetSize?: RoomEventTargetSize;
+      mirror?: boolean;
+      faceRestoration?: boolean;
+      onStartSent?: () => Promise<void>;
+      onRemoteReady?: (
+        taskID: string
+      ) => void;
+      extraParams?: RealtimeExtraParams;
+    }
+  ): Promise<string> {
     const context = this.validateContext(options.context);
     options.ensureCurrent();
 
@@ -156,7 +200,10 @@ export class XmaxRealtimeGenerationManager {
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    */
-  async update(taskID: string | undefined, options: GenerationOptions): Promise<void> {
+  async update(
+    taskID: string | undefined,
+    options: GenerationOptions
+  ): Promise<void> {
     const context = options.context ?? this.currentContext;
     if (!taskID || !context) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A realtime context is required to update the current generation");
@@ -171,7 +218,8 @@ export class XmaxRealtimeGenerationManager {
       faceRestoration: options.faceRestoration ?? false,
       extraParams: options.extraParams,
     });
-    if (this.activeTaskID !== taskID) throw RealtimeCoordinator.cancelledError();
+    if (this.activeTaskID !== taskID)
+      throw RealtimeCoordinator.cancelledError();
     this.currentContext = context;
     this.interactionController.startInteraction(taskID, options.videoFormat);
     this.renderController.setInteractionEnabled(true, options.videoFormat);
@@ -180,12 +228,15 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 幂等停止指定活动任务；并发调用共享结果，停止失败仅记录日志。
    */
-  async stop(taskID = this.activeTaskID): Promise<void> {
+  async stop(
+    taskID = this.activeTaskID
+  ): Promise<void> {
     // 取消与统一清理可能同时到达：共享停止结果，不重复发送，也不提前退房。
     if (this.pendingStop && (!taskID || this.pendingStop.taskID === taskID)) {
       return this.pendingStop.completion;
     }
-    if (!taskID || this.activeTaskID !== taskID) return;
+    if (!taskID || this.activeTaskID !== taskID)
+      return;
 
     this.activeTaskID = undefined;
     this.interactionController.stopInteraction();
@@ -202,14 +253,17 @@ export class XmaxRealtimeGenerationManager {
     try {
       await completion;
     } finally {
-      if (this.pendingStop?.completion === completion) this.pendingStop = undefined;
+      if (this.pendingStop?.completion === completion)
+        this.pendingStop = undefined;
     }
   }
 
   /**
    * 清空缓存的生成条件并等待活动任务停止，供断连和关闭流程使用。
    */
-  async reset(taskID?: string): Promise<void> {
+  async reset(
+    taskID?: string
+  ): Promise<void> {
     this.currentContext = undefined;
     this.interactionController.stopInteraction();
     this.renderController.setInteractionEnabled(false);
@@ -220,7 +274,10 @@ export class XmaxRealtimeGenerationManager {
   /**
    * 等待生成确认；取消时立即拒绝，并在所有结束路径移除取消监听。
    */
-  private async awaitConfirmation(confirmation: Promise<void>, signal: AbortSignal): Promise<void> {
+  private async awaitConfirmation(
+    confirmation: Promise<void>,
+    signal: AbortSignal
+  ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => signal.removeEventListener("abort", abort);
       const abort = () => {
@@ -240,7 +297,8 @@ export class XmaxRealtimeGenerationManager {
       );
 
       signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted) abort();
+      if (signal.aborted)
+        abort();
     });
   }
 

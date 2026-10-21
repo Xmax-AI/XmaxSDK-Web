@@ -1,3 +1,13 @@
+//
+//  RealtimeConfiguration.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { supportedRtcProviders, type RealtimeModelName } from "../../Service/Realtime/RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
@@ -6,33 +16,32 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
  * 创建实时 Manager 所需的业务配置。
  */
 export class RealtimeConfiguration {
+
   /**
-   * 实时生成业务使用的模型。
+   * 实时生成使用的模型；未知名称原样透传到测试环境，媒体与 RTC 默认配置同 x2.1.1-preview-cn。
    */
   readonly model: RealtimeModelName;
 
   /**
-   * 实时连接使用的 RTC 提供方。
+   * 实时连接使用的 RTC 提供方，默认取模型支持列表的首项，创建后不可切换。
    */
   readonly provider: RtcProvider;
 
   /**
-   * 是否默认请求开启远端生成画面的插帧。
+   * 是否默认请求开启远端生成画面的插帧，默认 false。
    */
   readonly isFrameInterpolationEnabled: boolean;
 
   /**
-   * 创建实时业务配置。
-   *
-   * @param init.model 实时生成业务使用的模型；未知名称原样透传到测试环境，媒体与 RTC 默认配置同 x2.1.1-preview-cn。
-   * @param init.provider RTC 提供方，默认按模型定义选择；必须受模型支持，创建后不可切换。
-   * @param init.isFrameInterpolationEnabled 是否默认开启远端生成画面的插帧，默认 false。
+   * 补全 RTC 和插帧默认值，并校验模型名称与 RTC 提供方配置。
    */
-  constructor(init: {
-    model: RealtimeModelName;
-    provider?: RtcProvider;
-    isFrameInterpolationEnabled?: boolean;
-  }) {
+  constructor(
+    init: {
+      model: RealtimeModelName;
+      provider?: RtcProvider;
+      isFrameInterpolationEnabled?: boolean;
+    }
+  ) {
     const providers = supportedRtcProviders(init.model);
     this.provider = init.provider ?? providers[0]!;
     if (!Object.values(RtcProvider).includes(this.provider)) {

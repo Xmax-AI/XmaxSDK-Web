@@ -1,8 +1,26 @@
+//
+//  RtcVideoOrientation.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * RTC 视频方向环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
  */
 export interface RtcOrientationEnvironment {
+
+  /**
+   * 浏览器报告的用户代理字符串。
+   */
   userAgent?: string;
+
+  /**
+   * 设备支持的最大同时触点数。
+   */
   maxTouchPoints?: number;
 
   /**
@@ -52,7 +70,9 @@ export function shouldTransposeRtcVideoSize(
     environment?.orientationDegrees ??
     (typeof window === "undefined"
       ? undefined
-      : (window as unknown as { orientation?: number }).orientation);
+      : (window as unknown as {
+        orientation?: number
+      }).orientation);
   return degrees === 0 || degrees === 180;
 }
 
@@ -60,9 +80,15 @@ export function shouldTransposeRtcVideoSize(
  * 移动端竖屏时返回转置后的宽高，其余情况原样返回。
  */
 export function rtcOrientedVideoSize(
-  size: { width: number; height: number },
+  size: {
+    width: number;
+    height: number
+  },
   environment?: RtcOrientationEnvironment,
-): { width: number; height: number } {
+): {
+  width: number;
+  height: number
+} {
   return shouldTransposeRtcVideoSize(environment)
     ? { width: size.height, height: size.width }
     : size;

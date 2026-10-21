@@ -1,3 +1,13 @@
+//
+//  RtcManaging.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { CameraPosition } from "../Media/Camera/CameraPosition";
 import type { CameraRotation } from "../Media/Camera/CameraRotation";
 import type { RtcEventListener } from "./RtcEventListener";
@@ -8,6 +18,7 @@ import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
  * 摄像头采集参数。
  */
 export interface RtcCameraCaptureOptions {
+
   /**
    * 期望的采集宽度（按模型规则调整后的尺寸）。
    */
@@ -40,6 +51,7 @@ export interface RtcCameraCaptureOptions {
  * 采集由选定 RTC 提供方完成；采集阶段不发布，建立连接时才发布本地流。
  */
 export interface RtcManaging {
+
   /**
    * RTC 引擎是否已初始化。
    */
@@ -61,7 +73,9 @@ export interface RtcManaging {
    * @returns 采集到的视频轨。
    * @throws 引擎未初始化、设备不可用或权限被拒绝时抛出错误。
    */
-  startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack>;
+  startCameraCapture(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack>;
 
   /**
    * 在前置和后置摄像头之间切换。
@@ -69,7 +83,9 @@ export interface RtcManaging {
    * @returns 切换后的视频轨。
    * @throws 采集未启动或设备切换失败时抛出错误。
    */
-  switchCameraCapture(to: CameraPosition): Promise<MediaStreamTrack>;
+  switchCameraCapture(
+    to: CameraPosition
+  ): Promise<MediaStreamTrack>;
 
   /**
    * 停止摄像头采集。
@@ -80,10 +96,12 @@ export interface RtcManaging {
    * 接入外部音视频轨（只准备、不发布）；适配器持有克隆轨，原轨仍归媒体源所有。
    * 仅支持该能力的提供方实现；无音频轨时不得回退到麦克风。
    */
-  setExternalMediaTracks?(tracks: {
-    videoTrack: MediaStreamTrack;
-    audioTrack?: MediaStreamTrack;
-  }): Promise<void>;
+  setExternalMediaTracks?(
+    tracks: {
+      videoTrack: MediaStreamTrack;
+      audioTrack?: MediaStreamTrack;
+    }
+  ): Promise<void>;
 
   /**
    * 配置本地视频编码参数。
@@ -101,12 +119,17 @@ export interface RtcManaging {
    *
    * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
    */
-  joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void>;
+  joinRoom(
+    configuration: RtcRoomJoinConfiguration
+  ): Promise<void>;
 
   /**
    * 应用当前会话更新的鉴权凭据，不切换房间或提供方；取消信号用于中止凭据恢复。
    */
-  updateCredentials(configuration: RtcRoomJoinConfiguration, signal?: AbortSignal): Promise<void>;
+  updateCredentials(
+    configuration: RtcRoomJoinConfiguration,
+    signal?: AbortSignal
+  ): Promise<void>;
 
   /**
    * 离开当前 RTC 房间；未在房间中时不产生效果。
@@ -153,13 +176,18 @@ export interface RtcManaging {
    *
    * @throws 操作失败时抛出错误。
    */
-  subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void>;
+  subscribeRemoteAudio(
+    userID: string,
+    subscribe: boolean
+  ): Promise<void>;
 
   /**
    * 获取播放音量处理前的远端音轨；尚未订阅到音频时返回空值。
    * 不支持独立采集与静音播放的平台抛出错误。
    */
-  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined;
+  getRemoteAudioTrack(
+    userID: string
+  ): MediaStreamTrack | undefined;
 
   /**
    * 当前平台是否支持远端音量控制。
@@ -174,7 +202,10 @@ export interface RtcManaging {
    *
    * @param volume 音量，取值范围为 `0...100`。
    */
-  setRemoteAudioVolume(volume: number, userID: string): void;
+  setRemoteAudioVolume(
+    volume: number,
+    userID: string
+  ): void;
 
   /**
    * 向当前 RTC 房间发送业务文本消息；TRTC 使用 `cmdId = 1`。
@@ -182,10 +213,14 @@ export interface RtcManaging {
    * @param message UTF-8 文本消息；最大字节数由各厂商适配器校验。
    * @throws 未在房间中或消息超长时抛出错误。
    */
-  sendRoomMessage(message: string): Promise<void>;
+  sendRoomMessage(
+    message: string
+  ): Promise<void>;
 
   /**
    * 设置 RTC 事件监听器，传入空值时清除监听器。
    */
-  setEventListener(listener?: RtcEventListener): void;
+  setEventListener(
+    listener?: RtcEventListener
+  ): void;
 }

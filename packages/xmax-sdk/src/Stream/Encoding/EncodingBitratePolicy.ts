@@ -1,3 +1,13 @@
+//
+//  EncodingBitratePolicy.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
@@ -5,7 +15,15 @@ import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat"
  * 像素面积或帧率对应的码率参考点，单位为 kbps。
  */
 interface BitratePoint {
+
+  /**
+   * 用于查找默认码率的像素或帧率边界。
+   */
   value: number;
+
+  /**
+   * 对应边界的默认码率，单位为 kbps。
+   */
   bitrate: number;
 }
 
@@ -13,6 +31,7 @@ interface BitratePoint {
  * 上下行共用的默认码率预算；显式上传码率由编码控制器优先处理。
  */
 export class EncodingBitratePolicy {
+
   /**
    * 最高码率相对参考值的预算系数。
    */
@@ -21,7 +40,14 @@ export class EncodingBitratePolicy {
   /**
    * 最低码率固定为 100 kbps，最高码率按尺寸和帧率计算并应用预算系数。
    */
-  static resolve(width: number, height: number, fps: number): { minimum: number; maximum: number } {
+  static resolve(
+    width: number,
+    height: number,
+    fps: number
+  ): {
+    minimum: number;
+    maximum: number
+  } {
     new RealtimeVideoFormat({ width, height, fps }).validate();
     const maximum = Math.round(
       this.resolveMaximumBitrate(width * height, fps) * this.bitrateScale,
@@ -39,7 +65,10 @@ export class EncodingBitratePolicy {
   /**
    * 按像素面积和帧率插值计算最高码率参考值。
    */
-  private static resolveMaximumBitrate(pixels: number, fps: number): number {
+  private static resolveMaximumBitrate(
+    pixels: number,
+    fps: number
+  ): number {
     const bitrate15 = EncodingBitratePolicy.interpolate(
       pixels,
       EncodingBitratePolicy.referenceBitratesAt15FPS,
@@ -78,7 +107,10 @@ export class EncodingBitratePolicy {
   /**
    * 在相邻参考点间线性插值，表外按最近端点的比例外推。
    */
-  private static interpolate(value: number, points: BitratePoint[]): number {
+  private static interpolate(
+    value: number,
+    points: BitratePoint[]
+  ): number {
     const first = points[0]!;
     if (value <= first.value) {
       return first.bitrate * (value / first.value);

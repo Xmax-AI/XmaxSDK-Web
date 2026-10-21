@@ -1,9 +1,23 @@
+//
+//  RoomHeartbeat.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { RoomEvent } from "./RoomEvent";
 
+/**
+ * 房间心跳发送间隔与等待策略。
+ */
 export interface RoomHeartbeatOptions {
+
   /**
    * RTC 引擎与消息能力组件。
    */
@@ -17,13 +31,16 @@ export interface RoomHeartbeatOptions {
   /**
    * 心跳等待实现（可替换，测试用）。
    */
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (
+    ms: number
+  ) => Promise<void>;
 }
 
 /**
  * 周期发送 RTC 房间心跳，并用版本号隔离已停止的旧周期。
  */
 export class RoomHeartbeat {
+
   /**
    * 基础层组件
    */
@@ -33,7 +50,13 @@ export class RoomHeartbeat {
    * 心跳配置
    */
   private readonly intervalMs: number;
-  private readonly sleep: (ms: number) => Promise<void>;
+
+  /**
+   * 等待指定毫秒数后继续执行的调度函数。
+   */
+  private readonly sleep: (
+    ms: number
+  ) => Promise<void>;
 
   /**
    * 运行状态
@@ -47,7 +70,9 @@ export class RoomHeartbeat {
    * @param options.intervalMs 心跳间隔（毫秒）；默认 10 秒。
    * @param options.sleep 心跳等待实现（可替换，测试用）。
    */
-  constructor(options: RoomHeartbeatOptions) {
+  constructor(
+    options: RoomHeartbeatOptions
+  ) {
     this.rtcManager = options.rtcManager;
     this.intervalMs = options.intervalMs ?? 10_000;
     this.sleep =
@@ -58,7 +83,9 @@ export class RoomHeartbeat {
   /**
    * 启动周期心跳；重复启动会替换当前周期。
    */
-  start(userID: string): void {
+  start(
+    userID: string
+  ): void {
     const version = ++this.cycleVersion;
     void this.run(version, userID);
   }
@@ -73,7 +100,10 @@ export class RoomHeartbeat {
   /**
    * 周期循环：等待后发送心跳；发送失败仅记录日志，周期继续。
    */
-  private async run(version: number, userID: string): Promise<void> {
+  private async run(
+    version: number,
+    userID: string
+  ): Promise<void> {
     while (this.cycleVersion === version) {
       await this.sleep(this.intervalMs);
       if (this.cycleVersion !== version) {

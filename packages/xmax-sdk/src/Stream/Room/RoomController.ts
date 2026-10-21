@@ -1,3 +1,13 @@
+//
+//  RoomController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
@@ -18,12 +28,26 @@ import { RoomMessageCodec } from "./RoomMessageCodec";
  * 房间生命周期状态。
  */
 type RoomState =
-  | { kind: "idle" }
-  | { kind: "joining"; operationID: string }
-  | { kind: "joined"; userID: string }
-  | { kind: "leaving" };
+  | {
+    kind: "idle"
+  }
+  | {
+    kind: "joining";
+    operationID: string
+  }
+  | {
+    kind: "joined";
+    userID: string
+  }
+  | {
+    kind: "leaving"
+  };
 
+/**
+ * 房间传输、分片编解码和心跳选项。
+ */
 export interface RoomControllerOptions {
+
   /**
    * RTC 引擎与房间能力组件。
    */
@@ -47,6 +71,7 @@ export interface RoomControllerOptions {
  * （RTC 消息通道使用广播语义），再分发给监听器。
  */
 export class RoomController implements RoomControlling {
+
   /**
    * 基础层组件
    */
@@ -56,8 +81,20 @@ export class RoomController implements RoomControlling {
    * 传输层组件
    */
   private readonly heartbeat: RoomHeartbeat;
+
+  /**
+   * 当前房间使用的消息分片编解码器。
+   */
   private codec: RoomMessageCodec;
+
+  /**
+   * 接入方注入的消息分片编解码器。
+   */
   private readonly customCodec: boolean;
+
+  /**
+   * 串行发送房间消息的任务链。
+   */
   private sendTail: Promise<void> = Promise.resolve();
 
   /**
@@ -69,6 +106,10 @@ export class RoomController implements RoomControlling {
    * 房间资源
    */
   private state: RoomState = { kind: "idle" };
+
+  /**
+   * 共享的退房及资源清理任务。
+   */
   private leaveOperation?: Promise<void>;
 
   /**
@@ -78,7 +119,9 @@ export class RoomController implements RoomControlling {
    * @param options.heartbeat 房间心跳组件（可替换，测试用）。
    * @param options.codec 房间消息编解码组件（可替换，测试用）。
    */
-  constructor(options: RoomControllerOptions) {
+  constructor(
+    options: RoomControllerOptions
+  ) {
     this.rtcManager = options.rtcManager;
     this.heartbeat =
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
@@ -113,9 +156,10 @@ export class RoomController implements RoomControlling {
     this.heartbeat.stop();
 
     try {
-      if (!this.customCodec) this.codec = new RoomMessageCodec(
-        connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
-      );
+      if (!this.customCodec)
+        this.codec = new RoomMessageCodec(
+          connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
+        );
       const configuration = toRoomJoinConfiguration(connection);
       const completeRtcJoin = measureRtcJoin?.();
       await this.rtcManager.joinRoom(configuration);
@@ -177,16 +221,18 @@ export class RoomController implements RoomControlling {
    * @param options.extraParams 合并到本次 start 的 params，不缓存。
    * @throws 房间未就绪或信令发送失败时抛出错误。
    */
-  startGeneration(options: {
-    taskID: string;
-    videoFormat: RealtimeVideoFormat;
-    context: RealtimeContext;
-    targetSize?: RoomEventTargetSize;
-    mirror?: boolean;
-    faceRestoration?: boolean;
-    paddingContain?: boolean;
-    extraParams?: RealtimeExtraParams;
-  }): Promise<void> {
+  startGeneration(
+    options: {
+      taskID: string;
+      videoFormat: RealtimeVideoFormat;
+      context: RealtimeContext;
+      targetSize?: RoomEventTargetSize;
+      mirror?: boolean;
+      faceRestoration?: boolean;
+      paddingContain?: boolean;
+      extraParams?: RealtimeExtraParams;
+    }
+  ): Promise<void> {
     return this.send(
       RoomEvent.start({
         userID: this.requireUserID(),
@@ -214,15 +260,17 @@ export class RoomController implements RoomControlling {
    * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    * @throws 房间未就绪或信令发送失败时抛出错误。
    */
-  changeGenerationCondition(options: {
-    taskID: string;
-    videoFormat: RealtimeVideoFormat;
-    context: RealtimeContext;
-    targetSize?: RoomEventTargetSize;
-    faceRestoration?: boolean;
-    paddingContain?: boolean;
-    extraParams?: RealtimeExtraParams;
-  }): Promise<void> {
+  changeGenerationCondition(
+    options: {
+      taskID: string;
+      videoFormat: RealtimeVideoFormat;
+      context: RealtimeContext;
+      targetSize?: RoomEventTargetSize;
+      faceRestoration?: boolean;
+      paddingContain?: boolean;
+      extraParams?: RealtimeExtraParams;
+    }
+  ): Promise<void> {
     return this.send(
       RoomEvent.changeCondition({
         userID: this.requireUserID(),
@@ -242,11 +290,13 @@ export class RoomController implements RoomControlling {
    *
    * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
    */
-  changeTargetSize(options: {
-    taskID: string;
-    targetSize: RoomEventTargetSize;
-    ensureActive: () => void;
-  }): Promise<void> {
+  changeTargetSize(
+    options: {
+      taskID: string;
+      targetSize: RoomEventTargetSize;
+      ensureActive: () => void;
+    }
+  ): Promise<void> {
     options.ensureActive();
     return this.send(
       RoomEvent.changeTargetSize({
@@ -262,7 +312,12 @@ export class RoomController implements RoomControlling {
    * 按回传尺寸和 24 fps 估算下行码率，最高值限制在 100～10000 kbps。
    * 估算不设置服务端帧率，也不沿用显式上传码率。
    */
-  private downlinkBitrates(size: RoomEventTargetSize): { minimumBitrate: number; maximumBitrate: number } {
+  private downlinkBitrates(
+    size: RoomEventTargetSize
+  ): {
+    minimumBitrate: number;
+    maximumBitrate: number
+  } {
     const { maximum } = EncodingBitratePolicy.resolve(
       Math.round(size.width), Math.round(size.height), 24,
     );
@@ -272,7 +327,9 @@ export class RoomController implements RoomControlling {
   /**
    * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
    */
-  stopGeneration(taskID: string): Promise<void> {
+  stopGeneration(
+    taskID: string
+  ): Promise<void> {
     if (!taskID || this.state.kind !== "joined") {
       return Promise.resolve();
     }
@@ -282,7 +339,10 @@ export class RoomController implements RoomControlling {
   /**
    * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): Promise<void> {
+  sendTracks(
+    taskID: string,
+    points: RealtimePoint[]
+  ): Promise<void> {
     if (!taskID || points.length === 0) {
       return Promise.resolve();
     }
@@ -298,7 +358,9 @@ export class RoomController implements RoomControlling {
   /**
    * 设置房间事件监听器，传入空值时清除监听器。
    */
-  setListener(listener?: RoomListener): void {
+  setListener(
+    listener?: RoomListener
+  ): void {
     this.listener = listener;
   }
 
@@ -310,14 +372,21 @@ export class RoomController implements RoomControlling {
     this.heartbeat.stop();
     this.codec.reset();
     this.sendTail = Promise.resolve();
-    try { await this.rtcManager.leaveRoom(); }
-    finally { this.leaveOperation = undefined; }
+    try {
+      await this.rtcManager.leaveRoom();
+    }
+    finally {
+      this.leaveOperation = undefined;
+    }
   }
 
   /**
    * 组包入站消息并按目标用户过滤后分发完整业务消息。
    */
-  handleIncomingMessage(senderUserID: string, raw: string): void {
+  handleIncomingMessage(
+    senderUserID: string,
+    raw: string
+  ): void {
     const parsed = this.codec.processIncoming(senderUserID, raw);
     if (typeof parsed !== "object" || parsed === null) {
       return;
@@ -339,7 +408,9 @@ export class RoomController implements RoomControlling {
   /**
    * 发送房间信令并输出日志。
    */
-  private send(message: string): Promise<void> {
+  private send(
+    message: string
+  ): Promise<void> {
     const state = this.state;
     const packets = this.codec.encodeOutgoing(message);
     const operation = this.sendTail.then(async () => {
@@ -354,8 +425,10 @@ export class RoomController implements RoomControlling {
           `发送房间信令 (Outbound Room Signaling)\n` +
           `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(JSON.parse(message), null, 2)}`,
       );
-    }).catch(error => { throw XmaxError.from(error); });
-    this.sendTail = operation.catch(() => {});
+    }).catch(error => {
+      throw XmaxError.from(error);
+    });
+    this.sendTail = operation.catch(() => { });
     return operation;
   }
 

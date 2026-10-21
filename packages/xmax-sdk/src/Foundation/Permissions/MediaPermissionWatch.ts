@@ -1,7 +1,18 @@
+//
+//  MediaPermissionWatch.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * 媒体权限弹窗观察器。
  */
 export interface MediaPermissionWatch {
+
   /**
    * 用户完成授权决定（所有观察的权限离开 prompt 状态）时兑现。
    */
@@ -71,7 +82,7 @@ export async function watchMediaPermissionPrompt(
 
   // 已全部授权时立即兑现（授权耗时接近 0）；存在 denied 时无法观察，不记录。
   if (states.every((state) => state === "granted")) {
-    return { decided: Promise.resolve(), dispose() {} };
+    return { decided: Promise.resolve(), dispose() { } };
   }
   if (!states.includes("prompt")) {
     return undefined;
@@ -95,6 +106,7 @@ export async function watchMediaPermissionPrompt(
     void queryStates().then(finishIfDecided);
   }, PERMISSION_POLL_INTERVAL_MS);
 
+  // 结束授权轮询，后续权限变化不再通知当前观察器。
   function dispose(): void {
     disposed = true;
     clearInterval(poll);

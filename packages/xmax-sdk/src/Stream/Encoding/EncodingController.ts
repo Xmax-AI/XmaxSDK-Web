@@ -1,3 +1,13 @@
+//
+//  EncodingController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import {
@@ -11,6 +21,9 @@ import {
 import { EncodingBitratePolicy } from "./EncodingBitratePolicy";
 import type { EncodingControlling } from "./EncodingControlling";
 
+/**
+ * 业务编码偏好与 RTC 编码策略的对应关系。
+ */
 const ENCODER_PREFERENCE_MAP: Record<
   RealtimeVideoEncoderPreference,
   RtcVideoEncoderPreference
@@ -28,25 +41,34 @@ const ENCODER_PREFERENCE_MAP: Record<
  * 格式显式指定码率时以显式值为准。
  */
 export class EncodingController implements EncodingControlling {
+
   /**
    * 基础层组件
    */
   private readonly rtcManager: RtcManaging;
+
+  /**
+   * 最近成功应用到 RTC 的编码配置。
+   */
   private lastAppliedConfiguration?: VideoEncodingConfiguration;
 
   /**
    * 创建编码控制器。
-   *
-   * @param options.rtcManager RTC 引擎与媒体传输组件。
    */
-  constructor(options: { rtcManager: RtcManaging }) {
+  constructor(
+    options: {
+      rtcManager: RtcManaging
+    }
+  ) {
     this.rtcManager = options.rtcManager;
   }
 
   /**
    * 校验视频格式，解析显式或推荐码率范围后配置 RTC 编码器；参数或配置失败时抛错。
    */
-  async configure(videoFormat: RealtimeVideoFormat): Promise<void> {
+  async configure(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void> {
     videoFormat.validate();
 
     let minimum: number;
@@ -84,8 +106,12 @@ export class EncodingController implements EncodingControlling {
     this.lastAppliedConfiguration = { ...configuration };
   }
 
-  /** 只替换目标帧率，保留最近成功应用的尺寸、已解析码率区间和偏好。 */
-  async updateFrameRate(fps: number): Promise<RealtimeVideoFormat> {
+  /**
+   * 只替换目标帧率，保留最近成功应用的尺寸、已解析码率区间和偏好。
+   */
+  async updateFrameRate(
+    fps: number
+  ): Promise<RealtimeVideoFormat> {
     const previous = this.lastAppliedConfiguration;
     if (!previous) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Apply an encoder configuration before updating frame rate");

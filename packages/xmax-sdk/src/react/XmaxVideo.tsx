@@ -1,3 +1,13 @@
+//
+//  XmaxVideo.tsx
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import {
   VideoContentMode,
   XmaxVideoView,
@@ -11,7 +21,11 @@ import {
   type CSSProperties,
 } from "react";
 
+/**
+ * 单路视频 React 组件的轨道、显示和交互选项。
+ */
 export interface XmaxVideoProps {
+
   /**
    * 当前显示的视频轨道；置空时清空画面。
    */
@@ -30,7 +44,9 @@ export interface XmaxVideoProps {
   /**
    * 当前视图的呈现帧率统计；换流或卸载时清空，不受统计面板显示开关影响。
    */
-  onRenderStatistics?: (statistics?: VideoRenderStatistics) => void;
+  onRenderStatistics?: (
+    statistics?: VideoRenderStatistics
+  ) => void;
 
   /**
    * 容器类名。
@@ -57,7 +73,9 @@ export interface XmaxVideoProps {
  * 单轨视频 React 组件：把一路视频轨渲染到容器。
  * SDK 远端轨道自动预热 1000 ms 后渐入，本地预览直接显示。
  */
-export function XmaxVideo(props: XmaxVideoProps) {
+export function XmaxVideo(
+  props: XmaxVideoProps
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<XmaxVideoView | undefined>(undefined);
 
@@ -80,7 +98,8 @@ export function XmaxVideo(props: XmaxVideoProps) {
   }, []);
 
   useEffect(() => {
-    if (viewRef.current) viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
+    if (viewRef.current)
+      viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
   }, [props.onRenderStatistics]);
 
   useEffect(() => {

@@ -1,18 +1,49 @@
+//
+//  QualityController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { QUALITY_TIERS } from "./QualityTiers";
 import { DEFAULT_POLICY, type QualityPolicy } from "./QualityPolicy";
 
-/** 按 L1～L5 顺序供状态机逐级切换，规格只在共享定义中维护。 */
+/**
+ * 按 L1～L5 顺序供状态机逐级切换，规格只在共享定义中维护。
+ */
 const ORDERED_QUALITY_TIERS = Object.values(QUALITY_TIERS);
 
+/**
+ * 网络质量触发的档位变更及其原因。
+ */
 export interface QualityChange {
-  /** 切档前后的档位编号，范围 1～5；不能仅靠帧率区分档位。 */
+
+  /**
+   * 切档前后的档位编号，范围 1～5；不能仅靠帧率区分档位。
+   */
   from: number;
+
+  /**
+   * 切档后的档位编号，范围为 1–5。
+   */
   to: number;
+
   /**
    * 相对固定媒体基准的缩放比例，实际尺寸由调用方解析。
    */
   scale: number;
+
+  /**
+   * 当前档位的上行帧率上限，单位为 fps。
+   */
   frameRate: number;
+
+  /**
+   * 降档、尝试升档或试升失败回退的触发原因。
+   */
   reason: "poorNetwork" | "probeUpgrade" | "failedProbe";
 }
 
@@ -22,36 +53,90 @@ export interface QualityChange {
  * apply 必须遵循 AbortSignal 及会话操作租约。下行无生效 ACK 时，档位仅表示已发送目标。
  */
 export class QualityController {
+
+  /**
+   * 网络质量样本阈值与升降档时间窗口。
+   */
   private readonly policy: QualityPolicy;
+
+  /**
+   * 当前功能是否处于活动状态。
+   */
   private active = false;
+
+  /**
+   * 当前档位在共享档位表中的索引。
+   */
   private index = 0;
+
+  /**
+   * 连续好网络样本数。
+   */
   private good = 0;
+
+  /**
+   * 连续差网络样本数。
+   */
   private poor = 0;
+
+  /**
+   * 最近一次有效网络样本的单调时间，单位为毫秒。
+   */
   private lastSampleAt?: number;
+
+  /**
+   * 切档后恢复样本累计的最早时间，单位为单调时钟毫秒。
+   */
   private stableUntil = 0;
+
+  /**
+   * 允许再次尝试升档的最早时间，单位为单调时钟毫秒。
+   */
   private upgradeAfter = 0;
+
+  /**
+   * 当前升档观察窗口的截止时间，单位为单调时钟毫秒。
+   */
   private probeUntil = 0;
+
+  /**
+   * 是否正在应用档位参数。
+   */
   private switching = false;
+
+  /**
+   * 生命周期标识，使释放后的异步结果失效。
+   */
   private lifecycle = new AbortController();
 
   /**
    * 创建调档状态机；候选档位不满足编码约束时保持当前档位，不跨档尝试。
    */
   constructor(
-    private readonly apply: (change: QualityChange, signal: AbortSignal) => Promise<void>,
+    private readonly apply: (
+      change: QualityChange,
+      signal: AbortSignal
+    ) => Promise<void>,
     private readonly now: () => number = () => performance.now(),
     policy: Partial<QualityPolicy> = {},
-    private readonly canApply: (level: number) => boolean = () => true,
+    private readonly canApply: (
+      level: number
+    ) => boolean = () => true,
   ) {
     this.policy = { ...DEFAULT_POLICY, ...policy };
     for (const value of Object.values(this.policy)) {
-      if (!Number.isFinite(value) || value < 0) throw new Error("Invalid quality policy");
+      if (!Number.isFinite(value) || value < 0)
+        throw new Error("Invalid quality policy");
     }
     for (const value of [this.policy.poorSamples, this.policy.goodSamples]) {
-      if (!Number.isInteger(value) || value < 1) throw new Error("Sample counts must be positive integers");
+      if (!Number.isInteger(value) || value < 1)
+        throw new Error("Sample counts must be positive integers");
     }
   }
 
+  /**
+   * 当前档位、活动状态和升档等待时间的只读快照。
+   */
   get snapshot() {
     return Object.freeze({
       active: this.active, level: this.index + 1, ...ORDERED_QUALITY_TIERS[this.index]!,
@@ -59,8 +144,12 @@ export class QualityController {
     });
   }
 
-  /** 传入调用方保存的档位，不在 start 中擅自改写编码配置。 */
-  start(level = 1): void {
+  /**
+   * 传入调用方保存的档位，不在 start 中擅自改写编码配置。
+   */
+  start(
+    level = 1
+  ): void {
     if (!Number.isInteger(level) || level < 1 || level > ORDERED_QUALITY_TIERS.length) {
       throw new Error("Unsupported quality level");
     }
@@ -71,27 +160,40 @@ export class QualityController {
     this.stableUntil = this.upgradeAfter = this.probeUntil = 0;
   }
 
-  /** 取消旧会话的迟到结果；底层尚未完成时仍保持串行限制。 */
+  /**
+   * 取消旧会话的迟到结果；底层尚未完成时仍保持串行限制。
+   */
   stop(): void {
     this.active = false;
     this.lifecycle.abort();
     this.resetSamples();
   }
 
-  /** 前台操作期间丢弃累计样本，但保留试升失败后的冷却时间。 */
+  /**
+   * 前台操作期间丢弃累计样本，但保留试升失败后的冷却时间。
+   */
   resetSamples(): void {
     this.resetCounts();
     this.lastSampleAt = undefined;
   }
 
-  /** 只接收质量事件，不得用定时器重复提交同一份缓存统计。异常由调用方记录。 */
-  async observe(quality: number | undefined, sampleAt = this.now()): Promise<QualityChange | undefined> {
-    if (!this.active || this.switching || !Number.isFinite(sampleAt)) return;
+  /**
+   * 只接收质量事件，不得用定时器重复提交同一份缓存统计。异常由调用方记录。
+   */
+  async observe(
+    quality: number | undefined,
+    sampleAt = this.now()
+  ): Promise<QualityChange | undefined> {
+    if (!this.active || this.switching || !Number.isFinite(sampleAt))
+      return;
     const now = this.now();
-    if (sampleAt > now) return;
+    if (sampleAt > now)
+      return;
     if (this.lastSampleAt !== undefined) {
-      if (sampleAt <= this.lastSampleAt) return;
-      if (sampleAt - this.lastSampleAt > this.policy.sampleTimeoutMs) this.resetCounts();
+      if (sampleAt <= this.lastSampleAt)
+        return;
+      if (sampleAt - this.lastSampleAt > this.policy.sampleTimeoutMs)
+        this.resetCounts();
     }
     this.lastSampleAt = sampleAt;
     if (now - sampleAt > this.policy.sampleTimeoutMs || sampleAt < this.stableUntil) {
@@ -106,7 +208,10 @@ export class QualityController {
       }
     } else if (quality === 1 || quality === 2) {
       this.poor = 0;
-      if (sampleAt < this.upgradeAfter) { this.good = 0; return; }
+      if (sampleAt < this.upgradeAfter) {
+        this.good = 0;
+        return;
+      }
       this.good++;
       if (this.good >= this.policy.goodSamples && this.index > 0) {
         return this.change(this.index - 1, "probeUpgrade");
@@ -118,9 +223,20 @@ export class QualityController {
     return;
   }
 
-  private resetCounts(): void { this.good = this.poor = 0; }
+  /**
+   * 清除连续好网络与差网络样本计数。
+   */
+  private resetCounts(): void {
+    this.good = this.poor = 0;
+  }
 
-  private async change(index: number, reason: QualityChange["reason"]): Promise<QualityChange | undefined> {
+  /**
+   * 应用候选档位，成功后更新状态及升降档时间窗口。
+   */
+  private async change(
+    index: number,
+    reason: QualityChange["reason"]
+  ): Promise<QualityChange | undefined> {
     this.resetCounts();
     if (!this.canApply(index + 1)) {
       return;
@@ -131,12 +247,14 @@ export class QualityController {
     this.switching = true;
     try {
       await this.apply(change, lifecycle.signal);
-      if (lifecycle.signal.aborted) return;
+      if (lifecycle.signal.aborted)
+        return;
       this.index = index;
       const now = this.now();
       this.stableUntil = now + this.policy.stabilizationMs;
       this.probeUntil = reason === "probeUpgrade" ? now + this.policy.probeMs : 0;
-      if (reason === "failedProbe") this.upgradeAfter = now + this.policy.upgradeCooldownMs;
+      if (reason === "failedProbe")
+        this.upgradeAfter = now + this.policy.upgradeCooldownMs;
       return change;
     } catch (error) {
       if (!lifecycle.signal.aborted) {

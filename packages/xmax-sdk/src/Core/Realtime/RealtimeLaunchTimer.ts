@@ -1,3 +1,13 @@
+//
+//  RealtimeLaunchTimer.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type {
   RealtimeLaunchTiming,
   RealtimeLaunchTimingListener,
@@ -7,23 +17,38 @@ import type {
  * @internal 只观察首轮启动，不参与生成流程的状态提交或等待。
  */
 export class RealtimeLaunchTimer {
+
   /**
    * 统计快照与观察者
    */
   private snapshot: RealtimeLaunchTiming = Object.freeze({});
+
+  /**
+   * 启动耗时快照的业务监听器。
+   */
   private listener?: RealtimeLaunchTimingListener;
 
   /**
    * 当前启动周期与计时起点
    */
   private sequence = 0;
+
+  /**
+   * 当前启动周期是否仍在记录耗时。
+   */
   private active = false;
+
+  /**
+   * 当前计时起点，使用单调时钟的毫秒值。
+   */
   private startedAt = 0;
 
   /**
    * 设置统计监听器并立即回放当前快照；传 undefined 取消监听。
    */
-  setListener(listener?: RealtimeLaunchTimingListener): void {
+  setListener(
+    listener?: RealtimeLaunchTimingListener
+  ): void {
     this.listener = listener;
     this.notify();
   }
@@ -127,7 +152,7 @@ export class RealtimeLaunchTimer {
   private notify(): void {
     try {
       // 异步监听器也允许使用；观察者异常不得影响媒体生命周期。
-      void Promise.resolve(this.listener?.(this.snapshot)).catch(() => {});
+      void Promise.resolve(this.listener?.(this.snapshot)).catch(() => { });
     } catch {
       // 同步观察者异常同样隔离。
     }

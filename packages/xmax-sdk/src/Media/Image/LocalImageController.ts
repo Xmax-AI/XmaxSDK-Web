@@ -1,3 +1,13 @@
+//
+//  LocalImageController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
@@ -10,14 +20,50 @@ import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realt
  * 图片解码、静止画面输出及预览资源。
  */
 interface LocalImageSource {
+
+  /**
+   * 用于解码源图片的图像元素。
+   */
   image: HTMLImageElement;
+
+  /**
+   * 承载媒体帧的画布。
+   */
   canvas: HTMLCanvasElement;
+
+  /**
+   * 源图片的浏览器对象 URL，释放源时一并撤销。
+   */
   url: string;
+
+  /**
+   * 取消当前媒体操作及相关等待。
+   */
   abort: AbortController;
+
+  /**
+   * 当前绑定该媒体源的渲染目标。
+   */
   targets: Set<VideoRenderTarget>;
+
+  /**
+   * 由当前媒体源输出的浏览器媒体流。
+   */
   stream?: MediaStream;
+
+  /**
+   * 当前媒体源对应的 SDK 视频轨道。
+   */
   track?: RealtimeVideoTrack;
+
+  /**
+   * 当前等待或定时任务的取消句柄。
+   */
   timer?: ReturnType<typeof setInterval>;
+
+  /**
+   * 媒体源结束时释放资源并通知上层。
+   */
   onEnded?: () => void;
 }
 
@@ -25,6 +71,7 @@ interface LocalImageSource {
  * 将本地图片等比缩放为静止视频流，不上传文件、不采集设备、不生成音频。
  */
 export class LocalImageController {
+
   /**
    * 当前图片源，包含尚未完成的解码操作。
    */
@@ -33,7 +80,11 @@ export class LocalImageController {
   /**
    * 注入运行期错误通知，不创建浏览器资源。
    */
-  constructor(private readonly onError: (error: XmaxError) => void) {}
+  constructor(
+    private readonly onError: (
+      error: XmaxError
+    ) => void
+  ) { }
 
   /**
    * 是否持有正在准备或可用的图片源。
@@ -52,10 +103,14 @@ export class LocalImageController {
   /**
    * 解码图片、准备静止画面并持续输出帧；取消或失败时释放本次资源。
    */
-  async create(options: {
-    file: Blob;
-    videoFormat: RealtimeVideoFormat;
-  }, mediaService: MediaServicing, signal: AbortSignal): Promise<RealtimeMediaStream> {
+  async create(
+    options: {
+      file: Blob;
+      videoFormat: RealtimeVideoFormat;
+    },
+    mediaService: MediaServicing,
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream> {
     if (this.source) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local image before creating another one");
     }
@@ -190,7 +245,10 @@ export class LocalImageController {
   /**
    * 等待浏览器完成图片解码，支持主动停止、操作取消和超时。
    */
-  private load(source: LocalImageSource, signal: AbortSignal): Promise<void> {
+  private load(
+    source: LocalImageSource,
+    signal: AbortSignal
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const finish = (error?: XmaxError) => {
         clearTimeout(timer);
@@ -223,7 +281,9 @@ export class LocalImageController {
   /**
    * 输出失效时停止刷新并仅报告一次，资源由业务生命周期统一释放。
    */
-  private handleError(source: LocalImageSource): void {
+  private handleError(
+    source: LocalImageSource
+  ): void {
     if (this.source !== source || source.timer === undefined) {
       return;
     }

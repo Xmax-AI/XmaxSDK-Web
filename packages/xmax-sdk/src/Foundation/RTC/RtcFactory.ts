@@ -1,3 +1,13 @@
+//
+//  RtcFactory.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
 import { AgoraRtcManager } from "./Agora/AgoraRtcManager";
 import { RtcProvider } from "./RtcProvider";
@@ -9,7 +19,10 @@ import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
 /**
  * 按固定的接入配置创建 RTC 实现；构造阶段不加载厂商运行时。
  */
-export function createRtcManager(provider: RtcProvider, environment: XmaxEnvironment): RtcManaging {
+export function createRtcManager(
+  provider: RtcProvider,
+  environment: XmaxEnvironment
+): RtcManaging {
   switch (provider) {
     case RtcProvider.trtc:
       return new TrtcRtcManager();

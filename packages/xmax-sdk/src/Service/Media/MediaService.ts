@@ -1,3 +1,13 @@
+//
+//  MediaService.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import {
   inputSizeAlignment,
   maximumInputPixels,
@@ -16,6 +26,7 @@ import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
  * 统一计算本地媒体、生成画布及回传尺寸，并查询平台媒体能力。
  */
 export class MediaService implements MediaServicing {
+
   /**
    * 模型约束
    */
@@ -23,10 +34,10 @@ export class MediaService implements MediaServicing {
 
   /**
    * 创建媒体服务。
-   *
-   * @param model 媒体输入规则使用的模型，默认为 `x2.1.1-preview-cn`。
    */
-  constructor(model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn) {
+  constructor(
+    model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn
+  ) {
     this.model = model;
   }
 
@@ -34,7 +45,10 @@ export class MediaService implements MediaServicing {
    * 解析固定媒体基准：保留完整内容、不放大、限制面积并按 4 对齐。
    * 摄像头请求尺寸须先匹配模型桶；文件媒体不受模型桶比例限制。
    */
-  resolveMediaSize(sourceMediaSize: ModelSize, source: "camera" | "image" | "video"): ModelSize {
+  resolveMediaSize(
+    sourceMediaSize: ModelSize,
+    source: "camera" | "image" | "video"
+  ): ModelSize {
     this.validateIntegralSize(sourceMediaSize);
     const buckets = resolutionBuckets(this.model);
     if (source === "camera" && buckets.length > 0) {
@@ -49,7 +63,9 @@ export class MediaService implements MediaServicing {
   /**
    * 选择比例最接近的模型生成画布；无固定桶时按模型像素预算和对齐规则计算。
    */
-  resolveGenerationSize(resolvedMediaSize: ModelSize): ModelSize {
+  resolveGenerationSize(
+    resolvedMediaSize: ModelSize
+  ): ModelSize {
     this.validateIntegralSize(resolvedMediaSize);
     const buckets = resolutionBuckets(this.model);
     if (buckets.length === 0) {
@@ -73,7 +89,10 @@ export class MediaService implements MediaServicing {
    * 综合下行宽高上限计算回传尺寸，不放大、优先保持比例并按 4 对齐。
    * 插帧在 WebGPU 内部补边，不因开启插帧额外缩小回传画面。
    */
-  resolveTargetSize(resolvedMediaSize: ModelSize, maximumSize: ModelSize): ModelSize {
+  resolveTargetSize(
+    resolvedMediaSize: ModelSize,
+    maximumSize: ModelSize
+  ): ModelSize {
     this.validateIntegralSize(resolvedMediaSize);
     if (![maximumSize.width, maximumSize.height].every(value => Number.isFinite(value) && value > 0)) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Target bounds must be positive and finite");
@@ -85,7 +104,9 @@ export class MediaService implements MediaServicing {
   /**
    * 拒绝无效或不能安全参与面积计算的媒体像素尺寸。
    */
-  private validateIntegralSize(size: ModelSize): void {
+  private validateIntegralSize(
+    size: ModelSize
+  ): void {
     if (![size.width, size.height].every(value => Number.isSafeInteger(value) && value > 0) ||
       !Number.isSafeInteger(size.width * size.height)) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Media dimensions must be positive safe integers");
@@ -95,7 +116,9 @@ export class MediaService implements MediaServicing {
   /**
    * Web 插帧保留原始尺寸；/16 对齐由 GPU 内部补边处理，不缩小回传视频。
    */
-  resolveFrameInterpolationSize(size: ModelSize): ModelSize {
+  resolveFrameInterpolationSize(
+    size: ModelSize
+  ): ModelSize {
     const { width, height } = size;
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video dimensions must be positive integers");
@@ -106,14 +129,18 @@ export class MediaService implements MediaServicing {
   /**
    * WebGPU 适配器探测是异步的；实际性能和运行状态由渲染管线判断。
    */
-  async supportsFrameInterpolation(size: ModelSize): Promise<boolean> {
+  async supportsFrameInterpolation(
+    size: ModelSize
+  ): Promise<boolean> {
     return (await frameInterpolationAdapter(size)) !== null;
   }
 
   /**
    * 按模型分辨率档位或像素预算解析输入尺寸，保持宽高比例并对齐；不支持的规格抛错。
    */
-  resolveModelInputSize(size: ModelSize): ModelSize {
+  resolveModelInputSize(
+    size: ModelSize
+  ): ModelSize {
     const buckets = resolutionBuckets(this.model);
     if (buckets.length > 0) {
       const matched = buckets.some(
@@ -126,7 +153,7 @@ export class MediaService implements MediaServicing {
         throw new XmaxError(
           XmaxErrorCode.invalidConfiguration,
           `Model ${this.model} does not support input resolution ` +
-            `${size.width}×${size.height}. Supported resolutions: ${supportedSizes}`,
+          `${size.width}×${size.height}. Supported resolutions: ${supportedSizes}`,
         );
       }
       return { width: size.width, height: size.height };
@@ -138,7 +165,9 @@ export class MediaService implements MediaServicing {
     const maximumPixels = maximumInputPixels(this.model);
 
     let scale: number;
-    let rounding: (value: number) => number;
+    let rounding: (
+      value: number
+    ) => number;
     if (pixels < minimumPixels) {
       scale = Math.sqrt(minimumPixels / pixels);
       rounding = Math.ceil;
@@ -175,7 +204,10 @@ export class MediaService implements MediaServicing {
   /**
    * 在对齐网格上选择满足面积限制且最接近目标的尺寸。
    */
-  private boundedAlignedSize(width: number, height: number): ModelSize {
+  private boundedAlignedSize(
+    width: number,
+    height: number
+  ): ModelSize {
     const alignment = inputSizeAlignment(this.model);
     const unitPixels = alignment * alignment;
     const minimumUnits = Math.ceil(minimumInputPixels(this.model) / unitPixels);
@@ -211,7 +243,9 @@ export class MediaService implements MediaServicing {
   /**
    * 校验尺寸为有限正数，并归一化为不小于 1 的整数。
    */
-  private validatedSize(size: ModelSize): ModelSize {
+  private validatedSize(
+    size: ModelSize
+  ): ModelSize {
     if (
       !Number.isFinite(size.width) ||
       !Number.isFinite(size.height) ||

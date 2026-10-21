@@ -1,9 +1,20 @@
+//
+//  RealtimeState.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError } from "../../Foundation/Errors/XmaxError";
 
 /**
  * 实时业务连接状态。
  */
 export enum RealtimeConnectionState {
+
   /**
    * 没有可用的本地媒体流。
    */
@@ -50,25 +61,56 @@ export enum RealtimeConnectionState {
  * 进入当前实时状态的原因。
  */
 export type RealtimeReason =
-  | { kind: "normal" }
-  | { kind: "orientationChanged" }
-  | { kind: "failure"; error: XmaxError };
+  | {
+    kind: "normal"
+  }
+  | {
+    kind: "orientationChanged"
+  }
+  | {
+    kind: "failure";
+    error: XmaxError
+  };
 
+/**
+ * 正常操作、画面方向变化和错误对应的状态原因。
+ */
 export const RealtimeReason = {
   normal: { kind: "normal" } as RealtimeReason,
   orientationChanged: { kind: "orientationChanged" } as RealtimeReason,
   /**
    * 将 SDK 错误包装为状态切换原因，保留错误码和原始说明。
    */
-  failure(error: XmaxError): RealtimeReason {
+  failure(
+    error: XmaxError
+  ): RealtimeReason {
     return { kind: "failure", error };
   },
 };
 
+/**
+ * 实时状态快照的生命周期、业务标识和变化原因。
+ */
 export interface RealtimeStateInit {
+
+  /**
+   * 当前实时连接生命周期状态。
+   */
   connectionState: RealtimeConnectionState;
+
+  /**
+   * 业务会话标识。
+   */
   sessionID?: string;
+
+  /**
+   * 当前生成任务标识。
+   */
   taskID?: string;
+
+  /**
+   * 当前操作的结束或变更原因。
+   */
   reason?: RealtimeReason;
 }
 
@@ -76,17 +118,12 @@ export interface RealtimeStateInit {
  * 实时业务当前状态快照。
  */
 export class RealtimeState {
-  /**
-   * 连接生命周期
-   */
+
   /**
    * 当前连接生命周期状态。
    */
   readonly connectionState: RealtimeConnectionState;
 
-  /**
-   * 业务标识
-   */
   /**
    * 当前或最近一次实时 Session 标识。
    */
@@ -98,22 +135,16 @@ export class RealtimeState {
   readonly taskID?: string;
 
   /**
-   * 状态变化原因
-   */
-  /**
    * 进入当前状态的原因；正常开始新的操作时清空。
    */
   readonly reason?: RealtimeReason;
 
   /**
    * 创建实时状态快照。
-   *
-   * @param init.connectionState 当前连接生命周期状态。
-   * @param init.sessionID 当前或最近一次实时 Session 标识。
-   * @param init.taskID 当前生成任务标识。
-   * @param init.reason 状态变化原因，默认无。
    */
-  constructor(init: RealtimeStateInit) {
+  constructor(
+    init: RealtimeStateInit
+  ) {
     this.connectionState = init.connectionState;
     this.sessionID = init.sessionID;
     this.taskID = init.taskID;
@@ -125,7 +156,9 @@ export class RealtimeState {
    *
    * @param other 待比较的状态。
    */
-  equals(other: RealtimeState): boolean {
+  equals(
+    other: RealtimeState
+  ): boolean {
     return (
       this.connectionState === other.connectionState &&
       this.sessionID === other.sessionID &&
@@ -138,4 +171,6 @@ export class RealtimeState {
 /**
  * 实时状态监听器。
  */
-export type RealtimeStateListener = (state: RealtimeState) => void;
+export type RealtimeStateListener = (
+  state: RealtimeState
+) => void;

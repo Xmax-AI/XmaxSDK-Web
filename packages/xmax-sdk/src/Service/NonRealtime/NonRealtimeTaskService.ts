@@ -1,3 +1,13 @@
+//
+//  NonRealtimeTaskService.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { ApiServicing } from "../Network/ApiServicing";
 import {
@@ -6,12 +16,16 @@ import {
   type NonRealtimeTaskListOptions, type NonRealtimeTaskPage,
 } from "./NonRealtimeTask";
 
+/**
+ * 非实时任务接口允许显式指定的处理帧率。
+ */
 const SUPPORTED_FPS = new Set([8, 10, 12, 15, 16, 18, 20, 22, 24, 25, 30, 45, 48, 50, 60, 72, 90, 100, 120]);
 
 /**
  * 非实时任务 HTTP 服务；负责协议校验及字段映射，不执行提交重试或轮询。
  */
 export class NonRealtimeTaskService {
+
   /**
    * 网络依赖
    */
@@ -20,14 +34,18 @@ export class NonRealtimeTaskService {
   /**
    * 注入非实时任务使用的 API 服务。
    */
-  constructor(api: ApiServicing) {
+  constructor(
+    api: ApiServicing
+  ) {
     this.api = api;
   }
 
   /**
    * 提交一次任务；请求结果不确定时也不自动重试，以免重复扣费。
    */
-  async submitTask(options: NonRealtimeTaskOptions): Promise<NonRealtimeTask> {
+  async submitTask(
+    options: NonRealtimeTaskOptions
+  ): Promise<NonRealtimeTask> {
     const model = options.model?.trim();
     if (!model) {
       invalid("Model must not be empty");
@@ -61,7 +79,10 @@ export class NonRealtimeTaskService {
   /**
    * 查询任务，校验返回 ID；signal 只取消本次 HTTP 查询，不取消服务端任务。
    */
-  async getTask(taskUid: string, signal?: AbortSignal): Promise<NonRealtimeTask> {
+  async getTask(
+    taskUid: string,
+    signal?: AbortSignal
+  ): Promise<NonRealtimeTask> {
     const uid = validateTaskUid(taskUid);
     const task = parseTask(await this.api.get<unknown>(`/offline-task/${encodeURIComponent(uid)}`, { signal }));
     if (task.uid !== uid) {
@@ -73,7 +94,9 @@ export class NonRealtimeTaskService {
   /**
    * 查询最多 100 个 ID，按首次出现顺序去重；任一任务不可用时整体失败。
    */
-  async getTasks(taskUids: readonly string[]): Promise<readonly NonRealtimeTask[]> {
+  async getTasks(
+    taskUids: readonly string[]
+  ): Promise<readonly NonRealtimeTask[]> {
     if (taskUids.length < 1 || taskUids.length > 100) {
       invalid("Provide 1–100 task UIDs");
     }
@@ -89,7 +112,9 @@ export class NonRealtimeTaskService {
   /**
    * 分页查询任务，不隐式加载其他页。
    */
-  async listTasks(options: NonRealtimeTaskListOptions = {}): Promise<NonRealtimeTaskPage> {
+  async listTasks(
+    options: NonRealtimeTaskListOptions = {}
+  ): Promise<NonRealtimeTaskPage> {
     const pageNumber = options.pageNumber ?? 1;
     const pageSize = options.pageSize ?? 10;
     if (!Number.isSafeInteger(pageNumber) || pageNumber < 1) {
@@ -119,7 +144,9 @@ export class NonRealtimeTaskService {
 /**
  * 校验任务 ID，拒绝相对路径段以避免 URL 规范化改变请求目标。
  */
-export function validateTaskUid(value: string): string {
+export function validateTaskUid(
+  value: string
+): string {
   const uid = value.trim();
   if (!uid || uid === "." || uid === "..") {
     invalid("Task UID must not be empty or a relative path segment");
@@ -130,7 +157,9 @@ export function validateTaskUid(value: string): string {
 /**
  * 仅校验网络 URL 格式；资源是否由 Xmax 上传必须由服务端核验。
  */
-function validateURL(value: string): void {
+function validateURL(
+  value: string
+): void {
   let url: URL;
   try {
     url = new URL(value.trim());
@@ -145,21 +174,27 @@ function validateURL(value: string): void {
 /**
  * 将参数错误映射为 SDK 配置错误。
  */
-function invalid(message: string): never {
+function invalid(
+  message: string
+): never {
   throw new XmaxError(XmaxErrorCode.invalidConfiguration, message);
 }
 
 /**
  * 拒绝不可用的响应数据，避免把缺失状态当成永久处理中。
  */
-function malformed(message = "Invalid non-realtime response data"): never {
+function malformed(
+  message = "Invalid non-realtime response data"
+): never {
   throw new XmaxError(XmaxErrorCode.apiError, message);
 }
 
 /**
  * 解析响应对象。
  */
-function record(value: unknown): Record<string, unknown> {
+function record(
+  value: unknown
+): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     malformed();
   }
@@ -169,7 +204,11 @@ function record(value: unknown): Record<string, unknown> {
 /**
  * 读取可空字段，保留缺失与数值 0 的区别。
  */
-function field<T extends "string" | "number">(data: Record<string, unknown>, key: string, type: T): (T extends "string" ? string : number) | undefined {
+function field<T extends "string" | "number">(
+  data: Record<string, unknown>,
+  key: string,
+  type: T
+): (T extends "string" ? string : number) | undefined {
   const value = data[key];
   if (value === undefined || value === null) {
     return undefined;
@@ -183,7 +222,11 @@ function field<T extends "string" | "number">(data: Record<string, unknown>, key
 /**
  * 校验分页响应中必需的整数。
  */
-function pageInteger(data: Record<string, unknown>, key: string, minimum: number): number {
+function pageInteger(
+  data: Record<string, unknown>,
+  key: string,
+  minimum: number
+): number {
   const value = field(data, key, "number");
   if (value === undefined || !Number.isSafeInteger(value) || value < minimum) {
     malformed(`Invalid field: ${key}`);
@@ -194,7 +237,9 @@ function pageInteger(data: Record<string, unknown>, key: string, minimum: number
 /**
  * 将任务数组解析为不可变快照。
  */
-function parseList(value: unknown): readonly NonRealtimeTask[] {
+function parseList(
+  value: unknown
+): readonly NonRealtimeTask[] {
   if (!Array.isArray(value)) {
     malformed("Missing task list");
   }
@@ -204,7 +249,9 @@ function parseList(value: unknown): readonly NonRealtimeTask[] {
 /**
  * 转换任务及结果字段，不补造服务端未提供的进度或失败原因。
  */
-function parseTask(value: unknown): NonRealtimeTask {
+function parseTask(
+  value: unknown
+): NonRealtimeTask {
   const data = record(value);
   const uid = field(data, "uid", "string");
   const status = field(data, "status", "string") as NonRealtimeTaskStatus;
@@ -239,7 +286,9 @@ function parseTask(value: unknown): NonRealtimeTask {
 /**
  * 将服务端 snake_case 结果转换成 SDK camelCase 字段。
  */
-function parseResult(value: unknown): NonRealtimeResult {
+function parseResult(
+  value: unknown
+): NonRealtimeResult {
   const data = record(value);
   return Object.freeze({
     url: field(data, "result_url", "string"),

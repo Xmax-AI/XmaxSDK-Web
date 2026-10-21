@@ -1,3 +1,13 @@
+//
+//  PermissionManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
 import { XmaxLogger } from "../Logging/XmaxLogger";
 import type { PermissionManaging } from "./PermissionManaging";
@@ -10,6 +20,7 @@ import type { PermissionManaging } from "./PermissionManaging";
  * 由采集阶段的 DOMException 映射兜底）。
  */
 export class PermissionManager implements PermissionManaging {
+
   /**
    * 确保相机权限可用。
    * @throws 权限被拒绝或浏览器不支持媒体采集时抛出 `cameraPermissionDenied`。

@@ -1,3 +1,13 @@
+//
+//  NetworkVideoController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
@@ -12,29 +22,49 @@ import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realt
  * 管理服务端读取的网络视频源和独立静音预览，不创建上行媒体轨道。
  */
 export class NetworkVideoController {
+
   /**
    * 当前视频源与完成通知
    */
   currentTrack?: RealtimeVideoTrack;
+
+  /**
+   * 当前网络视频的服务端地址及采样配置。
+   */
   reference?: RealtimeReferenceVideo;
+
+  /**
+   * 当前网络视频生成完成时的业务通知。
+   */
   onFinish?: () => void;
 
   /**
    * 预览进度与视图资源
    */
   private position = 0;
+
+  /**
+   * 当前网络视频预览是否已播放结束。
+   */
   private ended = false;
+
+  /**
+   * 媒体轨道与渲染视图的绑定索引。
+   */
   private readonly bindings = new Map<VideoRenderTarget, () => void>();
 
   /**
    * 创建网络视频源，校验地址、采样方式和模型支持的尺寸；不请求视频下载。
    */
-  create(options: {
-    url: string;
-    videoFormat: RealtimeVideoFormat;
-    sampleMethod?: RealtimeVideoSampleMethod;
-    onFinish?: () => void;
-  }, mediaService: MediaServicing): RealtimeMediaStream {
+  create(
+    options: {
+      url: string;
+      videoFormat: RealtimeVideoFormat;
+      sampleMethod?: RealtimeVideoSampleMethod;
+      onFinish?: () => void;
+    },
+    mediaService: MediaServicing
+  ): RealtimeMediaStream {
     let url: URL;
     try {
       url = new URL(options.url);
@@ -89,7 +119,9 @@ export class NetworkVideoController {
   /**
    * 绑定播放器，恢复预览位置；本地播放错误仅记录，不中断服务端生成。
    */
-  private attach(view: VideoRenderTarget): void {
+  private attach(
+    view: VideoRenderTarget
+  ): void {
     if (!this.reference || !view.videoElement || !view.setVideoURL) {
       throw new XmaxError(XmaxErrorCode.mediaError, "This render target does not support network video preview");
     }
@@ -123,7 +155,9 @@ export class NetworkVideoController {
   /**
    * 保存预览进度并释放该视图的地址和事件监听。
    */
-  private detach(view: VideoRenderTarget): void {
+  private detach(
+    view: VideoRenderTarget
+  ): void {
     this.bindings.get(view)?.();
     this.bindings.delete(view);
   }

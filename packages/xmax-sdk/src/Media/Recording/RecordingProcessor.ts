@@ -1,3 +1,13 @@
+//
+//  RecordingProcessor.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import {
   BlobSource, BufferTarget, EncodedAudioPacketSource, EncodedPacketSink,
   EncodedVideoPacketSource, Input, MP4, WEBM, Mp4OutputFormat, Output, WebMOutputFormat,
@@ -9,17 +19,28 @@ import { RecordingTimeline } from "./RecordingTimeline";
  * 录制完成后裁掉长帧等待；音视频共用按音频包边界对齐的时间映射，不重新编码。
  */
 export class RecordingProcessor {
+
   /**
    * 后处理资源上限，与实时连接的清理超时分离
    */
   private static readonly timeoutMs = 10_000;
+
+  /**
+   * 允许处理的录制文件字节数上限。
+   */
   private static readonly maximumBytes = 64 * 1024 * 1024;
+
+  /**
+   * 允许处理的压缩媒体包数量上限。
+   */
   private static readonly maximumPackets = 10_000;
 
   /**
    * 裁剪成功返回新文件，无需裁剪时返回原文件；失败交由调用方保留原始录像。
    */
-  async process(blob: Blob): Promise<Blob> {
+  async process(
+    blob: Blob
+  ): Promise<Blob> {
     if (blob.size > RecordingProcessor.maximumBytes) {
       throw new Error("Recording is too large to process");
     }
@@ -37,7 +58,9 @@ export class RecordingProcessor {
 
     try {
       return await Promise.race([
-        this.rewrite(input, blob, controller.signal, value => { output = value; }),
+        this.rewrite(input, blob, controller.signal, value => {
+          output = value;
+        }),
         timeout,
       ]);
     } finally {
@@ -45,7 +68,7 @@ export class RecordingProcessor {
       clearTimeout(timer);
       input.dispose();
       if (output && output.state !== "finalized" && output.state !== "canceled") {
-        void output.cancel().catch(() => {});
+        void output.cancel().catch(() => { });
       }
     }
   }
@@ -53,7 +76,10 @@ export class RecordingProcessor {
   /**
    * 读取有限数量的编码包，维持原始解码顺序。
    */
-  private async readPackets(track: InputTrack, signal: AbortSignal): Promise<EncodedPacket[]> {
+  private async readPackets(
+    track: InputTrack,
+    signal: AbortSignal
+  ): Promise<EncodedPacket[]> {
     const packets: EncodedPacket[] = [];
     for await (const packet of new EncodedPacketSink(track).packets()) {
       signal.throwIfAborted();
@@ -72,7 +98,9 @@ export class RecordingProcessor {
     input: Input,
     original: Blob,
     signal: AbortSignal,
-    registerOutput: (output: Output) => void,
+    registerOutput: (
+      output: Output
+    ) => void,
   ): Promise<Blob> {
     const video = await input.getPrimaryVideoTrack();
     if (!video) {

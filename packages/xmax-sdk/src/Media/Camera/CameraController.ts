@@ -1,3 +1,13 @@
+//
+//  CameraController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { validateCameraRotation, type CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import { waitForValidCameraFrame } from "../../Foundation/Media/Camera/CameraFrameValidator";
@@ -24,6 +34,7 @@ import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraContr
  * （M2 接入），当前仅维护配置与权限。
  */
 export class CameraController implements CameraControlling {
+
   /**
    * 轨道标识
    */
@@ -33,6 +44,10 @@ export class CameraController implements CameraControlling {
    * 基础层组件
    */
   private readonly permissionManager: PermissionManaging;
+
+  /**
+   * 当前 RTC 提供方的采集与传输适配器。
+   */
   private readonly rtcManager: RtcManaging;
 
   /**
@@ -44,25 +59,47 @@ export class CameraController implements CameraControlling {
    * 事件监听
    */
   private readonly errorListener: XmaxErrorListener;
+
+  /**
+   * 预览绑定且有效帧就绪后的通知入口。
+   */
   private previewReadyHandler?: CameraPreviewReadyHandler;
 
   /**
    * 本地资源
    */
   private activeTrack?: RealtimeVideoTrack;
+
+  /**
+   * 本地摄像头预览使用的媒体流。
+   */
   private previewStream?: MediaStream;
-  private previewMirrorApplier?: (mirrored: boolean) => void;
+
+  /**
+   * 更新本地预览镜像显示的回调。
+   */
+  private previewMirrorApplier?: (
+    mirrored: boolean
+  ) => void;
 
   /**
    * 预览状态
    */
   private hasCapturedFrame = false;
+
+  /**
+   * 摄像头预览是否已经挂载到视图。
+   */
   private isPreviewAttached = false;
 
   /**
    * 当前相机流配置
    */
   private storedUseMicrophone = false;
+
+  /**
+   * 创建当前摄像头流时选择的亮度检查开关。
+   */
   private storedFrameValidationEnabled = true;
 
   /**
@@ -73,16 +110,18 @@ export class CameraController implements CameraControlling {
    * @param options.mediaService 模型输入尺寸规则组件（可替换，测试用）。
    * @param options.errorListener 运行期错误回调。
    */
-  constructor(options?: {
-    permissionManager?: PermissionManaging;
-    rtcManager?: RtcManaging;
-    mediaService?: MediaServicing;
-    errorListener?: XmaxErrorListener;
-  }) {
+  constructor(
+    options?: {
+      permissionManager?: PermissionManaging;
+      rtcManager?: RtcManaging;
+      mediaService?: MediaServicing;
+      errorListener?: XmaxErrorListener;
+    }
+  ) {
     this.permissionManager = options?.permissionManager ?? new PermissionManager();
     this.rtcManager = options?.rtcManager ?? new TrtcRtcManager();
     this.mediaService = options?.mediaService ?? new MediaService();
-    this.errorListener = options?.errorListener ?? (() => {});
+    this.errorListener = options?.errorListener ?? (() => { });
   }
 
   /**
@@ -109,12 +148,17 @@ export class CameraController implements CameraControlling {
   /**
    * 等待当前轨道预热完成（固定 200ms）；禁用时跳过，取消或轨道被替换时拒绝。
    */
-  async waitForValidCameraFrame(signal: AbortSignal): Promise<void> {
+  async waitForValidCameraFrame(
+    signal: AbortSignal
+  ): Promise<void> {
     const track = this.activeTrack;
     const mediaTrack = track?.mediaStreamTrack;
-    if (!mediaTrack) throw new XmaxError(XmaxErrorCode.mediaError, "Camera capture is not running");
-    if (signal.aborted) throw new XmaxError(XmaxErrorCode.cancelled, "Camera frame validation cancelled");
-    if (!this.isFrameValidationEnabled) return;
+    if (!mediaTrack)
+      throw new XmaxError(XmaxErrorCode.mediaError, "Camera capture is not running");
+    if (signal.aborted)
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera frame validation cancelled");
+    if (!this.isFrameValidationEnabled)
+      return;
 
     await waitForValidCameraFrame(mediaTrack, signal);
 
@@ -126,7 +170,9 @@ export class CameraController implements CameraControlling {
   /**
    * 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。
    */
-  setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void {
+  setPreviewReadyHandler(
+    handler?: CameraPreviewReadyHandler
+  ): void {
     this.previewReadyHandler = handler;
     const track = this.activeTrack;
     if (track) {
@@ -145,13 +191,15 @@ export class CameraController implements CameraControlling {
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
    */
-  async createLocalCameraStream(options: {
-    videoFormat: RealtimeVideoFormat;
-    position: CameraPosition;
-    useMicrophone: boolean;
-    rotation?: CameraRotation;
-    enableFrameValidation?: boolean;
-  }): Promise<RealtimeMediaStream> {
+  async createLocalCameraStream(
+    options: {
+      videoFormat: RealtimeVideoFormat;
+      position: CameraPosition;
+      useMicrophone: boolean;
+      rotation?: CameraRotation;
+      enableFrameValidation?: boolean;
+    }
+  ): Promise<RealtimeMediaStream> {
     if (this.activeTrack) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
@@ -268,7 +316,9 @@ export class CameraController implements CameraControlling {
   /**
    * 为相机轨道注册预览渲染绑定：attach 时挂流、镜像并标记预览已绑定。
    */
-  private registerPreviewBinding(track: RealtimeVideoTrack): void {
+  private registerPreviewBinding(
+    track: RealtimeVideoTrack
+  ): void {
     VideoRenderRegistry.register(track, {
       attachHandler: (view) => {
         const stream = this.previewStream;
@@ -337,7 +387,9 @@ export class CameraController implements CameraControlling {
   /**
    * 满足"已收到有效帧且预览已绑定"时触发一次性就绪回调。
    */
-  private notifyPreviewReady(track: RealtimeVideoTrack): void {
+  private notifyPreviewReady(
+    track: RealtimeVideoTrack
+  ): void {
     if (
       this.activeTrack !== track ||
       !this.hasCapturedFrame ||
@@ -354,7 +406,9 @@ export class CameraController implements CameraControlling {
   /**
    * 按模型输入规则校验并解析目标视频规格。
    */
-  private resolveVideoFormat(videoFormat: RealtimeVideoFormat): RealtimeVideoFormat {
+  private resolveVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): RealtimeVideoFormat {
     videoFormat.validate();
     const targetSize = this.mediaService.resolveMediaSize({
       width: videoFormat.width,

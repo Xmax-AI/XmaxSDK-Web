@@ -1,7 +1,18 @@
+//
+//  VideoEncodingConfiguration.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * RTC 视频编码策略偏好。
  */
 export enum RtcVideoEncoderPreference {
+
   /**
    * 优先保障帧率（弱网降分辨率）。
    */
@@ -20,6 +31,7 @@ export enum RtcVideoEncoderPreference {
  * `maximumBitrate` 仅用于上层码率区间校验，不下发给引擎。
  */
 export interface VideoEncodingConfiguration {
+
   /**
    * 编码宽度，单位为像素。
    */

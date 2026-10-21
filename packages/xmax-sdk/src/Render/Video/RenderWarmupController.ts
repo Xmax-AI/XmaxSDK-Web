@@ -1,19 +1,44 @@
+//
+//  RenderWarmupController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * 首帧后保持视频播放，等待预热结束再渐入；不缓存或改写媒体帧。
  */
 export class RenderWarmupController {
+
   /**
    * 预热配置与生命周期
    */
   private durationMs?: number;
+
+  /**
+   * 当前等待或定时任务的取消句柄。
+   */
   private timer?: ReturnType<typeof setTimeout>;
+
+  /**
+   * 是否已经开始渲染预热。
+   */
   private started = false;
+
+  /**
+   * 是否已经完成本次渲染预热。
+   */
   private completed = false;
 
   /**
    * 创建视图预热控制器。
    */
-  constructor(private readonly element: HTMLElement) {}
+  constructor(
+    private readonly element: HTMLElement
+  ) { }
 
   /**
    * 是否仍在等待首帧或预热完成；期间不允许对不可见画面交互。
@@ -25,7 +50,9 @@ export class RenderWarmupController {
   /**
    * 为新媒体隐藏画面；undefined 表示直接显示，不启用预热。
    */
-  prepare(durationMs?: number): void {
+  prepare(
+    durationMs?: number
+  ): void {
     this.reset();
     this.durationMs = durationMs;
     if (durationMs === undefined) {
@@ -40,7 +67,9 @@ export class RenderWarmupController {
   /**
    * 首帧就绪后开始一次性预热，结束时通知并渐入画面。
    */
-  start(onCompleted: () => void): void {
+  start(
+    onCompleted: () => void
+  ): void {
     if (this.durationMs === undefined || this.started) {
       return;
     }

@@ -1,8 +1,26 @@
+//
+//  TrtcAudioVolumeSupport.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * TRTC 远端音量控制能力检测的环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
  */
 export interface TrtcAudioVolumeEnvironment {
+
+  /**
+   * 浏览器报告的用户代理字符串。
+   */
   userAgent?: string;
+
+  /**
+   * 设备支持的最大同时触点数。
+   */
   maxTouchPoints?: number;
 }
 

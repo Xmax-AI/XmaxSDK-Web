@@ -1,3 +1,13 @@
+//
+//  CameraControlling.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
@@ -7,12 +17,15 @@ import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTra
 /**
  * 通知摄像头预览就绪，并提供异步处理时检查该预览仍有效的能力。
  */
-export type CameraPreviewReadyHandler = (isCurrent: () => boolean) => void;
+export type CameraPreviewReadyHandler = (
+  isCurrent: () => boolean
+) => void;
 
 /**
  * 定义本地摄像头流、麦克风采集和预览资源管理能力。
  */
 export interface CameraControlling {
+
   /**
    * 当前本地相机视频轨道；尚未创建或已停止时为空。
    */
@@ -31,12 +44,16 @@ export interface CameraControlling {
   /**
    * 发布前等待当前相机预热完成（固定 200ms）；取消或轨道被替换时拒绝。
    */
-  waitForValidCameraFrame(signal: AbortSignal): Promise<void>;
+  waitForValidCameraFrame(
+    signal: AbortSignal
+  ): Promise<void>;
 
   /**
    * 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。
    */
-  setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void;
+  setPreviewReadyHandler(
+    handler?: CameraPreviewReadyHandler
+  ): void;
 
   /**
    * 创建并启动本地相机流。
@@ -47,13 +64,15 @@ export interface CameraControlling {
    * @param options.enableFrameValidation 是否等待相机预热，默认 true；切换设备和重新连接时保留。
    * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
    */
-  createLocalCameraStream(options: {
-    videoFormat: RealtimeVideoFormat;
-    position: CameraPosition;
-    useMicrophone: boolean;
-    rotation?: CameraRotation;
-    enableFrameValidation?: boolean;
-  }): Promise<RealtimeMediaStream>;
+  createLocalCameraStream(
+    options: {
+      videoFormat: RealtimeVideoFormat;
+      position: CameraPosition;
+      useMicrophone: boolean;
+      rotation?: CameraRotation;
+      enableFrameValidation?: boolean;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 停止相机和麦克风采集，并释放当前轨道及本地预览资源。

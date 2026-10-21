@@ -1,3 +1,13 @@
+//
+//  FrameInterpolationManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /// <reference types="@webgpu/types" />
 /// <reference path="./FramegenRuntime.d.ts" />
 import { createRT, type RT } from "framegen";
@@ -6,17 +16,46 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { frameInterpolationAdapter } from "./FrameInterpolationSupport";
 import { weightsBase64, weightsManifest } from "./FramegenWeights.generated";
 
+/**
+ * 原始帧捕获、中间帧计算及画布呈现能力。
+ */
 export interface FrameInterpolationProcessing {
-  /** 将视频当前帧拷入原帧环形缓冲，返回纹理槽位。 */
-  capture(video: HTMLVideoElement): number;
-  /** 在两个原帧槽位之间生成中间帧，返回中间帧槽位。 */
-  interpolate(previous: number, current: number): Promise<number>;
-  /** 将指定槽位的纹理绘制到画布。 */
-  present(slot: number): void;
+
+  /**
+   * 将视频当前帧拷入原帧环形缓冲，返回纹理槽位。
+   */
+  capture(
+    video: HTMLVideoElement
+  ): number;
+
+  /**
+   * 在两个原帧槽位之间生成中间帧，返回中间帧槽位。
+   */
+  interpolate(
+    previous: number,
+    current: number
+  ): Promise<number>;
+
+  /**
+   * 将指定槽位的纹理绘制到画布。
+   */
+  present(
+    slot: number
+  ): void;
+
+  /**
+   * 释放插帧计算和呈现使用的 GPU 资源。
+   */
   destroy(): void;
 }
 
+/**
+ * 当前页面缓存的插帧模型权重。
+ */
 let weights: ArrayBuffer | undefined;
+/**
+ * 按需解码并缓存插帧权重，供当前页面的处理器复用。
+ */
 function modelWeights(): ArrayBuffer {
   if (!weights) {
     const decoded = atob(weightsBase64);
@@ -27,6 +66,9 @@ function modelWeights(): ArrayBuffer {
   return weights;
 }
 
+/**
+ * 原始帧捕获和纹理呈现共用的全屏三角形顶点着色器。
+ */
 const VERTEX = `
 struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f }
 @vertex fn vertex(@builtin(vertex_index) i: u32) -> Output {
@@ -37,45 +79,104 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f }
   return out;
 }`;
 
-/** 每条远端视图持有独立 Device；中途初始化失败也能完整回收 runtime 的内部资源。 */
+/**
+ * 每条远端视图持有独立 Device；中途初始化失败也能完整回收 runtime 的内部资源。
+ */
 export class FrameInterpolationManager implements FrameInterpolationProcessing {
-  /** 原帧环形缓冲的槽位数；插值结果固定在最后一个槽位。 */
+
+  /**
+   * 原帧环形缓冲的槽位数；插值结果固定在最后一个槽位。
+   */
   static readonly originalSlots = 3;
+
+  /**
+   * 当前插帧推理运行时。
+   */
   private runtime?: RT;
+
+  /**
+   * 原始帧和中间帧共用的 GPU 纹理槽位。
+   */
   private textures: GPUTexture[] = [];
+
+  /**
+   * 下一张原始帧使用的环形缓冲槽位。
+   */
   private nextOriginal = 0;
+
+  /**
+   * 将原始视频帧写入纹理的 GPU 管线。
+   */
   private capturePipeline!: GPURenderPipeline;
+
+  /**
+   * 将纹理内容绘制到输出画布的 GPU 管线。
+   */
   private displayPipeline!: GPURenderPipeline;
+
+  /**
+   * GPU 纹理线性采样器。
+   */
   private sampler!: GPUSampler;
+
+  /**
+   * 插帧输出画布的 WebGPU 上下文。
+   */
   private context!: GPUCanvasContext;
+
+  /**
+   * 是否已经释放 GPU 资源。
+   */
   private destroyed = false;
+
+  /**
+   * GPU 未捕获错误的通知入口。
+   */
   private readonly onGPUError = (event: GPUUncapturedErrorEvent) => {
     event.preventDefault();
-    if (!this.destroyed) this.onFailure(new Error(event.error.message));
+    if (!this.destroyed)
+      this.onFailure(new Error(event.error.message));
   };
 
+  /**
+   * 保存当前视图使用的 GPU 设备、画布与失败回调。
+   */
   private constructor(
     private readonly device: GPUDevice,
     private readonly canvas: HTMLCanvasElement,
     private readonly size: ModelSize,
-    private readonly onFailure: (error: unknown) => void,
-  ) {}
+    private readonly onFailure: (
+      error: unknown
+    ) => void,
+  ) { }
 
-  static async create(canvas: HTMLCanvasElement, size: ModelSize, onFailure: (error: unknown) => void,
-    signal: AbortSignal): Promise<FrameInterpolationManager> {
+  /**
+   * 验证 GPU 能力并创建插帧处理器；取消或初始化失败时释放已分配资源。
+   */
+  static async create(
+    canvas: HTMLCanvasElement,
+    size: ModelSize,
+    onFailure: (
+      error: unknown
+    ) => void,
+    signal: AbortSignal
+  ): Promise<FrameInterpolationManager> {
     const ensureActive = () => {
-      if (signal.aborted) throw new XmaxError(XmaxErrorCode.cancelled, "Interpolation initialization cancelled");
+      if (signal.aborted)
+        throw new XmaxError(XmaxErrorCode.cancelled, "Interpolation initialization cancelled");
     };
     const adapter = await frameInterpolationAdapter(size);
     ensureActive();
-    if (!adapter) throw new XmaxError(XmaxErrorCode.frameInterpolationUnsupported, "WebGPU shader-f16 is unavailable");
+    if (!adapter)
+      throw new XmaxError(XmaxErrorCode.frameInterpolationUnsupported, "WebGPU shader-f16 is unavailable");
     const device = await adapter.requestDevice({ requiredFeatures: ["shader-f16"] });
     const manager = new FrameInterpolationManager(device, canvas, size, onFailure);
     const abort = () => manager.destroy();
     signal.addEventListener("abort", abort, { once: true });
     device.addEventListener("uncapturederror", manager.onGPUError);
     void device.lost.then((info) => {
-      if (!manager.destroyed) onFailure(new Error(`Interpolation GPU device lost: ${info.message}`));
+      if (!manager.destroyed)
+        onFailure(new Error(`Interpolation GPU device lost: ${info.message}`));
     });
     try {
       ensureActive();
@@ -90,12 +191,16 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
     }
   }
 
+  /**
+   * 创建推理运行时和 GPU 纹理，内部按 16 对齐并补齐边缘像素。
+   */
   private async initialize(): Promise<void> {
     const { device, canvas, size } = this;
     const w = Math.ceil(size.width / 16) * 16;
     const h = Math.ceil(size.height / 16) * 16;
     const context = canvas.getContext("webgpu");
-    if (!context) throw new Error("WebGPU canvas is unavailable");
+    if (!context)
+      throw new Error("WebGPU canvas is unavailable");
     this.context = context;
     canvas.width = size.width;
     canvas.height = size.height;
@@ -150,36 +255,67 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
       await device.queue.onSubmittedWorkDone();
     } finally {
       const error = await device.popErrorScope();
-      if (error) throw new Error(error.message);
+      if (error)
+        throw new Error(error.message);
     }
   }
 
-  capture(video: HTMLVideoElement): number {
+  /**
+   * 将当前原始视频帧写入环形纹理，返回其槽位。
+   */
+  capture(
+    video: HTMLVideoElement
+  ): number {
     const slot = this.nextOriginal;
     this.nextOriginal = (this.nextOriginal + 1) % FrameInterpolationManager.originalSlots;
     this.draw(this.capturePipeline, this.device.importExternalTexture({ source: video }), this.textures[slot]!.createView());
     return slot;
   }
 
-  async interpolate(previous: number, current: number): Promise<number> {
+  /**
+   * 在相邻原帧之间计算中点帧，GPU 完成后返回输出槽位。
+   */
+  async interpolate(
+    previous: number,
+    current: number
+  ): Promise<number> {
     this.runtime!.prepPair(this.textures[previous]!, this.textures[current]!);
     this.runtime!.runT(0.5, this.textures[FrameInterpolationManager.originalSlots]!);
     await this.device.queue.onSubmittedWorkDone();
     return FrameInterpolationManager.originalSlots;
   }
 
-  present(slot: number): void {
+  /**
+   * 将指定槽位的纹理呈现到画布。
+   */
+  present(
+    slot: number
+  ): void {
     this.presentTexture(this.textures[slot]!);
   }
 
-  private presentTexture(texture: GPUTexture): void {
+  /**
+   * 将目标纹理绘制到当前输出画布。
+   */
+  private presentTexture(
+    texture: GPUTexture
+  ): void {
     this.draw(this.displayPipeline, texture.createView(), this.context.getCurrentTexture().createView());
   }
 
-  private draw(pipeline: GPURenderPipeline, source: GPUExternalTexture | GPUTextureView, target: GPUTextureView): void {
-    const group = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: this.sampler }, { binding: 1, resource: source },
-    ] });
+  /**
+   * 提交纹理绘制命令，供原始帧捕获和画布显示共用。
+   */
+  private draw(
+    pipeline: GPURenderPipeline,
+    source: GPUExternalTexture | GPUTextureView,
+    target: GPUTextureView
+  ): void {
+    const group = this.device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0), entries: [
+        { binding: 0, resource: this.sampler }, { binding: 1, resource: source },
+      ]
+    });
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "clear", storeOp: "store" }] });
     pass.setPipeline(pipeline);
@@ -189,8 +325,12 @@ export class FrameInterpolationManager implements FrameInterpolationProcessing {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  /**
+   * 释放推理运行时、纹理和 GPU 设备；重复调用不产生额外操作。
+   */
   destroy(): void {
-    if (this.destroyed) return;
+    if (this.destroyed)
+      return;
     this.destroyed = true;
     this.device.removeEventListener("uncapturederror", this.onGPUError);
     this.runtime?.destroy();

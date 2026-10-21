@@ -1,3 +1,13 @@
+//
+//  ApiService.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { XMAX_SDK_VERSION } from "../../Foundation/Runtime/RuntimeInfo";
@@ -7,8 +17,20 @@ import { ApiMethod, type ApiServicing, type ApiRequestOptions } from "./ApiServi
  * Xmax API 统一响应信封中的公共元数据。
  */
 interface EnvelopeMetadata {
+
+  /**
+   * 服务端响应中的业务成功标记。
+   */
   success?: boolean;
+
+  /**
+   * 服务端返回的业务状态码。
+   */
   code?: number;
+
+  /**
+   * 服务端返回的状态说明。
+   */
   message?: string;
 }
 
@@ -32,7 +54,11 @@ export type ApiFetch = (
   text(): Promise<string>;
 }>;
 
+/**
+ * API 请求身份、地址和传输选项。
+ */
 export interface ApiServiceOptions {
+
   /**
    * 调用 Xmax 服务使用的 API Key。
    */
@@ -58,9 +84,7 @@ export interface ApiServiceOptions {
  * 负责发送 Xmax API 请求并统一处理响应、日志和错误。
  */
 export class ApiService implements ApiServicing {
-  /**
-   * API 配置
-   */
+
   /**
    * 默认请求超时时间（毫秒）。
    */
@@ -70,7 +94,15 @@ export class ApiService implements ApiServicing {
    * 请求身份、地址与超时配置
    */
   private readonly apiKey: string;
+
+  /**
+   * API 请求使用的基础地址。
+   */
   private readonly baseURL: string;
+
+  /**
+   * 单次请求的超时上限，单位为毫秒。
+   */
   private readonly timeoutMs: number;
 
   /**
@@ -86,7 +118,9 @@ export class ApiService implements ApiServicing {
    * @param options.timeoutMs 请求超时时间（毫秒）；默认 15 秒。
    * @param options.fetchImpl fetch 实现（可替换，测试用）。
    */
-  constructor(options: ApiServiceOptions) {
+  constructor(
+    options: ApiServiceOptions
+  ) {
     this.apiKey = options.apiKey.trim();
     this.baseURL = options.baseURL;
     this.timeoutMs = options.timeoutMs ?? ApiService.defaultTimeoutMs;
@@ -99,7 +133,12 @@ export class ApiService implements ApiServicing {
    *
    * @param options.keepalive 为 true 时请求可存活于页面卸载之后。
    */
-  async request<T>(method: ApiMethod, path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
+  async request<T>(
+    method: ApiMethod,
+    path: string,
+    body?: unknown,
+    options?: ApiRequestOptions
+  ): Promise<T> {
     this.validateConfiguration();
     if (options?.signal?.aborted) {
       throw new XmaxError(XmaxErrorCode.cancelled, "API request was cancelled");
@@ -156,28 +195,42 @@ export class ApiService implements ApiServicing {
   /**
    * 发送 GET 请求。
    */
-  get<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+  get<T>(
+    path: string,
+    options?: ApiRequestOptions
+  ): Promise<T> {
     return this.request<T>(ApiMethod.get, path, undefined, options);
   }
 
   /**
    * 发送 POST 请求。
    */
-  post<T>(path: string, body?: unknown): Promise<T> {
+  post<T>(
+    path: string,
+    body?: unknown
+  ): Promise<T> {
     return this.request<T>(ApiMethod.post, path, body);
   }
 
   /**
    * 发送 PUT 请求。
    */
-  put<T>(path: string, body?: unknown): Promise<T> {
+  put<T>(
+    path: string,
+    body?: unknown
+  ): Promise<T> {
     return this.request<T>(ApiMethod.put, path, body);
   }
 
   /**
    * 发送 DELETE 请求。
    */
-  delete<T>(path: string, options?: { keepalive?: boolean }): Promise<T> {
+  delete<T>(
+    path: string,
+    options?: {
+      keepalive?: boolean
+    }
+  ): Promise<T> {
     return this.request<T>(ApiMethod.delete, path, undefined, options);
   }
 
@@ -218,7 +271,9 @@ export class ApiService implements ApiServicing {
     method: ApiMethod,
     path: string,
     body?: unknown,
-    options?: { keepalive?: boolean },
+    options?: {
+      keepalive?: boolean
+    },
   ): {
     url: string;
     init: {
@@ -290,8 +345,13 @@ export class ApiService implements ApiServicing {
   /**
    * 解析统一响应信封并返回数据；业务失败或数据缺失时抛出错误。
    */
-  private static parseResponse<T>(text: string, status: number): T {
-    let envelope: EnvelopeMetadata & { data?: T };
+  private static parseResponse<T>(
+    text: string,
+    status: number
+  ): T {
+    let envelope: EnvelopeMetadata & {
+      data?: T
+    };
     try {
       envelope = JSON.parse(text);
     } catch {
@@ -325,7 +385,9 @@ export class ApiService implements ApiServicing {
   /**
    * 将传输层异常映射为 SDK 统一错误。
    */
-  private static transportError(error: unknown): XmaxError {
+  private static transportError(
+    error: unknown
+  ): XmaxError {
     if (error instanceof XmaxError) {
       return error;
     }

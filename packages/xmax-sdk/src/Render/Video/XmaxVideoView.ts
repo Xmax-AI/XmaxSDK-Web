@@ -1,3 +1,13 @@
+//
+//  XmaxVideoView.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { VideoRenderStatistics } from "./VideoRenderStatistics";
@@ -11,6 +21,9 @@ import { TrajectoryOverlayView } from "../Trajectory/TrajectoryOverlayView";
 import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectoryEffectRenderer";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
+/**
+ * SDK 视频显示模式与浏览器缩放样式的对应关系。
+ */
 const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
   [VideoContentMode.fit]: "contain",
   [VideoContentMode.fill]: "cover",
@@ -24,9 +37,7 @@ const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
  * SDK 远端轨道在首帧后预热 1000 ms，再用 300 ms 渐入；本地预览不延迟。
  */
 export class XmaxVideoView {
-  /**
-   * 视图元素
-   */
+
   /**
    * 视图根元素（div，内含一个 video 元素）。
    */
@@ -38,9 +49,6 @@ export class XmaxVideoView {
   readonly videoElement: HTMLVideoElement;
 
   /**
-   * 公共配置
-   */
-  /**
    * 首帧实际提交显示时调用（一次性；换轨后重新武装）。
    */
   frameDisplayHandler?: () => void;
@@ -49,22 +57,52 @@ export class XmaxVideoView {
    * 渲染状态
    */
   private currentTrack?: RealtimeVideoTrack;
+
+  /**
+   * 画面在视口中的缩放与裁剪方式。
+   */
   private contentMode: VideoContentMode;
+
+  /**
+   * 是否对显示画面应用水平镜像。
+   */
   private mirrored = false;
 
   /**
    * 首帧显示通知与异步回调版本
    */
   private hasNotifiedFrameDisplay = false;
+
+  /**
+   * 视频开始播放时尝试通知首帧就绪。
+   */
   private onPlaying?: () => void;
+
+  /**
+   * 首帧观察回调的取消句柄。
+   */
   private videoFrameCallbackID?: number;
+
+  /**
+   * 首帧通知版本，避免旧流回调影响新流。
+   */
   private frameNotificationSequence = 0;
+
   /**
    * 远端插帧配置与渲染资源
    */
   private interpolationOptions?: RemoteFrameInterpolationOptions;
+
+  /**
+   * 当前远端视频的插帧处理与显示管线。
+   */
   private interpolationPipeline?: RemoteVideoFramePipeline;
+
+  /**
+   * 呈现插帧结果的画布。
+   */
   private interpolationCanvas?: HTMLCanvasElement;
+
   /**
    * 呈现统计组件
    */
@@ -74,6 +112,7 @@ export class XmaxVideoView {
    * 远端画面预热与渐入组件
    */
   private readonly warmupController: RenderWarmupController;
+
   /**
    * DOM 挂载状态
    */
@@ -83,7 +122,15 @@ export class XmaxVideoView {
    * 轨迹交互配置与懒加载视图
    */
   private interactionEnabled = true;
+
+  /**
+   * 接入方提供的轨迹视觉效果实现。
+   */
   private customTrajectoryRenderer?: TrajectoryEffectRendering;
+
+  /**
+   * 视口触点采样与轨迹效果覆盖层。
+   */
   private trajectoryOverlay?: TrajectoryOverlayView;
 
   /**
@@ -91,7 +138,12 @@ export class XmaxVideoView {
    *
    * @param options.videoContentMode 视频内容显示模式，默认 fill。
    */
-  constructor(options?: { videoContentMode?: VideoContentMode; isInteractionEnabled?: boolean }) {
+  constructor(
+    options?: {
+      videoContentMode?: VideoContentMode;
+      isInteractionEnabled?: boolean
+    }
+  ) {
     this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
     this.interactionEnabled = options?.isInteractionEnabled ?? true;
 
@@ -120,12 +172,16 @@ export class XmaxVideoView {
   /**
    * 是否允许远端轨迹交互；本地轨道没有交互绑定，不受此开关影响。
    */
-  get isInteractionEnabled(): boolean { return this.interactionEnabled; }
+  get isInteractionEnabled(): boolean {
+    return this.interactionEnabled;
+  }
 
   /**
    * 关闭时立即取消当前手势，不影响视频播放。
    */
-  set isInteractionEnabled(enabled: boolean) {
+  set isInteractionEnabled(
+    enabled: boolean
+  ) {
     this.interactionEnabled = enabled;
     this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled && !this.warmupController.isPending);
   }
@@ -133,12 +189,16 @@ export class XmaxVideoView {
   /**
    * 自定义轨迹视觉效果；undefined 表示使用 SDK 默认效果。
    */
-  get trajectoryRenderer(): TrajectoryEffectRendering | undefined { return this.customTrajectoryRenderer; }
+  get trajectoryRenderer(): TrajectoryEffectRendering | undefined {
+    return this.customTrajectoryRenderer;
+  }
 
   /**
    * 替换效果前释放旧动画，采样及网络发送仍由 SDK 管理。
    */
-  set trajectoryRenderer(renderer: TrajectoryEffectRendering | undefined) {
+  set trajectoryRenderer(
+    renderer: TrajectoryEffectRendering | undefined
+  ) {
     if (this.customTrajectoryRenderer === renderer) {
       return;
     }
@@ -157,14 +217,20 @@ export class XmaxVideoView {
   /**
    * 每秒接收当前视图的呈现统计；换流、卸载或不可统计时返回 undefined。
    */
-  get renderStatisticsHandler(): ((statistics?: VideoRenderStatistics) => void) | undefined {
+  get renderStatisticsHandler(): ((
+    statistics?: VideoRenderStatistics
+  ) => void) | undefined {
     return this.statisticsController.handler;
   }
 
   /**
    * 更新统计回调，不影响播放；移除回调时停止采集。
    */
-  set renderStatisticsHandler(handler: ((statistics?: VideoRenderStatistics) => void) | undefined) {
+  set renderStatisticsHandler(
+    handler: ((
+      statistics?: VideoRenderStatistics
+    ) => void) | undefined
+  ) {
     this.statisticsController.handler = handler;
     this.statisticsController.stop();
     this.startRenderStatistics();
@@ -173,7 +239,9 @@ export class XmaxVideoView {
   /**
    * 解绑旧轨道后接入新轨道，并为新内容重新启用一次性首帧通知。
    */
-  set track(track: RealtimeVideoTrack | undefined) {
+  set track(
+    track: RealtimeVideoTrack | undefined
+  ) {
     if (this.currentTrack === track) {
       return;
     }
@@ -195,7 +263,9 @@ export class XmaxVideoView {
   /**
    * 更新视频及插帧画布的内容缩放方式；相同配置不重复应用。
    */
-  set videoContentMode(mode: VideoContentMode) {
+  set videoContentMode(
+    mode: VideoContentMode
+  ) {
     if (this.contentMode === mode) {
       return;
     }
@@ -213,7 +283,9 @@ export class XmaxVideoView {
   /**
    * 更新视图镜像变换，仅改变呈现方式，不改动媒体流。
    */
-  set isMirrored(mirrored: boolean) {
+  set isMirrored(
+    mirrored: boolean
+  ) {
     if (this.mirrored === mirrored) {
       return;
     }
@@ -224,7 +296,9 @@ export class XmaxVideoView {
   /**
    * 挂载到容器元素。
    */
-  attach(to: HTMLElement): void {
+  attach(
+    to: HTMLElement
+  ): void {
     this.detached = false;
     to.appendChild(this.element);
     this.attachTrajectory();
@@ -264,7 +338,9 @@ export class XmaxVideoView {
   /**
    * 设置网络视频预览；静音播放一次，不捕获或发布媒体轨道。 @internal
    */
-  setVideoURL(url: string | null): void {
+  setVideoURL(
+    url: string | null
+  ): void {
     this.warmupController.reset();
     this.statisticsController.stop();
     this.stopInterpolation();
@@ -286,7 +362,9 @@ export class XmaxVideoView {
   /**
    * 直接设置渲染用的媒体流（绑定管线和直接渲染共用）。 @internal
    */
-  setMediaStream(stream: MediaStream | null): void {
+  setMediaStream(
+    stream: MediaStream | null
+  ): void {
     if (this.videoElement.srcObject === stream) {
       return;
     }
@@ -323,8 +401,11 @@ export class XmaxVideoView {
   /**
    * 由远端绑定注入配置；本地预览不走此管线。 @internal
    */
-  setFrameInterpolation(options?: RemoteFrameInterpolationOptions): void {
-    if (options === this.interpolationOptions) return;
+  setFrameInterpolation(
+    options?: RemoteFrameInterpolationOptions
+  ): void {
+    if (options === this.interpolationOptions)
+      return;
     this.stopInterpolation();
     this.interpolationOptions = options;
     this.startInterpolation();
@@ -334,7 +415,8 @@ export class XmaxVideoView {
    * 视图已挂载且媒体与配置就绪时创建插帧画布和管线，避免重复启动。
    */
   private startInterpolation(): void {
-    if (this.detached || this.interpolationPipeline || !this.interpolationOptions || !this.videoElement.srcObject) return;
+    if (this.detached || this.interpolationPipeline || !this.interpolationOptions || !this.videoElement.srcObject)
+      return;
 
     const canvas = document.createElement("canvas");
     Object.assign(canvas.style, {
@@ -375,7 +457,9 @@ export class XmaxVideoView {
   /**
    * 接入轨道画面：优先走注册的渲染绑定，否则按媒体轨直接渲染。
    */
-  private attachTrack(track: RealtimeVideoTrack): void {
+  private attachTrack(
+    track: RealtimeVideoTrack
+  ): void {
     const binding = VideoRenderRegistry.binding(track);
     if (binding) {
       binding.attachHandler(this, this.contentMode);
@@ -494,7 +578,8 @@ export class XmaxVideoView {
    * 视图未卸载时启动呈现统计，采样及媒体就绪检查由统计组件负责。
    */
   private startRenderStatistics(): void {
-    if (!this.detached) this.statisticsController.start();
+    if (!this.detached)
+      this.statisticsController.start();
   }
 
   /**

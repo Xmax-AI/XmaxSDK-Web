@@ -1,3 +1,13 @@
+//
+//  TrtcRtcManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { RtcProvider } from "../RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
@@ -66,21 +76,41 @@ const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> 
  * 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。
  */
 interface RtcEventSource {
+
   /**
    * 为指定 RTC 事件注册回调。
    */
-  on(event: string, handler: (event: never) => void): void;
+  on(
+    event: string,
+    handler: (
+      event: never
+    ) => void
+  ): void;
+
   /**
    * 移除指定 RTC 事件的对应回调。
    */
-  off(event: string, handler: (event: never) => void): void;
+  off(
+    event: string,
+    handler: (
+      event: never
+    ) => void
+  ): void;
 }
 
 /**
  * TRTC 远端视频事件的负载。
  */
 interface RtcRemoteVideoEvent {
+
+  /**
+   * RTC 事件对应的用户标识。
+   */
   userId: string;
+
+  /**
+   * TRTC 视频流类型，用于区分主流与辅流。
+   */
   streamType: string;
 }
 
@@ -88,8 +118,20 @@ interface RtcRemoteVideoEvent {
  * TRTC 自定义消息事件的负载。
  */
 interface RtcCustomMessageEvent {
+
+  /**
+   * RTC 事件对应的用户标识。
+   */
   userId: string;
+
+  /**
+   * TRTC 自定义消息的命令标识。
+   */
   cmdId: number;
+
+  /**
+   * RTC 自定义消息的原始内容。
+   */
   data: ArrayBuffer;
 }
 
@@ -101,6 +143,7 @@ interface RtcCustomMessageEvent {
  * 交给 SDK 自己的渲染层预览。房间信令走自定义消息通道（`cmdId = 1`）。
  */
 export class TrtcRtcManager implements RtcManaging {
+
   /**
    * 依赖
    */
@@ -115,12 +158,20 @@ export class TrtcRtcManager implements RtcManaging {
    * 采集状态
    */
   private isCapturing = false;
+
+  /**
+   * 是否已启动本地音频采集。
+   */
   private isAudioCapturing = false;
 
   /**
    * 外部媒体的克隆轨；原始轨道由媒体源管理。
    */
   private externalVideo?: MediaStreamTrack;
+
+  /**
+   * 由媒体源提供、适配器持有的外部音频克隆轨。
+   */
   private externalAudio?: MediaStreamTrack;
 
   /**
@@ -132,14 +183,18 @@ export class TrtcRtcManager implements RtcManaging {
    * 事件监听
    */
   private eventListener?: RtcEventListener;
+
+  /**
+   * 解除 RTC 统计事件监听。
+   */
   private removeStatsListeners?: () => void;
 
   /**
    * 创建 RTC 管理器。
-   *
-   * @param engineManager 引擎租约管理组件（可替换，测试用）。
    */
-  constructor(engineManager: RtcEngineManager = RtcEngineManager.shared) {
+  constructor(
+    engineManager: RtcEngineManager = RtcEngineManager.shared
+  ) {
     this.engineManager = engineManager;
   }
 
@@ -205,13 +260,18 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * 准备外部音视频轨但不发布；失败时释放克隆轨，不影响原始媒体源。
    */
-  async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
+  async setExternalMediaTracks(
+    tracks: {
+      videoTrack: MediaStreamTrack;
+      audioTrack?: MediaStreamTrack
+    }
+  ): Promise<void> {
     const engine = this.requireEngine();
     if (this.isCapturing || this.isAudioCapturing || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
     }
     if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
-        (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
+      (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External media tracks must be live video/audio tracks");
     }
 
@@ -236,8 +296,8 @@ export class TrtcRtcManager implements RtcManaging {
       }
     } catch (error) {
       if (this.lease?.engine === engine) {
-        await engine.stopLocalAudio().catch(() => {});
-        await engine.stopLocalVideo().catch(() => {});
+        await engine.stopLocalAudio().catch(() => { });
+        await engine.stopLocalVideo().catch(() => { });
       }
       if (this.externalVideo === video) {
         this.externalVideo = undefined;
@@ -306,7 +366,9 @@ export class TrtcRtcManager implements RtcManaging {
    * @returns 切换后的视频轨。
    * @throws 引擎未初始化、采集未启动或设备切换失败时抛出错误。
    */
-  async switchCameraCapture(to: CameraPosition): Promise<MediaStreamTrack> {
+  async switchCameraCapture(
+    to: CameraPosition
+  ): Promise<MediaStreamTrack> {
     const engine = this.requireEngine();
     if (!this.isCapturing) {
       throw new XmaxError(
@@ -355,7 +417,9 @@ export class TrtcRtcManager implements RtcManaging {
    *
    * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
    */
-  async joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void> {
+  async joinRoom(
+    configuration: RtcRoomJoinConfiguration
+  ): Promise<void> {
     if (configuration.provider !== RtcProvider.trtc) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "TRTC credentials required");
     }
@@ -564,7 +628,10 @@ export class TrtcRtcManager implements RtcManaging {
    *
    * @throws 引擎未初始化或操作失败时抛出错误。
    */
-  async subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void> {
+  async subscribeRemoteAudio(
+    userID: string,
+    subscribe: boolean
+  ): Promise<void> {
     const engine = this.requireEngine();
     try {
       await engine.muteRemoteAudio(userID, !subscribe);
@@ -583,7 +650,9 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * 获取原始远端音轨；不支持独立播放音量的平台暂不开放录制。
    */
-  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined {
+  getRemoteAudioTrack(
+    userID: string
+  ): MediaStreamTrack | undefined {
     if (!canControlTrtcRemoteAudioVolume()) {
       throw new XmaxError(XmaxErrorCode.mediaError, "TRTC recording cannot preserve remote audio while muted on this platform");
     }
@@ -600,7 +669,10 @@ export class TrtcRtcManager implements RtcManaging {
    *
    * @param volume 音量，取值范围为 `0...100`，越界时收敛到边界。
    */
-  setRemoteAudioVolume(volume: number, userID: string): void {
+  setRemoteAudioVolume(
+    volume: number,
+    userID: string
+  ): void {
     const engine = this.requireEngine();
     const normalized = Math.min(Math.max(Math.round(volume), 0), 100);
     if (!canControlTrtcRemoteAudioVolume()) {
@@ -621,7 +693,9 @@ export class TrtcRtcManager implements RtcManaging {
    *
    * @throws 未在房间中或消息编码后超过 1000 字节时抛出错误。
    */
-  async sendRoomMessage(message: string): Promise<void> {
+  async sendRoomMessage(
+    message: string
+  ): Promise<void> {
     const engine = this.requireEngine();
     if (!this.isInRoom) {
       throw new XmaxError(
@@ -647,19 +721,25 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * TRTC 凭据由会话层缓存，保持现有进房鉴权行为。
    */
-  async updateCredentials(_configuration: RtcRoomJoinConfiguration): Promise<void> {}
+  async updateCredentials(
+    _configuration: RtcRoomJoinConfiguration
+  ): Promise<void> { }
 
   /**
    * 设置 RTC 事件监听器，传入空值时清除监听器。
    */
-  setEventListener(listener?: RtcEventListener): void {
+  setEventListener(
+    listener?: RtcEventListener
+  ): void {
     this.eventListener = listener;
   }
 
   /**
    * 注册引擎事件桥接：媒体、消息及性能日志。
    */
-  private registerEventBridge(engine: RtcEngine): void {
+  private registerEventBridge(
+    engine: RtcEngine
+  ): void {
     const source = engine as unknown as RtcEventSource;
 
     // 直接使用 TRTC 的统计周期，不创建定时器；退房和旧引擎的迟到事件不输出。
@@ -682,7 +762,10 @@ export class TrtcRtcManager implements RtcManaging {
               return [];
             }
             // 当前 TRTC 类型声明漏了这个可选运行时字段，缺失时不以缓冲延迟替代。
-            const playback = video as typeof video & { point2pointDelay?: number; jitterBufferDelay?: number };
+            const playback = video as typeof video & {
+              point2pointDelay?: number;
+              jitterBufferDelay?: number
+            };
             return [Object.freeze({
               userID: remote.userId,
               width: valid(video.width, 1),
@@ -770,14 +853,18 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * 将 TRTC 错误映射为 SDK 统一错误。
    */
-  private mapError(error: unknown): XmaxError {
+  private mapError(
+    error: unknown
+  ): XmaxError {
     if (error instanceof XmaxError) {
       return error;
     }
 
     const rtcError = error as {
       message?: unknown;
-      originError?: { name?: string };
+      originError?: {
+        name?: string
+      };
     };
     const originName = rtcError?.originError?.name ?? "";
     const message =

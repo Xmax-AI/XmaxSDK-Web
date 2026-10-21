@@ -1,13 +1,34 @@
+//
+//  AgoraVideoSender.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { ILocalVideoTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 
-/** 实验性摄像头发送配置：不修改采集约束，不调用 Agora 的编码配置接口。 */
+/**
+ * 实验性摄像头发送配置：不修改采集约束，不调用 Agora 的编码配置接口。
+ */
 export class AgoraVideoSender {
-  static async apply(track: ILocalVideoTrack, config: VideoEncodingConfiguration, ensureActive: () => void): Promise<void> {
+
+  /**
+   * 将码率和帧率约束应用到浏览器视频发送器。
+   */
+  static async apply(
+    track: ILocalVideoTrack,
+    config: VideoEncodingConfiguration,
+    ensureActive: () => void
+  ): Promise<void> {
     ensureActive();
     const sender = track.getRTCRtpTransceiver()?.sender;
-    if (!sender) throw new XmaxError(XmaxErrorCode.rtcError, "WebRTC video sender is unavailable");
+    if (!sender)
+      throw new XmaxError(XmaxErrorCode.rtcError, "WebRTC video sender is unavailable");
     const capture = sender.track?.getSettings();
     if (!capture?.width || !capture.height) {
       throw new XmaxError(XmaxErrorCode.rtcError, "WebRTC capture dimensions are unavailable");
@@ -38,11 +59,15 @@ export class AgoraVideoSender {
       // 某些浏览器会静默忽略字段；尽力恢复旧发送参数，绝不回退到修改摄像头约束。
       if (actual && applied.encodings.length === 1) {
         for (const key of ["scaleResolutionDownBy", "maxFramerate", "maxBitrate"] as const) {
-          if (previous[key] === undefined) delete actual[key];
-          else actual[key] = previous[key];
+          if (previous[key] === undefined)
+            delete actual[key];
+          else
+            actual[key] = previous[key];
         }
-        if (previousPreference === undefined) delete applied.degradationPreference;
-        else applied.degradationPreference = previousPreference;
+        if (previousPreference === undefined)
+          delete applied.degradationPreference;
+        else
+          applied.degradationPreference = previousPreference;
         await sender.setParameters(applied);
       }
       throw new XmaxError(XmaxErrorCode.rtcError, "Browser did not retain WebRTC video sender parameters");

@@ -1,3 +1,13 @@
+//
+//  DefaultTrajectoryEffectRenderer.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { TrajectoryEffectRendering } from "./TrajectoryEffectRendering";
 import type { TrajectoryID, TrajectoryPoint } from "./TrajectoryPoint";
 
@@ -20,21 +30,52 @@ const VISUAL = {
  * 绿色发光尾迹与触点装饰；仅负责绘制，不参与采样或信令发送。
  */
 export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRendering {
+
   /**
    * 画布与动画资源；尾迹保留像素渐隐，触点装饰每帧重绘。
    */
   readonly element = document.createElement("div");
+
+  /**
+   * 绘制轨迹线条的画布。
+   */
   private readonly trailCanvas = document.createElement("canvas");
+
+  /**
+   * 绘制触点光圈的画布。
+   */
   private readonly effectCanvas = document.createElement("canvas");
+
+  /**
+   * 下一次动画刷新任务的句柄。
+   */
   private animation?: number;
+
+  /**
+   * 轨迹画布中是否仍有待淡出的像素。
+   */
   private hasTrailPixels = false;
+
+  /**
+   * 无活动触点后已经执行的淡出帧数。
+   */
   private idleFadeFrames = 0;
 
   /**
    * 活动触点和等待下一帧绘制的线段。
    */
-  private readonly pointers = new Map<TrajectoryID, { point: TrajectoryPoint; startedAt: number }>();
-  private readonly segments: Array<{ from: TrajectoryPoint; to: TrajectoryPoint }> = [];
+  private readonly pointers = new Map<TrajectoryID, {
+    point: TrajectoryPoint;
+    startedAt: number
+  }>();
+
+  /**
+   * 等待绘制的轨迹线段。
+   */
+  private readonly segments: Array<{
+    from: TrajectoryPoint;
+    to: TrajectoryPoint
+  }> = [];
 
   /**
    * 安装独立视觉图层，不注册指针事件。
@@ -49,7 +90,9 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 开始触点装饰，脉冲动画以本次按下时间为起点。
    */
-  renderBegan(points: readonly TrajectoryPoint[]): void {
+  renderBegan(
+    points: readonly TrajectoryPoint[]
+  ): void {
     for (const point of points) {
       this.pointers.set(point.id, { point, startedAt: point.timestamp });
     }
@@ -60,7 +103,9 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 只绘制新线段，旧像素自然衰减，不反复加亮整条历史轨迹。
    */
-  renderMoved(points: readonly TrajectoryPoint[]): void {
+  renderMoved(
+    points: readonly TrajectoryPoint[]
+  ): void {
     for (const point of points) {
       const pointer = this.pointers.get(point.id);
       if (pointer) {
@@ -74,7 +119,9 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 释放触点后移除装饰，仅保留尾迹的渐隐动画。
    */
-  renderEnded(identifiers: readonly TrajectoryID[]): void {
+  renderEnded(
+    identifiers: readonly TrajectoryID[]
+  ): void {
     for (const id of identifiers) {
       this.pointers.delete(id);
     }
@@ -110,7 +157,9 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 同步画布分辨率，分别更新尾迹和触点视觉图层。
    */
-  private draw(now: number): void {
+  private draw(
+    now: number
+  ): void {
     this.animation = undefined;
     const trail = this.trailCanvas.getContext("2d");
     const effects = this.effectCanvas.getContext("2d");
@@ -176,7 +225,10 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 叠加绿色外晕、中层和白色线芯；多指时省略阴影降低绘制开销。
    */
-  private drawSegments(context: CanvasRenderingContext2D, dpr: number): void {
+  private drawSegments(
+    context: CanvasRenderingContext2D,
+    dpr: number
+  ): void {
     const layers = [
       { width: VISUAL.outerWidth, blur: VISUAL.outerBlur, color: this.green(VISUAL.outerAlpha) },
       { width: VISUAL.middleWidth, blur: VISUAL.middleBlur, color: this.green(VISUAL.middleAlpha) },
@@ -204,7 +256,13 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 绘制触点周围两层不同相位的脉冲圆环。
    */
-  private drawRings(context: CanvasRenderingContext2D, x: number, y: number, dpr: number, elapsed: number): void {
+  private drawRings(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    dpr: number,
+    elapsed: number
+  ): void {
     context.lineWidth = VISUAL.ringLineWidth * dpr;
     for (let index = 0; index < VISUAL.ringCount; index++) {
       const pulse = (Math.sin((elapsed * VISUAL.ringPulseSpeed + index * 0.5) * Math.PI * 2) + 1) / 2;
@@ -219,7 +277,13 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 绘制四个反向交错运动的柔和环绕粒子。
    */
-  private drawParticles(context: CanvasRenderingContext2D, x: number, y: number, dpr: number, elapsed: number): void {
+  private drawParticles(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    dpr: number,
+    elapsed: number
+  ): void {
     for (let index = 0; index < VISUAL.particleCount; index++) {
       const direction = index % 2 === 0 ? 1 : -1;
       const angle = index / VISUAL.particleCount * Math.PI * 2 + elapsed * VISUAL.particleSpeed * direction;
@@ -232,7 +296,14 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 绘制径向绿色光晕，触点核心增加中间色阶。
    */
-  private drawGlow(context: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number, head = false): void {
+  private drawGlow(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    alpha: number,
+    head = false
+  ): void {
     const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
     gradient.addColorStop(0, this.green(alpha));
     if (head) {
@@ -248,7 +319,9 @@ export class DefaultTrajectoryEffectRenderer implements TrajectoryEffectRenderin
   /**
    * 统一轨迹主题色，透明度由各视觉层指定。
    */
-  private green(alpha: number): string {
+  private green(
+    alpha: number
+  ): string {
     return "rgba(0,255,100," + alpha + ")";
   }
 }

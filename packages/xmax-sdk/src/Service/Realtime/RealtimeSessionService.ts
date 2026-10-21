@@ -1,3 +1,13 @@
+//
+//  RealtimeSessionService.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeModelName } from "./RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
@@ -13,10 +23,30 @@ import type {
  * 会话接口返回的统一数据。
  */
 interface SessionPayload {
+
+  /**
+   * 服务端会话标识。
+   */
   sessionUid?: string;
+
+  /**
+   * 业务用户标识。
+   */
   userUid?: string;
+
+  /**
+   * 服务端返回的运行状态。
+   */
   status?: string;
+
+  /**
+   * 服务端返回的 RTC 凭据，按接入配置解析。
+   */
   modelExtra?: unknown;
+
+  /**
+   * 服务端返回的会话关闭原因。
+   */
   closeReason?: string;
 }
 
@@ -24,24 +54,66 @@ interface SessionPayload {
  * `modelExtra` 中的 RTC 凭据；厂商始终由接入配置决定。
  */
 interface ConnectionPayload {
+
+  /**
+   * 服务端返回的 RTC 房间标识。
+   */
   room_id?: string;
+
+  /**
+   * VeRTC 会话使用的业务用户标识。
+   */
   user_id?: string;
+
+  /**
+   * VeRTC 结果流的用户标识。
+   */
   bot_name?: string;
+
+  /**
+   * RTC 应用标识。
+   */
   rtc_app_id?: string;
+
+  /**
+   * TRTC 或 Agora 进房使用的用户标识。
+   */
   rtc_user_id?: string;
+
+  /**
+   * TRTC 用户登录签名。
+   */
   user_sig?: string;
+
+  /**
+   * TRTC 字符串房间号对应的进房鉴权凭据。
+   */
   private_map_key_with_string_room_id?: string;
+
+  /**
+   * 生成结果流的 RTC 用户标识。
+   */
   rtc_bot_id?: string;
+
+  /**
+   * Agora 或 VeRTC 的进房令牌。
+   */
   room_token?: string;
 }
 
+/**
+ * 会话接口、RTC 类型和心跳策略。
+ */
 export interface RealtimeSessionServiceOptions {
+
   /**
    * Xmax API 请求组件。
    */
   apiService: ApiServicing;
 
-  /** 接入方选择的 RTC 厂商；不读取后端 provider，不根据模型推断。 */
+  /**
+   * 接入方选择的 RTC 厂商；不读取后端 provider，不根据模型推断。
+   */
   provider?: RtcProvider;
 
   /**
@@ -52,7 +124,9 @@ export interface RealtimeSessionServiceOptions {
   /**
    * 心跳等待实现（可替换，测试用）。
    */
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (
+    ms: number
+  ) => Promise<void>;
 }
 
 /**
@@ -62,26 +136,42 @@ export interface RealtimeSessionServiceOptions {
  * 使用方覆盖本地缓存；心跳使用版本号使已停止心跳的迟到结果失效。
  */
 export class RealtimeSessionService implements RealtimeSessionServicing {
+
   /**
    * 服务层组件
    */
   private readonly apiService: ApiServicing;
+
+  /**
+   * RTC 提供方，决定进房参数和凭据的解析方式。
+   */
   private readonly provider: RtcProvider;
 
   /**
    * 心跳配置
    */
   private readonly heartbeatIntervalMs: number;
-  private readonly sleep: (ms: number) => Promise<void>;
+
+  /**
+   * 等待指定毫秒数后继续执行的调度函数。
+   */
+  private readonly sleep: (
+    ms: number
+  ) => Promise<void>;
 
   /**
    * 运行状态
    */
   private heartbeatVersion = 0;
+
   /**
    * 会话凭证缓存，支持心跳仅返回变更字段；关闭后清除。
    */
   private readonly credentials = new Map<string, ConnectionPayload>();
+
+  /**
+   * 按会话标识维护的凭据刷新操作。
+   */
   private readonly refreshes = new Map<string, Promise<RealtimeSession>>();
 
   /**
@@ -91,7 +181,9 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * @param options.heartbeatIntervalMs 心跳间隔（毫秒）；默认 10 秒。
    * @param options.sleep 心跳等待实现（可替换，测试用）。
    */
-  constructor(options: RealtimeSessionServiceOptions) {
+  constructor(
+    options: RealtimeSessionServiceOptions
+  ) {
     this.apiService = options.apiService;
     this.provider = options.provider ?? RtcProvider.trtc;
     if (!Object.values(RtcProvider).includes(this.provider)) {
@@ -106,7 +198,9 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 创建实时会话并返回 RTC 连接信息。
    */
-  async createSession(model: RealtimeModelName): Promise<RealtimeSession> {
+  async createSession(
+    model: RealtimeModelName
+  ): Promise<RealtimeSession> {
     const payload = await this.apiService.post<SessionPayload>("/session", {
       model,
     });
@@ -120,7 +214,8 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     } catch (error) {
       // 后端已创建会话但凭据无效时，也必须尽力关闭，避免留下计费会话。
       const sessionID = RealtimeSessionService.nonEmpty(payload.sessionUid);
-      if (sessionID) await this.closeSession(sessionID).catch(() => {});
+      if (sessionID)
+        await this.closeSession(sessionID).catch(() => { });
       throw error;
     }
   }
@@ -146,7 +241,9 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 关闭指定实时会话；请求带 keepalive，页面卸载后仍能发出。
    */
-  async closeSession(sessionID: string): Promise<void> {
+  async closeSession(
+    sessionID: string
+  ): Promise<void> {
     this.credentials.delete(sessionID);
     this.refreshes.delete(sessionID);
     try {
@@ -193,21 +290,27 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 发送一次心跳请求并解析会话数据（不要求携带完整连接参数）。
    */
-  heartbeatSession(sessionID: string): Promise<RealtimeSession> {
+  heartbeatSession(
+    sessionID: string
+  ): Promise<RealtimeSession> {
     const pending = this.refreshes.get(sessionID);
-    if (pending) return pending;
+    if (pending)
+      return pending;
     const operation = this.performHeartbeat(sessionID);
     this.refreshes.set(sessionID, operation);
     void operation.finally(() => {
-      if (this.refreshes.get(sessionID) === operation) this.refreshes.delete(sessionID);
-    }).catch(() => {});
+      if (this.refreshes.get(sessionID) === operation)
+        this.refreshes.delete(sessionID);
+    }).catch(() => { });
     return operation;
   }
 
   /**
    * 合并心跳部分凭据；已关闭会话的迟到响应不重建缓存。
    */
-  private async performHeartbeat(sessionID: string): Promise<RealtimeSession> {
+  private async performHeartbeat(
+    sessionID: string
+  ): Promise<RealtimeSession> {
     const previous = this.credentials.get(sessionID);
     const payload = await this.apiService.put<SessionPayload>(
       `/session/${sessionID}/heartbeat`,
@@ -218,16 +321,20 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     }
     const merged = incoming ? { ...previous, ...incoming } : previous;
     const session = this.makeSession({ ...payload, modelExtra: merged }, merged !== undefined);
-    if (session.id !== sessionID) throw new XmaxError(XmaxErrorCode.sessionError, "Heartbeat session identity changed");
+    if (session.id !== sessionID)
+      throw new XmaxError(XmaxErrorCode.sessionError, "Heartbeat session identity changed");
     RealtimeSessionService.ensureSessionActive(session);
-    if (previous && this.credentials.get(sessionID) === previous && merged) this.credentials.set(sessionID, merged);
+    if (previous && this.credentials.get(sessionID) === previous && merged)
+      this.credentials.set(sessionID, merged);
     return session;
   }
 
   /**
    * 校验会话仍处于活跃状态；状态明确非 ACTIVE 时抛出会话错误。
    */
-  private static ensureSessionActive(session: RealtimeSession): void {
+  private static ensureSessionActive(
+    session: RealtimeSession
+  ): void {
     if (!session.status || session.status === "ACTIVE") {
       return;
     }
@@ -285,12 +392,16 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     const userID = provider === RtcProvider.vertc
       ? RealtimeSessionService.nonEmpty(payload.user_id) ?? RealtimeSessionService.nonEmpty(fallbackUserID)
       : RealtimeSessionService.nonEmpty(payload.rtc_user_id);
-    if (!roomID || !sdkAppID || !userID) return undefined;
+    if (!roomID || !sdkAppID || !userID)
+      return undefined;
     if (provider === RtcProvider.agora || provider === RtcProvider.vertc) {
       const roomToken = RealtimeSessionService.nonEmpty(payload.room_token);
-      if (!roomToken) return undefined;
-      return Object.freeze({ provider, roomID, appID: sdkAppID, userID, roomToken,
-        botID: RealtimeSessionService.nonEmpty(provider === RtcProvider.vertc ? payload.bot_name : payload.rtc_bot_id) });
+      if (!roomToken)
+        return undefined;
+      return Object.freeze({
+        provider, roomID, appID: sdkAppID, userID, roomToken,
+        botID: RealtimeSessionService.nonEmpty(provider === RtcProvider.vertc ? payload.bot_name : payload.rtc_bot_id)
+      });
     }
     const userSig = RealtimeSessionService.nonEmpty(payload.user_sig);
     const privateMapKey = RealtimeSessionService.nonEmpty(
@@ -333,7 +444,9 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   /**
    * 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。
    */
-  private static nonEmpty(value?: string): string | undefined {
+  private static nonEmpty(
+    value?: string
+  ): string | undefined {
     const normalized = typeof value === "string" ? value.trim() : undefined;
     return normalized || undefined;
   }

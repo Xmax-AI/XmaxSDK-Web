@@ -1,7 +1,21 @@
+//
+//  RealtimeVideoTrack.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
+/**
+ * 视频轨道身份及初始媒体信息。
+ */
 export interface RealtimeVideoTrackInit {
+
   /**
    * 视频轨道标识。
    */
@@ -25,9 +39,7 @@ export interface RealtimeVideoTrackInit {
  * 渲染层通过它把画面绑定到 `<video>` 元素。
  */
 export class RealtimeVideoTrack {
-  /**
-   * 轨道信息
-   */
+
   /**
    * 视频轨道标识。
    */
@@ -42,9 +54,6 @@ export class RealtimeVideoTrack {
   };
 
   /**
-   * 平台资源
-   */
-  /**
    * SDK 内部：轨道对应的 Web 媒体轨。
    * 本地轨道在采集启动后可用；远端轨道在订阅成功后可用。
    */
@@ -52,12 +61,10 @@ export class RealtimeVideoTrack {
 
   /**
    * 创建实时视频轨道。
-   *
-   * @param init.id 视频轨道标识。
-   * @param init.videoFormat 轨道初始视频格式。
-   * @param init.position 本地相机轨道的初始摄像头位置。
    */
-  constructor(init: RealtimeVideoTrackInit) {
+  constructor(
+    init: RealtimeVideoTrackInit
+  ) {
     this.id = init.id;
     this.metadata = {
       videoFormat: init.videoFormat,
@@ -82,14 +89,18 @@ export class RealtimeVideoTrack {
   /**
    * 更新轨道视频格式。 @internal
    */
-  updateVideoFormat(videoFormat: RealtimeVideoFormat): void {
+  updateVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): void {
     this.metadata.videoFormat = videoFormat;
   }
 
   /**
    * 更新轨道摄像头位置。 @internal
    */
-  updatePosition(position: CameraPosition): void {
+  updatePosition(
+    position: CameraPosition
+  ): void {
     this.metadata.position = position;
   }
 }

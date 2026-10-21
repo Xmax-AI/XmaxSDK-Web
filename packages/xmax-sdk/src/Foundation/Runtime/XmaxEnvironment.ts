@@ -1,7 +1,18 @@
+//
+//  XmaxEnvironment.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * Xmax 服务环境。
  */
 export enum XmaxEnvironment {
+
   /**
    * 国内环境。
    */
@@ -32,13 +43,17 @@ const NON_REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
 /**
  * 环境对应的 Xmax API Base URL。
  */
-export function apiBaseURL(environment: XmaxEnvironment): string {
+export function apiBaseURL(
+  environment: XmaxEnvironment
+): string {
   return API_BASE_URLS[environment];
 }
 
 /**
  * 环境对应的非实时任务 API Base URL。
  */
-export function nonRealtimeApiBaseURL(environment: XmaxEnvironment): string {
+export function nonRealtimeApiBaseURL(
+  environment: XmaxEnvironment
+): string {
   return NON_REALTIME_API_BASE_URLS[environment];
 }

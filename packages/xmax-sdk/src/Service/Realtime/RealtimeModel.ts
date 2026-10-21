@@ -1,3 +1,13 @@
+//
+//  RealtimeModel.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
@@ -6,22 +16,41 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
  * SDK 当前支持的实时生成模型。
  */
 export enum RealtimeModel {
+
+  /**
+   * 国内服务使用的 X2.1.1 预览模型。
+   */
   x2_1_1_preview_cn = "x2.1.1-preview-cn",
+
+  /**
+   * 海外服务使用的 X2.1.1 预览模型。
+   */
   x2_1_1_preview_us = "x2.1.1-preview-us",
 }
 
-/** 内置模型或服务端新增的模型标识；自定义名称原样传给服务端。 */
+/**
+ * 内置模型或服务端新增的模型标识；自定义名称原样传给服务端。
+ */
 export type RealtimeModelName = RealtimeModel | (string & {});
 
-function isKnownModel(model: RealtimeModelName): model is RealtimeModel {
+/**
+ * 校验模型名称非空，并判断是否为 SDK 内置模型。
+ */
+function isKnownModel(
+  model: RealtimeModelName
+): model is RealtimeModel {
   if (typeof model !== "string" || !model.trim()) {
     throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Realtime model must be a non-empty string");
   }
   return Object.values(RealtimeModel).includes(model as RealtimeModel);
 }
 
-/** 只解析本地默认配置，不替换请求中的模型标识；避免原型属性参与查表。 */
-function modelDefaults(model: RealtimeModelName): RealtimeModel {
+/**
+ * 只解析本地默认配置，不替换请求中的模型标识；避免原型属性参与查表。
+ */
+function modelDefaults(
+  model: RealtimeModelName
+): RealtimeModel {
   return isKnownModel(model) ? model : RealtimeModel.x2_1_1_preview_cn;
 }
 
@@ -45,7 +74,15 @@ const MODEL_BASE_URLS: Readonly<Partial<Record<RealtimeModel, string>>> = {
  * 模型输入画面的像素尺寸。
  */
 export interface ModelSize {
+
+  /**
+   * 视频宽度，单位为像素。
+   */
   width: number;
+
+  /**
+   * 视频高度，单位为像素。
+   */
   height: number;
 }
 
@@ -74,7 +111,9 @@ const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
 /**
  * 获取模型的显示名称。
  */
-export function modelDisplayName(model: RealtimeModelName): string {
+export function modelDisplayName(
+  model: RealtimeModelName
+): string {
   return isKnownModel(model) ? MODEL_DISPLAY_NAMES[model] : model;
 }
 
@@ -82,49 +121,63 @@ export function modelDisplayName(model: RealtimeModelName): string {
  * 模型专用的会话 API Base URL；未知模型使用测试环境地址。
  * 已知模型返回 undefined 时使用客户端环境的默认地址。
  */
-export function modelBaseURL(model: RealtimeModelName): string | undefined {
+export function modelBaseURL(
+  model: RealtimeModelName
+): string | undefined {
   return isKnownModel(model) ? MODEL_BASE_URLS[model] : "https://dev.22duck.cn/open/api/v1";
 }
 
 /**
  * 模型支持的输入分辨率桶；空数组表示按像素面积上下限和对齐规则计算输入尺寸。
  */
-export function resolutionBuckets(model: RealtimeModelName): ModelSize[] {
+export function resolutionBuckets(
+  model: RealtimeModelName
+): ModelSize[] {
   return RESOLUTION_BUCKETS[modelDefaults(model)];
 }
 
 /**
  * 输入分辨率的最小总像素面积；仅在分辨率桶为空时参与尺寸计算。
  */
-export function minimumInputPixels(_model: RealtimeModelName): number {
+export function minimumInputPixels(
+  _model: RealtimeModelName
+): number {
   return 600000;
 }
 
 /**
  * 输入分辨率的最大总像素面积；仅在分辨率桶为空时参与尺寸计算。
  */
-export function maximumInputPixels(model: RealtimeModelName): number {
+export function maximumInputPixels(
+  model: RealtimeModelName
+): number {
   return MAXIMUM_INPUT_PIXELS[modelDefaults(model)];
 }
 
 /**
  * 输入宽度和高度分别需要对齐的像素倍数；仅在分辨率桶为空时参与尺寸计算。
  */
-export function inputSizeAlignment(_model: RealtimeModelName): number {
+export function inputSizeAlignment(
+  _model: RealtimeModelName
+): number {
   return 32;
 }
 
 /**
  * 未指定视频规格时，各媒体来源使用的默认帧率。
  */
-export function defaultFrameRate(_model: RealtimeModelName): number {
+export function defaultFrameRate(
+  _model: RealtimeModelName
+): number {
   return 30;
 }
 
 /**
  * 摄像头采集使用的默认视频规格。
  */
-export function defaultCameraVideoFormat(model: RealtimeModelName): RealtimeVideoFormat {
+export function defaultCameraVideoFormat(
+  model: RealtimeModelName
+): RealtimeVideoFormat {
   modelDefaults(model);
   return new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
 }
@@ -142,10 +195,15 @@ const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]
  * 未知模型默认沿用 x2.1.1-preview-cn 的 Agora，也允许显式选择其他已接入的 RTC；
  * 是否被该模型的服务端支持，由服务端决定。
  */
-export function supportedRtcProviders(model: RealtimeModelName): readonly RtcProvider[] {
+export function supportedRtcProviders(
+  model: RealtimeModelName
+): readonly RtcProvider[] {
   return isKnownModel(model) ? MODEL_RTC_PROVIDERS[model] : CUSTOM_MODEL_RTC_PROVIDERS;
 }
 
+/**
+ * 自定义模型允许选择的 RTC 类型，首项为默认值。
+ */
 const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
   ...MODEL_RTC_PROVIDERS[RealtimeModel.x2_1_1_preview_cn],
   ...Object.values(RtcProvider).filter((provider) =>

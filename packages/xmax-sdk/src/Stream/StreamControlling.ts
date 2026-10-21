@@ -1,3 +1,13 @@
+//
+//  StreamControlling.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
@@ -15,6 +25,7 @@ import type { RecordingTracks } from "../Foundation/Media/Recording/RecordingTra
  * 远端结果流及其可供渲染层绑定的视频轨。
  */
 export interface RemoteStreamBinding {
+
   /**
    * 远端流标识。
    */
@@ -29,12 +40,15 @@ export interface RemoteStreamBinding {
 /**
  * 远端生成流就绪（携带绑定）与清理（传入空值）回调。
  */
-export type RemoteStreamListener = (binding: RemoteStreamBinding | null) => void;
+export type RemoteStreamListener = (
+  binding: RemoteStreamBinding | null
+) => void;
 
 /**
  * 生成开始/变更信令的公共参数。
  */
 export interface StreamGenerationOptions {
+
   /**
    * 当前生成任务的唯一标识。
    */
@@ -50,16 +64,24 @@ export interface StreamGenerationOptions {
    */
   context: RealtimeContext;
 
-  /** 仅开始生成时使用：替换已运行任务并发送 start，默认 false，不预先发送 stop。 */
+  /**
+   * 仅开始生成时使用：替换已运行任务并发送 start，默认 false，不预先发送 stop。
+   */
   restart?: boolean;
 
-  /** 当前连接的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。 */
+  /**
+   * 当前连接的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。
+   */
   targetSize?: RoomEventTargetSize;
 
-  /** 后端输入镜像，仅用于 start；非前置摄像头输入为 false。 */
+  /**
+   * 后端输入镜像，仅用于 start；非前置摄像头输入为 false。
+   */
   mirror?: boolean;
 
-  /** 原始人脸回贴，用于 start 和 change_condition，默认 false。 */
+  /**
+   * 原始人脸回贴，用于 start 和 change_condition，默认 false。
+   */
   faceRestoration?: boolean;
 
   /**
@@ -67,10 +89,14 @@ export interface StreamGenerationOptions {
    */
   paddingContain?: boolean;
 
-  /** 开始信令发送成功后的回调，不等待生成确认；更新条件时不调用。 */
+  /**
+   * 开始信令发送成功后的回调，不等待生成确认；更新条件时不调用。
+   */
   onStartSent?: () => Promise<void>;
 
-  /** 合并到本次生成信令的 params，不缓存。 */
+  /**
+   * 合并到本次生成信令的 params，不缓存。
+   */
   extraParams?: RealtimeExtraParams;
 }
 
@@ -78,6 +104,7 @@ export interface StreamGenerationOptions {
  * 定义传输层向 Core 暴露的统一能力。
  */
 export interface StreamControlling {
+
   /**
    * 获取当前实际生成机器人的录制轨道；不建立订阅，不转移轨道所有权。
    */
@@ -86,7 +113,9 @@ export interface StreamControlling {
   /**
    * 监听本端上下行网络统计，传入 undefined 取消。
    */
-  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void;
+  setNetworkStatisticsListener(
+    listener?: NetworkStatisticsListener
+  ): void;
 
   /**
    * 当前是否存在正在启动或已经运行的生成任务。
@@ -103,7 +132,9 @@ export interface StreamControlling {
    *
    * @param volume 音量，取值范围为 `0...1`。
    */
-  setRemoteAudioVolume(volume: number): void;
+  setRemoteAudioVolume(
+    volume: number
+  ): void;
 
   /**
    * 按视频格式配置本地视频编码参数（码率区间与编码策略）。
@@ -112,10 +143,16 @@ export interface StreamControlling {
    *
    * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
    */
-  updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
+  updateUplinkVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void>;
 
-  /** 保留最后成功应用的编码配置，只更新上行目标帧率。 */
-  updateUplinkFrameRate(fps: number): Promise<RealtimeVideoFormat>;
+  /**
+   * 保留最后成功应用的编码配置，只更新上行目标帧率。
+   */
+  updateUplinkFrameRate(
+    fps: number
+  ): Promise<RealtimeVideoFormat>;
 
   /**
    * 加入 RTC 房间并发布本地媒体流。
@@ -145,7 +182,10 @@ export interface StreamControlling {
   /**
    * 将同一会话的新凭据应用到 RTC；断连时通过 signal 取消未完成的恢复。
    */
-  updateCredentials(connection: RtcSessionConnection, signal?: AbortSignal): Promise<void>;
+  updateCredentials(
+    connection: RtcSessionConnection,
+    signal?: AbortSignal
+  ): Promise<void>;
 
   /**
    * 建立生成任务并发送开始信令。
@@ -163,7 +203,9 @@ export interface StreamControlling {
    * 订阅后兑现；超时、取消或订阅失败时拒绝。
    * @throws 配置无效时同步抛错；信令发送失败或确认超时通过 Promise 拒绝。
    */
-  beginGeneration(options: StreamGenerationOptions): Promise<void>;
+  beginGeneration(
+    options: StreamGenerationOptions
+  ): Promise<void>;
 
   /**
    * 在远端首帧已经可显示后订阅当前生成流的音频。
@@ -175,7 +217,9 @@ export interface StreamControlling {
   /**
    * 生成就绪后启用网络视频完成回调；提前收到的完成消息会延后交付一次。
    */
-  activateNetworkVideoCompletion(onFinish?: () => void): void;
+  activateNetworkVideoCompletion(
+    onFinish?: () => void
+  ): void;
 
   /**
    * 发送生成条件变更信令。
@@ -191,7 +235,9 @@ export interface StreamControlling {
    * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
    * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
    */
-  updateGeneration(options: StreamGenerationOptions): Promise<void>;
+  updateGeneration(
+    options: StreamGenerationOptions
+  ): Promise<void>;
 
   /**
    * 调整当前生成任务的回传尺寸，不重启生成。
@@ -209,27 +255,38 @@ export interface StreamControlling {
    *
    * @throws RTC 停止信令发送失败时抛出错误。
    */
-  stopGeneration(taskID: string): Promise<void>;
+  stopGeneration(
+    taskID: string
+  ): Promise<void>;
 
   /**
    * 发送生成任务的交互轨迹；空数组会被忽略。
    *
    * @throws RTC 房间未就绪或轨迹信令发送失败时抛出错误。
    */
-  sendTracks(taskID: string, points: RealtimePoint[]): Promise<void>;
+  sendTracks(
+    taskID: string,
+    points: RealtimePoint[]
+  ): Promise<void>;
 
   /**
    * 设置房间业务消息监听器，传入空值时清除监听器。
    */
-  setRoomListener(listener?: RoomListener): void;
+  setRoomListener(
+    listener?: RoomListener
+  ): void;
 
   /**
    * 设置本地主视频流统计监听器，传入 undefined 清除。
    */
-  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void;
+  setLocalVideoStatisticsListener(
+    listener?: VideoStatisticsListener
+  ): void;
 
   /**
    * 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。
    */
-  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void;
+  setRemoteVideoStatisticsListener(
+    listener?: RemoteVideoStatisticsListener
+  ): void;
 }

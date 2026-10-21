@@ -1,3 +1,13 @@
+//
+//  RtcEngineManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type TRTC from "trtc-sdk-v5";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
@@ -10,17 +20,12 @@ export type RtcEngine = TRTC;
  * 表示对共享 TRTC Engine 的独占使用权。
  */
 export class RtcEngineLease {
-  /**
-   * RTC 资源
-   */
+
   /**
    * 租约持有的 TRTC 引擎实例。
    */
   readonly engine: RtcEngine;
 
-  /**
-   * 运行标识
-   */
   /**
    * 租约标识。
    */
@@ -29,16 +34,37 @@ export class RtcEngineLease {
   /**
    * 为已创建的引擎生成独占租约标识，供引擎管理器核对释放请求。
    */
-  constructor(engine: RtcEngine) {
+  constructor(
+    engine: RtcEngine
+  ) {
     this.engine = engine;
     this.id = `lease-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }
 
+/**
+ * 等待独占租用 TRTC 引擎的请求。
+ */
 interface EngineRequest {
+
+  /**
+   * 当前引擎租用请求的唯一标识。
+   */
   id: string;
-  resolve: (lease: RtcEngineLease) => void;
-  reject: (error: unknown) => void;
+
+  /**
+   * 结束当前等待并交付结果。
+   */
+  resolve: (
+    lease: RtcEngineLease
+  ) => void;
+
+  /**
+   * 结束当前等待并传递错误。
+   */
+  reject: (
+    error: unknown
+  ) => void;
 }
 
 /**
@@ -52,9 +78,7 @@ interface EngineRequest {
  * 环境（如 SSR、测试）中正常导入。
  */
 export class RtcEngineManager {
-  /**
-   * 共享管理入口
-   */
+
   /**
    * 共享实例。
    */
@@ -77,8 +101,6 @@ export class RtcEngineManager {
 
   /**
    * 创建引擎管理器。
-   *
-   * @param makeEngine 引擎工厂（可替换，测试用）。
    */
   constructor(
     makeEngine: () => Promise<RtcEngine> = RtcEngineManager.defaultMakeEngine,
@@ -109,7 +131,9 @@ export class RtcEngineManager {
   /**
    * 释放有效租约、销毁 Engine，并把独占权交给下一个等待者。
    */
-  release(lease: RtcEngineLease): void {
+  release(
+    lease: RtcEngineLease
+  ): void {
     if (this.activeLease?.id !== lease.id) {
       return;
     }

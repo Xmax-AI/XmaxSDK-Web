@@ -1,3 +1,13 @@
+//
+//  XmaxRealtimeManaging.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
@@ -19,10 +29,13 @@ import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
  */
 export interface XmaxRealtimeManaging {
+
   /**
    * 监听录制完成、中断或失败；传入 undefined 清除监听，不停止正在进行的录制。
    */
-  setRecordingListener(listener?: RealtimeRecordingListener): void;
+  setRecordingListener(
+    listener?: RealtimeRecordingListener
+  ): void;
 
   /**
    * 实时能力配置。
@@ -42,22 +55,28 @@ export interface XmaxRealtimeManaging {
   /**
    * 切换客户端插帧，不改变回传分辨率或重启任务。不支持时抛错且保留配置。
    */
-  setFrameInterpolationEnabled(enabled: boolean): Promise<void>;
+  setFrameInterpolationEnabled(
+    enabled: boolean
+  ): Promise<void>;
 
   /**
    * 手动升/降一档上行配置；仅支持正在生成的 Agora、TRTC 会话。
-   * Agora 调整分辨率、帧率和编码码率；TRTC 临时只调整帧率，保留尺寸和码率配置。
+   * Agora 调整分辨率、帧率和编码码率；TRTC 只调整帧率，保留尺寸和码率配置。
    * 保留原始 L1 基准，不改变下行尺寸；自动调档仍保持开启。
    * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
    */
-  adjustUplinkQuality(direction: "upgrade" | "downgrade"): Promise<void>;
+  adjustUplinkQuality(
+    direction: "upgrade" | "downgrade"
+  ): Promise<void>;
 
   /**
    * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora、TRTC 会话。
    * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；自动调档仍保持开启。
    * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
    */
-  adjustDownlinkQuality(direction: "upgrade" | "downgrade"): Promise<void>;
+  adjustDownlinkQuality(
+    direction: "upgrade" | "downgrade"
+  ): Promise<void>;
 
   /**
    * 当前本地媒体预览音量，取值范围为 `0...1`。
@@ -73,13 +92,17 @@ export interface XmaxRealtimeManaging {
    * 设置实时状态监听器。
    * @param listener 实时状态回调；传入 `undefined` 时清除监听器。
    */
-  setStateListener(listener?: RealtimeStateListener): Promise<void>;
+  setStateListener(
+    listener?: RealtimeStateListener
+  ): Promise<void>;
 
   /**
    * 监听 TRTC 上下行网络质量和 RTT；立即回放最新快照，断开后回调 undefined。
    * 独立于日志和远端生成流；传入 undefined 取消监听，监听器异常不影响主流程。
    */
-  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): Promise<void>;
+  setNetworkStatisticsListener(
+    listener?: NetworkStatisticsListener
+  ): Promise<void>;
 
   /**
    * 监听启动耗时；立即回放当前快照，每完成一个阶段再次回调。
@@ -87,34 +110,44 @@ export interface XmaxRealtimeManaging {
    * 首帧统计需要将远端轨道绑定到 SDK 视频视图，且不会阻塞 startGeneration。
    * 传入 undefined 清除监听器；监听器异常不影响生成流程。
    */
-  setLaunchTimingListener(listener?: RealtimeLaunchTimingListener): Promise<void>;
+  setLaunchTimingListener(
+    listener?: RealtimeLaunchTimingListener
+  ): Promise<void>;
 
   /**
    * 监听本地主视频流实际分辨率、帧率及码率（kbps），独立于日志开关。
    * 设置后立即回放最新快照；未取得数据或停止/断开时回调 undefined。
    * 传入 undefined 取消监听；监听器异常不影响生成流程。
    */
-  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): Promise<void>;
+  setLocalVideoStatisticsListener(
+    listener?: VideoStatisticsListener
+  ): Promise<void>;
 
   /**
    * 监听当前生成结果流的分辨率、帧率、码率、云端 RTT 和媒体 E2E 估算值。
    * 独立于日志开关；立即回放最新快照，流消失或断开时回调 undefined。
    * 传入 undefined 取消监听；监听器异常不影响生成流程。
    */
-  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): Promise<void>;
+  setRemoteVideoStatisticsListener(
+    listener?: RemoteVideoStatisticsListener
+  ): Promise<void>;
 
   /**
    * 设置本地媒体预览音量。
    * @throws 音量超出有效范围时抛出错误。
    */
-  setLocalAudioVolume(volume: number): Promise<void>;
+  setLocalAudioVolume(
+    volume: number
+  ): Promise<void>;
 
   /**
    * 设置远端生成音频播放音量。
    * 尚未连接或订阅远端流时保存配置，并在远端音频开始播放前应用。
    * @throws 音量超出有效范围或 RTC 音量配置失败时抛出错误。
    */
-  setRemoteAudioVolume(volume: number): Promise<void>;
+  setRemoteAudioVolume(
+    volume: number
+  ): Promise<void>;
 
   /**
    * 创建本地相机流并开始预览。
@@ -129,13 +162,15 @@ export interface XmaxRealtimeManaging {
    * @returns 包含本地相机视频轨道的媒体流。
    * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
    */
-  createLocalCameraStream(options: {
-    videoFormat: RealtimeVideoFormat;
-    position: CameraPosition;
-    useMicrophone: boolean;
-    rotation?: CameraRotation;
-    enableFrameValidation?: boolean;
-  }): Promise<RealtimeMediaStream>;
+  createLocalCameraStream(
+    options: {
+      videoFormat: RealtimeVideoFormat;
+      position: CameraPosition;
+      useMicrophone: boolean;
+      rotation?: CameraRotation;
+      enableFrameValidation?: boolean;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 创建服务端直接读取的 HTTP/HTTPS 网络视频源，不采集或发布本地音视频。
@@ -147,12 +182,14 @@ export interface XmaxRealtimeManaging {
    * @param options.onFinish 当前任务收到服务端完成消息且生成就绪后调用一次，不代表尾帧已播放完。
    * @throws 地址、格式无效或已有活动媒体源时抛错；close 释放源，disconnect 保留预览。
    */
-  createNetworkVideoStream(options: {
-    url: string;
-    videoFormat: RealtimeVideoFormat;
-    sampleMethod?: RealtimeVideoSampleMethod;
-    onFinish?: () => void;
-  }): Promise<RealtimeMediaStream>;
+  createNetworkVideoStream(
+    options: {
+      url: string;
+      videoFormat: RealtimeVideoFormat;
+      sampleMethod?: RealtimeVideoSampleMethod;
+      onFinish?: () => void;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
@@ -164,12 +201,14 @@ export interface XmaxRealtimeManaging {
    * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
    * @throws 提供方不支持、文件/格式无效、浏览器无法解码或播放受限时抛错。
    */
-  createLocalVideoStream(options: {
-    file: Blob;
-    videoFormat: RealtimeVideoFormat;
-    loop?: boolean;
-    includeAudio?: boolean;
-  }): Promise<RealtimeMediaStream>;
+  createLocalVideoStream(
+    options: {
+      file: Blob;
+      videoFormat: RealtimeVideoFormat;
+      loop?: boolean;
+      includeAudio?: boolean;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
@@ -179,10 +218,12 @@ export interface XmaxRealtimeManaging {
    * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从图片读取。
    * @throws 文件或格式无效、浏览器无法解码、Canvas 采集不可用或已有活动源时抛错。
    */
-  createLocalImageStream(options: {
-    file: Blob;
-    videoFormat: RealtimeVideoFormat;
-  }): Promise<RealtimeMediaStream>;
+  createLocalImageStream(
+    options: {
+      file: Blob;
+      videoFormat: RealtimeVideoFormat;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
@@ -193,10 +234,12 @@ export interface XmaxRealtimeManaging {
    * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
    * @throws 非 live 视频轨、不支持的格式、已有活动媒体源或 RTC 初始化失败时抛错。
    */
-  createExternalVideoStream(options: {
-    videoTrack: MediaStreamTrack;
-    videoFormat: RealtimeVideoFormat;
-  }): Promise<RealtimeMediaStream>;
+  createExternalVideoStream(
+    options: {
+      videoTrack: MediaStreamTrack;
+      videoFormat: RealtimeVideoFormat;
+    }
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
@@ -204,12 +247,14 @@ export interface XmaxRealtimeManaging {
    * 成功后更新本地轨道的 videoFormat，后续重连继续使用该格式。
    * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
-   * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 临时仅调帧率。
+   * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 仅调帧率。
    *
    * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
    * @throws 无本地相机、外部、图片或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
    */
-  updateUplinkVideoFormat(videoFormat: RealtimeVideoFormat): Promise<void>;
+  updateUplinkVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void>;
 
   /**
    * 试验性上行调帧接口：连接建立后使用，保留最近应用的宽高、码率区间和编码偏好。
@@ -217,7 +262,9 @@ export interface XmaxRealtimeManaging {
    * 手动调用会重置上行质量样本，并以成功后的完整格式作为新的自适应 L1 基准。
    * 仍会重新提交完整编码配置，不保证 RTC 内部自适应状态不受影响，需用实际统计验证。
    */
-  updateUplinkFrameRate(fps: number): Promise<void>;
+  updateUplinkFrameRate(
+    fps: number
+  ): Promise<void>;
 
   /**
    * 停止本地相机流并释放本地预览与 RTC 资源。
@@ -246,7 +293,9 @@ export interface XmaxRealtimeManaging {
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
    */
-  connect(localStream: RealtimeMediaStream): Promise<RealtimeMediaStream>;
+  connect(
+    localStream: RealtimeMediaStream
+  ): Promise<RealtimeMediaStream>;
 
   /**
    * 断开实时连接并保留当前本地媒体预览。
@@ -277,12 +326,14 @@ export interface XmaxRealtimeManaging {
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
    * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
    */
-  startGeneration(options: {
-    localStream: RealtimeMediaStream;
-    context?: RealtimeContext;
-    restart?: boolean;
-    faceRestoration?: boolean;
-    extraParams?: RealtimeExtraParams;
-    record?: boolean;
-  }): Promise<RealtimeMediaStream>;
+  startGeneration(
+    options: {
+      localStream: RealtimeMediaStream;
+      context?: RealtimeContext;
+      restart?: boolean;
+      faceRestoration?: boolean;
+      extraParams?: RealtimeExtraParams;
+      record?: boolean;
+    }
+  ): Promise<RealtimeMediaStream>;
 }

@@ -1,3 +1,13 @@
+//
+//  AgoraRtcManager.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { RtcProvider } from "../RtcProvider";
 import type { AREAS, IAgoraRTC, IAgoraRTCClient, IAgoraRTCRemoteUser, ICameraVideoTrack, IMicrophoneAudioTrack, ILocalVideoTrack, ILocalAudioTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
@@ -18,17 +28,29 @@ import { CameraRotationProcessor } from "../../Media/Camera/CameraRotationProces
  * 固定版本 SDK 的 DataStream 扩展；官方公共类型未暴露发送方法。
  */
 export interface AgoraDataStreamClient extends IAgoraRTCClient {
+
   /**
    * 发送 UTF-8 房间消息；关闭底层重试，错误交给业务操作处理。
    */
-  sendStreamMessage(message: string, needRetry: boolean): Promise<void>;
+  sendStreamMessage(
+    message: string,
+    needRetry: boolean
+  ): Promise<void>;
 }
 
 /**
  * 可替换的声网模块加载器，仅在初始化时加载浏览器依赖。
  */
 export interface AgoraRtcManagerOptions {
+
+  /**
+   * 服务环境，同时用于选择厂商接入区域。
+   */
   environment: XmaxEnvironment;
+
+  /**
+   * 按需加载 RTC SDK，首次初始化时调用。
+   */
   loadSDK?: () => Promise<IAgoraRTC>;
 }
 
@@ -36,65 +58,194 @@ export interface AgoraRtcManagerOptions {
  * 声网媒体、房间与 DataStream 适配器；每个实例拥有独立 client 和媒体轨道。
  */
 export class AgoraRtcManager implements RtcManaging {
+
   /**
    * 模块级区域约束：setArea 是全局设置，拒绝同时运行不同区域，避免静默覆盖。
    */
-  private static readonly regions = new Map<IAgoraRTC, { environment: XmaxEnvironment; count: number }>();
+  private static readonly regions = new Map<IAgoraRTC, {
+    environment: XmaxEnvironment;
+    count: number
+  }>();
 
   /**
    * 配置与 RTC 资源
    */
   private readonly environment: XmaxEnvironment;
+
+  /**
+   * 按需加载 RTC SDK，首次初始化时调用。
+   */
   private readonly loadSDK: () => Promise<IAgoraRTC>;
+
+  /**
+   * 按需加载的 RTC SDK 模块。
+   */
   private sdk?: IAgoraRTC;
+
+  /**
+   * 当前 Agora 客户端。
+   */
   private client?: AgoraDataStreamClient;
+
+  /**
+   * 共享的初始化任务，避免并发创建引擎。
+   */
   private initialization?: Promise<void>;
+
+  /**
+   * 生命周期标识，使释放后的异步结果失效。
+   */
   private lifecycle = 0;
+
+  /**
+   * 当前摄像头视频轨。
+   */
   private camera?: ILocalVideoTrack;
+
+  /**
+   * 旋转处理前的摄像头原始轨。
+   */
   private cameraSource?: ICameraVideoTrack;
+
+  /**
+   * 当前摄像头旋转处理组件。
+   */
   private cameraRotation?: CameraRotationProcessor;
+
+  /**
+   * 摄像头采集操作标识，过滤切换或停止后的迟到结果。
+   */
   private captureVersion = 0;
+
+  /**
+   * 是否已启动麦克风采集。
+   */
   private microphone?: IMicrophoneAudioTrack;
+
+  /**
+   * 由媒体源提供、适配器持有的外部视频克隆轨。
+   */
   private externalVideo?: ILocalVideoTrack;
+
+  /**
+   * 由媒体源提供、适配器持有的外部音频克隆轨。
+   */
   private externalAudio?: ILocalAudioTrack;
+
+  /**
+   * 已经应用编码偏好的 Agora 本地视频轨。
+   */
   private readonly appliedOptimizationModes = new WeakMap<ILocalVideoTrack, RtcVideoEncoderPreference>();
+
+  /**
+   * 摄像头当前需要应用的发送编码参数。
+   */
   private cameraSenderConfiguration?: VideoEncodingConfiguration;
+
+  /**
+   * 串行执行发送端参数更新的任务链。
+   */
   private senderUpdateTail: Promise<void> = Promise.resolve();
+
+  /**
+   * 发送器替换后重新应用编码参数的监听器。
+   */
   private cameraTransceiverListener?: () => void;
+
+  /**
+   * 当前房间使用的身份和鉴权配置。
+   */
   private connection?: AgoraRoomJoinConfiguration;
+
+  /**
+   * 当前房间操作标识，退房后旧结果不再生效。
+   */
   private roomVersion = 0;
 
   /**
    * 凭据恢复与发布意图；RTC 自动断开可能清空 localTracks，因此单独保留发布意图。
    */
   private tokenExpired = false;
+
+  /**
+   * 当前重新进房流程的共享任务。
+   */
   private rejoinOperation?: Promise<void>;
+
+  /**
+   * 当前重新进房的共享任务。
+   */
   private rejoinTask?: Promise<void>;
+
+  /**
+   * 终止正在等待的重新进房流程。
+   */
   private cancelRejoin?: () => void;
+
+  /**
+   * 业务当前是否要求发布视频。
+   */
   private videoPublishRequested = false;
+
+  /**
+   * 业务当前是否要求发布音频。
+   */
   private audioPublishRequested = false;
 
   /**
    * 事件、统计与音频播放状态
    */
   private listener?: RtcEventListener;
+
+  /**
+   * 周期采集运行统计的定时器。
+   */
   private statisticsTimer?: ReturnType<typeof setInterval>;
+
+  /**
+   * 重连或退出期间是否暂停网络质量采样。
+   */
   private networkQualitySuspended = false;
+
+  /**
+   * 各远端用户的播放音量，范围为 0–100。
+   */
   private readonly audioVolumes = new Map<string, number>();
+
+  /**
+   * 业务当前要求订阅音频的远端用户。
+   */
   private readonly requestedAudio = new Set<string>();
 
   /**
    * DataStream 串行发送与限速状态；等待中的消息通过房间版本取消。
    */
   private sendTail: Promise<void> = Promise.resolve();
-  private sentPackets: { time: number; bytes: number }[] = [];
+
+  /**
+   * 房间消息限速窗口内已发送数据包的记录。
+   */
+  private sentPackets: {
+    time: number;
+    bytes: number
+  }[] = [];
+
+  /**
+   * 取消当前房间消息限速等待。
+   */
   private cancelSendDelay?: () => void;
+
+  /**
+   * 取消正在发送的房间消息等待。
+   */
   private cancelActiveSend?: () => void;
 
   /**
    * 保存服务环境与加载器，不触发浏览器依赖或设备权限请求。
    */
-  constructor(options: AgoraRtcManagerOptions) {
+  constructor(
+    options: AgoraRtcManagerOptions
+  ) {
     this.environment = options.environment;
     this.loadSDK = options.loadSDK ?? (async () => (await import("agora-rtc-sdk-ng")).default);
   }
@@ -102,19 +253,25 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 当前实例是否已创建声网 client。
    */
-  get isInitialized(): boolean { return this.client !== undefined; }
+  get isInitialized(): boolean {
+    return this.client !== undefined;
+  }
 
   /**
    * 声网音频轨支持播放前设置音量；零音量额外停止播放以防浏览器差异。
    */
-  get supportsRemoteAudioVolumeControl(): boolean { return true; }
+  get supportsRemoteAudioVolumeControl(): boolean {
+    return true;
+  }
 
   /**
    * 共享本实例的初始化任务，区域完全由接入方环境决定。
    */
   async initialize(): Promise<void> {
-    if (this.client) return;
-    if (this.initialization) return this.initialization;
+    if (this.client)
+      return;
+    if (this.initialization)
+      return this.initialization;
 
     const version = this.lifecycle;
     const operation = this.performInitialize(version);
@@ -122,23 +279,28 @@ export class AgoraRtcManager implements RtcManaging {
     try {
       await operation;
     } finally {
-      if (this.initialization === operation) this.initialization = undefined;
+      if (this.initialization === operation)
+        this.initialization = undefined;
     }
   }
 
   /**
    * 加载模块、锁定区域并注册事件；迟到的初始化不能复活已销毁实例。
    */
-  private async performInitialize(version: number): Promise<void> {
+  private async performInitialize(
+    version: number
+  ): Promise<void> {
     const sdk = await this.loadSDK();
-    if (version !== this.lifecycle) throw this.cancelled();
+    if (version !== this.lifecycle)
+      throw this.cancelled();
 
     const region = AgoraRtcManager.regions.get(sdk);
     if (region && region.environment !== this.environment) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Concurrent Agora clients must use the same XmaxEnvironment");
     }
     sdk.setLogLevel(4);
-    if (!region) sdk.setArea([(this.environment === XmaxEnvironment.china ? "CHINA" : "GLOBAL") as AREAS]);
+    if (!region)
+      sdk.setArea([(this.environment === XmaxEnvironment.china ? "CHINA" : "GLOBAL") as AREAS]);
 
     const client = sdk.createClient({ mode: "rtc", codec: "h264" }) as AgoraDataStreamClient;
     if (typeof client.sendStreamMessage !== "function") {
@@ -177,14 +339,17 @@ export class AgoraRtcManager implements RtcManaging {
       XmaxLogger.rtc.warning(() => "Agora 退房失败，已释放本地资源 (Agora Leave Failed)");
     } finally {
       const region = sdk && AgoraRtcManager.regions.get(sdk);
-      if (sdk && region && --region.count === 0) AgoraRtcManager.regions.delete(sdk);
+      if (sdk && region && --region.count === 0)
+        AgoraRtcManager.regions.delete(sdk);
     }
   }
 
   /**
    * 通过声网采集相机但不发布，返回原生轨道供公共渲染层使用。
    */
-  async startCameraCapture(options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
+  async startCameraCapture(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack> {
     const client = this.requireClient();
     if (this.camera || this.cameraSource || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A local video source is already active");
@@ -201,17 +366,23 @@ export class AgoraRtcManager implements RtcManaging {
         facingMode: options.position === CameraPosition.front ? "user" : "environment",
         encoderConfig: { width: captureSize.width, height: captureSize.height, frameRate: options.frameRate },
       });
-      if (this.client !== client || version !== this.captureVersion) { source.close(); throw this.cancelled(); }
+      if (this.client !== client || version !== this.captureVersion) {
+        source.close();
+        throw this.cancelled();
+      }
       this.cameraSource = source;
       let camera: ILocalVideoTrack = source;
       if (rotation !== 0) {
-        const processor = new CameraRotationProcessor({ ...options, rotation,
+        const processor = new CameraRotationProcessor({
+          ...options, rotation,
           onError: error => this.listener?.onError?.(error),
         });
         this.cameraRotation = processor;
         const output = await processor.setSource(source.getMediaStreamTrack());
-        if (this.client !== client || version !== this.captureVersion) throw this.cancelled();
-        camera = this.sdk!.createCustomVideoTrack({ mediaStreamTrack: output,
+        if (this.client !== client || version !== this.captureVersion)
+          throw this.cancelled();
+        camera = this.sdk!.createCustomVideoTrack({
+          mediaStreamTrack: output,
           width: options.width, height: options.height, frameRate: options.frameRate,
         });
       }
@@ -229,7 +400,8 @@ export class AgoraRtcManager implements RtcManaging {
       camera.on("transceiver-updated", this.cameraTransceiverListener);
       return camera.getMediaStreamTrack();
     } catch (error) {
-      if (version === this.captureVersion) this.releaseCameraCapture();
+      if (version === this.captureVersion)
+        this.releaseCameraCapture();
       throw this.mapError(error, XmaxErrorCode.cameraPermissionDenied);
     }
   }
@@ -237,7 +409,9 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 切换声网相机设备并返回切换后的原生轨道。
    */
-  async switchCameraCapture(to: CameraPosition): Promise<MediaStreamTrack> {
+  async switchCameraCapture(
+    to: CameraPosition
+  ): Promise<MediaStreamTrack> {
     const source = this.requireCamera();
     const camera = this.camera!;
     // setDevice 可能结束旧原始轨；切换期间保留最后一帧和同一输出轨。
@@ -252,12 +426,15 @@ export class AgoraRtcManager implements RtcManaging {
       }
       throw error;
     }
-    if (this.camera !== camera || this.cameraSource !== source) throw this.cancelled();
+    if (this.camera !== camera || this.cameraSource !== source)
+      throw this.cancelled();
     if (this.cameraRotation) {
       await this.cameraRotation.setSource(source.getMediaStreamTrack());
-      if (this.camera !== camera) throw this.cancelled();
+      if (this.camera !== camera)
+        throw this.cancelled();
     }
-    if (this.videoPublishRequested) await this.restoreCameraSender(camera);
+    if (this.videoPublishRequested)
+      await this.restoreCameraSender(camera);
     return camera.getMediaStreamTrack();
   }
 
@@ -268,6 +445,9 @@ export class AgoraRtcManager implements RtcManaging {
     this.releaseCameraCapture();
   }
 
+  /**
+   * 停止摄像头采集并清理旋转输出与发送器状态。
+   */
   private releaseCameraCapture(): void {
     ++this.captureVersion;
     const camera = this.camera;
@@ -276,14 +456,20 @@ export class AgoraRtcManager implements RtcManaging {
     camera?.close();
     this.cameraRotation?.stop();
     this.cameraRotation = undefined;
-    if (this.cameraSource !== camera) this.cameraSource?.close();
+    if (this.cameraSource !== camera)
+      this.cameraSource?.close();
     this.cameraSource = undefined;
   }
 
   /**
    * 将外部原生轨包装为 Agora 本地轨，不申请设备权限；失败时释放本次克隆。
    */
-  async setExternalMediaTracks(tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }): Promise<void> {
+  async setExternalMediaTracks(
+    tracks: {
+      videoTrack: MediaStreamTrack;
+      audioTrack?: MediaStreamTrack
+    }
+  ): Promise<void> {
     this.requireClient();
     if (this.camera || this.cameraSource || this.microphone || this.externalVideo) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
@@ -317,7 +503,9 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 摄像头实验走原生 sender（发布前暂存）；外部视频仍走 Agora 编码配置。
    */
-  async configureVideoEncoding(config: VideoEncodingConfiguration): Promise<void> {
+  async configureVideoEncoding(
+    config: VideoEncodingConfiguration
+  ): Promise<void> {
     const camera = this.requireLocalVideo();
     if (camera === this.camera) {
       const client = this.requireClient(), version = this.roomVersion;
@@ -325,7 +513,8 @@ export class AgoraRtcManager implements RtcManaging {
       await this.run(() => this.queueSenderUpdate(async () => {
         const ensureActive = () => {
           if (this.camera !== camera || this.client !== client || this.roomVersion !== version ||
-            (published && !this.videoPublishRequested)) throw this.cancelled();
+            (published && !this.videoPublishRequested))
+            throw this.cancelled();
         };
         ensureActive();
         if (this.videoPublishRequested) {
@@ -352,14 +541,23 @@ export class AgoraRtcManager implements RtcManaging {
     });
   }
 
-  private queueSenderUpdate(operation: () => Promise<void>): Promise<void> {
+  /**
+   * 串行应用摄像头发送参数，防止更新顺序交错。
+   */
+  private queueSenderUpdate(
+    operation: () => Promise<void>
+  ): Promise<void> {
     const next = this.senderUpdateTail.then(operation);
-    this.senderUpdateTail = next.catch(() => {});
+    this.senderUpdateTail = next.catch(() => { });
     return next;
   }
 
-  /** 发布/重建 sender 后恢复最近成功的目标配置；排队时不捕获过期的参数对象。 */
-  private restoreCameraSender(camera: ILocalVideoTrack): Promise<void> {
+  /**
+   * 发布/重建 sender 后恢复最近成功的目标配置；排队时不捕获过期的参数对象。
+   */
+  private restoreCameraSender(
+    camera: ILocalVideoTrack
+  ): Promise<void> {
     const client = this.client, version = this.roomVersion;
     return this.queueSenderUpdate(async () => {
       const ensureActive = () => {
@@ -369,17 +567,27 @@ export class AgoraRtcManager implements RtcManaging {
       };
       ensureActive();
       const config = this.cameraSenderConfiguration;
-      if (config) await AgoraVideoSender.apply(camera, this.cameraEncodingConfiguration(config), ensureActive);
+      if (config)
+        await AgoraVideoSender.apply(camera, this.cameraEncodingConfiguration(config), ensureActive);
     });
   }
 
-  private cameraEncodingConfiguration(config: VideoEncodingConfiguration): VideoEncodingConfiguration {
+  /**
+   * 根据当前画面方向解析摄像头发送编码参数。
+   */
+  private cameraEncodingConfiguration(
+    config: VideoEncodingConfiguration
+  ): VideoEncodingConfiguration {
     // Canvas 已经输出目标方向，不能再套用移动端原生采集的宽高转置。
     return this.cameraRotation ? config : { ...config, ...rtcOrientedVideoSize(config) };
   }
 
+  /**
+   * 解除摄像头发送器变化监听并清空编码缓存。
+   */
   private releaseCameraSender(): void {
-    if (this.cameraTransceiverListener) this.camera?.off("transceiver-updated", this.cameraTransceiverListener);
+    if (this.cameraTransceiverListener)
+      this.camera?.off("transceiver-updated", this.cameraTransceiverListener);
     this.cameraTransceiverListener = undefined;
     this.cameraSenderConfiguration = undefined;
   }
@@ -387,9 +595,11 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 使用会话下发的字符串频道与 UID 入房；不采信后端区域覆盖。
    */
-  async joinRoom(configuration: RtcRoomJoinConfiguration): Promise<void> {
+  async joinRoom(
+    configuration: RtcRoomJoinConfiguration
+  ): Promise<void> {
     // 旧重进房操作完全结束后才允许新进房，避免迟到的 leave 影响新连接。
-    await this.rejoinTask?.catch(() => {});
+    await this.rejoinTask?.catch(() => { });
     const client = this.requireClient();
     if (configuration.provider !== RtcProvider.agora || this.connection) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Agora credentials and an idle room are required");
@@ -404,12 +614,18 @@ export class AgoraRtcManager implements RtcManaging {
     this.connection = configuration;
     // 入房期间可能已经收到发布事件；从 SDK 当前状态补齐一次，避免遗漏现有机器人。
     for (const user of client.remoteUsers) {
-      if (user.hasVideo) this.listener?.onRemoteVideoPublished(String(user.uid), true);
+      if (user.hasVideo)
+        this.listener?.onRemoteVideoPublished(String(user.uid), true);
     }
     this.statisticsTimer = setInterval(() => {
-      if (this.client !== client || !this.connection || this.tokenExpired || this.rejoinOperation) return;
-      try { AgoraRtcStatistics.collect(client, this.listener); }
-      catch { XmaxLogger.rtc.warning(() => "Agora 统计采样失败 (Agora Statistics Failed)"); }
+      if (this.client !== client || !this.connection || this.tokenExpired || this.rejoinOperation)
+        return;
+      try {
+        AgoraRtcStatistics.collect(client, this.listener);
+      }
+      catch {
+        XmaxLogger.rtc.warning(() => "Agora 统计采样失败 (Agora Statistics Failed)");
+      }
     }, 2000);
   }
 
@@ -418,14 +634,19 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async leaveRoom(): Promise<void> {
     this.clearRoom();
-    if (this.client) await this.run(() => this.client!.leave());
+    if (this.client)
+      await this.run(() => this.client!.leave());
   }
 
   /**
    * 应用同一频道的新 Token；即将过期时续签，已经过期时重新进房并恢复媒体。
    */
-  async updateCredentials(config: RtcRoomJoinConfiguration, signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) throw this.cancelled();
+  async updateCredentials(
+    config: RtcRoomJoinConfiguration,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (signal?.aborted)
+      throw this.cancelled();
     const current = this.connection;
     const client = this.requireClient();
     if (!current || config.provider !== RtcProvider.agora || config.appID !== current.appID || config.roomID !== current.roomID || config.userID !== current.userID) {
@@ -438,60 +659,79 @@ export class AgoraRtcManager implements RtcManaging {
       } catch (error) {
         // 续签过程中可能已跨过过期时间；此时升级为重进房，不再重复 renewToken。
         this.ensureRoomCurrent(client, version);
-        if (!this.tokenExpired) throw error;
+        if (!this.tokenExpired)
+          throw error;
       }
     }
     this.ensureRoomCurrent(client, version);
-    if (signal?.aborted) throw this.cancelled();
+    if (signal?.aborted)
+      throw this.cancelled();
 
-    if (this.tokenExpired) await this.rejoinRoom(client, config, signal);
-    else this.connection = config;
+    if (this.tokenExpired)
+      await this.rejoinRoom(client, config, signal);
+    else
+      this.connection = config;
   }
 
   /**
    * 串行恢复同一 RTC 房间，不创建业务会话或重新发送生成开始指令。
    */
-  private async rejoinRoom(client: AgoraDataStreamClient, config: AgoraRoomJoinConfiguration, signal?: AbortSignal): Promise<void> {
-    if (this.rejoinOperation) return this.rejoinOperation;
+  private async rejoinRoom(
+    client: AgoraDataStreamClient,
+    config: AgoraRoomJoinConfiguration,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.rejoinOperation)
+      return this.rejoinOperation;
 
     const version = ++this.roomVersion;
     const task = Promise.resolve().then(() => this.performRejoin(client, config, version));
     this.rejoinTask = task;
     void task.finally(() => {
-      if (this.rejoinTask === task) this.rejoinTask = undefined;
-    }).catch(() => {});
+      if (this.rejoinTask === task)
+        this.rejoinTask = undefined;
+    }).catch(() => { });
 
     // 取消立即释放业务等待；底层 SDK 的迟到 join 继续由 task 负责退房收尾。
     let cancel!: () => void;
     const operation = new Promise<void>((resolve, reject) => {
       cancel = () => {
-        if (this.isRoomCurrent(client, version)) this.roomVersion++;
+        if (this.isRoomCurrent(client, version))
+          this.roomVersion++;
         reject(this.cancelled());
       };
       this.cancelRejoin = cancel;
       signal?.addEventListener("abort", cancel, { once: true });
       task.then(resolve, reject);
-      if (signal?.aborted) cancel();
+      if (signal?.aborted)
+        cancel();
     });
     this.rejoinOperation = operation;
     try {
       await operation;
     } finally {
       signal?.removeEventListener("abort", cancel);
-      if (this.cancelRejoin === cancel) this.cancelRejoin = undefined;
-      if (this.rejoinOperation === operation) this.rejoinOperation = undefined;
+      if (this.cancelRejoin === cancel)
+        this.cancelRejoin = undefined;
+      if (this.rejoinOperation === operation)
+        this.rejoinOperation = undefined;
     }
 
     this.ensureRoomCurrent(client, version);
     for (const user of client.remoteUsers) {
-      if (user.hasVideo) this.listener?.onRemoteVideoPublished(String(user.uid), true);
+      if (user.hasVideo)
+        this.listener?.onRemoteVideoPublished(String(user.uid), true);
     }
   }
 
   /**
    * 使用新 Token 重建 RTC 连接，复用采集轨道并恢复远端音频订阅。
    */
-  private async performRejoin(client: AgoraDataStreamClient, config: AgoraRoomJoinConfiguration, version: number): Promise<void> {
+  private async performRejoin(
+    client: AgoraDataStreamClient,
+    config: AgoraRoomJoinConfiguration,
+    version: number
+  ): Promise<void> {
     this.ensureRoomCurrent(client, version);
     this.cancelSendDelay?.();
     this.cancelActiveSend?.();
@@ -512,7 +752,8 @@ export class AgoraRtcManager implements RtcManaging {
     if (this.videoPublishRequested && video) {
       await this.run(() => client.publish(video));
       this.ensureRoomCurrent(client, version);
-      if (video === this.camera) await this.restoreCameraSender(this.camera);
+      if (video === this.camera)
+        await this.restoreCameraSender(this.camera);
     }
     if (this.audioPublishRequested && audio) {
       await this.run(() => client.publish(audio));
@@ -520,7 +761,8 @@ export class AgoraRtcManager implements RtcManaging {
     }
 
     for (const user of client.remoteUsers) {
-      if (!user.hasAudio || !this.requestedAudio.has(String(user.uid))) continue;
+      if (!user.hasAudio || !this.requestedAudio.has(String(user.uid)))
+        continue;
       const track = await this.run(() => client.subscribe(user, "audio"));
       if (!this.isRoomCurrent(client, version)) {
         track.stop();
@@ -543,10 +785,13 @@ export class AgoraRtcManager implements RtcManaging {
     const camera = this.requireLocalVideo();
     this.videoPublishRequested = true;
     await this.rejoinOperation;
-    if (client !== this.client || !this.videoPublishRequested) throw this.cancelled();
-    if (client.localTracks.includes(camera)) return;
+    if (client !== this.client || !this.videoPublishRequested)
+      throw this.cancelled();
+    if (client.localTracks.includes(camera))
+      return;
     await this.run(() => client.publish(camera));
-    if (camera === this.camera) await this.run(() => this.restoreCameraSender(this.camera!));
+    if (camera === this.camera)
+      await this.run(() => this.restoreCameraSender(this.camera!));
   }
 
   /**
@@ -554,7 +799,8 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async unpublishLocalVideo(): Promise<void> {
     this.videoPublishRequested = false;
-    if (this.rejoinTask || this.tokenExpired) return;
+    if (this.rejoinTask || this.tokenExpired)
+      return;
     const video = this.externalVideo ?? this.camera;
     if (this.client && video) {
       await this.run(() => this.client!.unpublish(video));
@@ -569,7 +815,8 @@ export class AgoraRtcManager implements RtcManaging {
     this.audioPublishRequested = true;
     await this.rejoinOperation;
     const version = this.roomVersion;
-    if (client !== this.client || !this.audioPublishRequested) throw this.cancelled();
+    if (client !== this.client || !this.audioPublishRequested)
+      throw this.cancelled();
     if (this.externalVideo) {
       const audio = this.externalAudio;
       if (audio && !client.localTracks.includes(audio)) {
@@ -580,10 +827,14 @@ export class AgoraRtcManager implements RtcManaging {
     try {
       if (!this.microphone) {
         const track = await this.sdk!.createMicrophoneAudioTrack();
-        if (client !== this.client || version !== this.roomVersion) { track.close(); throw this.cancelled(); }
+        if (client !== this.client || version !== this.roomVersion) {
+          track.close();
+          throw this.cancelled();
+        }
         this.microphone = track;
       }
-      if (!client.localTracks.includes(this.microphone)) await client.publish(this.microphone);
+      if (!client.localTracks.includes(this.microphone))
+        await client.publish(this.microphone);
     } catch (error) {
       throw this.mapError(error, XmaxErrorCode.microphonePermissionDenied);
     }
@@ -594,7 +845,8 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async unpublishLocalAudio(): Promise<void> {
     this.audioPublishRequested = false;
-    if (this.rejoinTask || this.tokenExpired) return;
+    if (this.rejoinTask || this.tokenExpired)
+      return;
     const audio = this.externalVideo ? this.externalAudio : this.microphone;
     if (this.client && audio) {
       await this.run(() => this.client!.unpublish(audio));
@@ -604,31 +856,45 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 订阅远端主视频并返回原生轨道，不创建额外播放视图。
    */
-  async subscribeRemoteVideo(userID: string, subscribe: boolean): Promise<MediaStreamTrack | undefined> {
-    if (!subscribe && this.rejoinTask) return;
+  async subscribeRemoteVideo(
+    userID: string,
+    subscribe: boolean
+  ): Promise<MediaStreamTrack | undefined> {
+    if (!subscribe && this.rejoinTask)
+      return;
     await this.rejoinOperation;
     const client = this.requireClient();
     const user = client.remoteUsers.find(user => String(user.uid) === userID);
-    if (!user && !subscribe) return;
-    if (!user) throw new XmaxError(XmaxErrorCode.rtcError, "Agora remote video user is unavailable");
-    if (!subscribe) { await this.run(() => client.unsubscribe(user, "video")); return; }
+    if (!user && !subscribe)
+      return;
+    if (!user)
+      throw new XmaxError(XmaxErrorCode.rtcError, "Agora remote video user is unavailable");
+    if (!subscribe) {
+      await this.run(() => client.unsubscribe(user, "video"));
+      return;
+    }
 
     const version = this.roomVersion;
     const track = await this.run(() => client.subscribe(user, "video"));
-    if (client !== this.client || version !== this.roomVersion) throw this.cancelled();
+    if (client !== this.client || version !== this.roomVersion)
+      throw this.cancelled();
     return track.getMediaStreamTrack();
   }
 
   /**
    * 保存音频订阅意图；音频稍后发布时自动订阅，播放前应用音量。
    */
-  async subscribeRemoteAudio(userID: string, subscribe: boolean): Promise<void> {
+  async subscribeRemoteAudio(
+    userID: string,
+    subscribe: boolean
+  ): Promise<void> {
     const client = this.requireClient();
     const user = client.remoteUsers.find(user => String(user.uid) === userID);
     if (!subscribe) {
       this.requestedAudio.delete(userID);
       user?.audioTrack?.stop();
-      if (user?.audioTrack && !this.rejoinTask) await this.run(() => client.unsubscribe(user, "audio"));
+      if (user?.audioTrack && !this.rejoinTask)
+        await this.run(() => client.unsubscribe(user, "audio"));
       return;
     }
     this.requestedAudio.add(userID);
@@ -636,10 +902,12 @@ export class AgoraRtcManager implements RtcManaging {
       const version = this.roomVersion;
       await this.rejoinOperation;
       this.ensureRoomCurrent(client, version);
-      if (this.requestedAudio.has(userID)) await this.subscribeRemoteAudio(userID, true);
+      if (this.requestedAudio.has(userID))
+        await this.subscribeRemoteAudio(userID, true);
       return;
     }
-    if (!user?.hasAudio) return;
+    if (!user?.hasAudio)
+      return;
 
     const version = this.roomVersion;
     const track = await this.run(() => client.subscribe(user, "audio"));
@@ -653,67 +921,89 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 缓存音量，订阅前可调用；零音量不调用 play，防止初始短暂漏声。
    */
-  setRemoteAudioVolume(volume: number, userID: string): void {
+  setRemoteAudioVolume(
+    volume: number,
+    userID: string
+  ): void {
     this.audioVolumes.set(userID, Math.max(0, Math.min(100, Number.isFinite(volume) ? Math.round(volume) : 0)));
     const user = this.client?.remoteUsers.find(user => String(user.uid) === userID);
     if (this.rejoinTask || this.tokenExpired) {
       user?.audioTrack?.stop();
       return;
     }
-    if (user) this.applyAudioVolume(user);
+    if (user)
+      this.applyAudioVolume(user);
   }
 
   /**
    * 应用当前用户的播放状态，保留声网对浏览器自动播放限制的处理。
    */
-  private applyAudioVolume(user: IAgoraRTCRemoteUser): void {
+  private applyAudioVolume(
+    user: IAgoraRTCRemoteUser
+  ): void {
     const track = user.audioTrack;
-    if (!track) return;
+    if (!track)
+      return;
     const volume = this.audioVolumes.get(String(user.uid)) ?? 0;
     track.setVolume(volume);
-    if (volume > 0 && this.requestedAudio.has(String(user.uid))) track.play();
-    else track.stop();
+    if (volume > 0 && this.requestedAudio.has(String(user.uid)))
+      track.play();
+    else
+      track.stop();
   }
 
   /**
    * 获取原始远端音轨，不依赖声网音频播放器是否处于播放状态。
    */
-  getRemoteAudioTrack(userID: string): MediaStreamTrack | undefined {
+  getRemoteAudioTrack(
+    userID: string
+  ): MediaStreamTrack | undefined {
     return this.client?.remoteUsers.find(user => String(user.uid) === userID)?.audioTrack?.getMediaStreamTrack();
   }
 
   /**
    * 按房间顺序发送消息，限制每秒包数与总字节；失败返回给原业务调用。
    */
-  sendRoomMessage(message: string): Promise<void> {
+  sendRoomMessage(
+    message: string
+  ): Promise<void> {
     const version = this.roomVersion;
     const client = this.client;
     const bytes = new TextEncoder().encode(message).byteLength;
     const operation = this.sendTail.then(async () => {
       await this.rejoinOperation;
-      if (!client || client !== this.client || !this.connection || version !== this.roomVersion || this.tokenExpired) throw this.cancelled();
-      if (bytes > 1000) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Room message exceeds the 1000-byte limit");
+      if (!client || client !== this.client || !this.connection || version !== this.roomVersion || this.tokenExpired)
+        throw this.cancelled();
+      if (bytes > 1000)
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Room message exceeds the 1000-byte limit");
 
       await this.waitForSendBudget(bytes, version);
       await this.rejoinOperation;
-      if (client !== this.client || version !== this.roomVersion || !this.connection || this.tokenExpired) throw this.cancelled();
+      if (client !== this.client || version !== this.roomVersion || !this.connection || this.tokenExpired)
+        throw this.cancelled();
       this.sentPackets.push({ time: Date.now(), bytes });
       await this.sendWithTimeout(client, message);
     });
-    this.sendTail = operation.catch(() => {});
+    this.sendTail = operation.catch(() => { });
     return operation;
   }
 
   /**
    * 发送超过五秒视为失败；退房立即取消等待，底层迟到结果不影响新房间。
    */
-  private async sendWithTimeout(client: AgoraDataStreamClient, message: string): Promise<void> {
+  private async sendWithTimeout(
+    client: AgoraDataStreamClient,
+    message: string
+  ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const finish = (error?: unknown) => {
         clearTimeout(timer);
-        if (this.cancelActiveSend === cancel) this.cancelActiveSend = undefined;
-        if (error) reject(this.mapError(error));
-        else resolve();
+        if (this.cancelActiveSend === cancel)
+          this.cancelActiveSend = undefined;
+        if (error)
+          reject(this.mapError(error));
+        else
+          resolve();
       };
       const cancel = () => finish(this.cancelled());
       const timer = setTimeout(() => finish(new XmaxError(XmaxErrorCode.timeout, "Agora room message send timed out")), 5000);
@@ -727,13 +1017,21 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 按滑动时间窗限速，退房立即唤醒等待并取消，不遗留计时器。
    */
-  private async waitForSendBudget(bytes: number, version: number): Promise<void> {
+  private async waitForSendBudget(
+    bytes: number,
+    version: number
+  ): Promise<void> {
     while (version === this.roomVersion) {
       const now = Date.now();
       this.sentPackets = this.sentPackets.filter(packet => now - packet.time < 1000);
-      if (this.sentPackets.length < 30 && this.sentPackets.reduce((sum, packet) => sum + packet.bytes, bytes) <= 6000) return;
+      if (this.sentPackets.length < 30 && this.sentPackets.reduce((sum, packet) => sum + packet.bytes, bytes) <= 6000)
+        return;
       await new Promise<void>(resolve => {
-        const finish = () => { clearTimeout(timer); this.cancelSendDelay = undefined; resolve(); };
+        const finish = () => {
+          clearTimeout(timer);
+          this.cancelSendDelay = undefined;
+          resolve();
+        };
         const timer = setTimeout(finish, Math.max(1, this.sentPackets[0]!.time + 1000 - now));
         this.cancelSendDelay = finish;
       });
@@ -744,50 +1042,69 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 设置公共 RTC 监听器。
    */
-  setEventListener(listener?: RtcEventListener): void { this.listener = listener; }
+  setEventListener(
+    listener?: RtcEventListener
+  ): void {
+    this.listener = listener;
+  }
 
   /**
    * 将声网发布、DataStream、网络质量与 Token 事件桥接到公共传输层。
    */
-  private registerEvents(client: AgoraDataStreamClient): void {
+  private registerEvents(
+    client: AgoraDataStreamClient
+  ): void {
     const active = () => this.client === client && this.connection !== undefined && !this.rejoinTask;
     const mediaActive = () => active() && !this.tokenExpired;
     const handleExpired = () => {
-      if (!active() || this.tokenExpired) return;
+      if (!active() || this.tokenExpired)
+        return;
       this.tokenExpired = true;
       this.listener?.onNetworkStatistics?.(undefined);
       this.listener?.onTokenExpired?.();
     };
     client.on("user-published", (user, kind) => {
-      if (!mediaActive()) return;
-      if (kind === "video") this.listener?.onRemoteVideoPublished(String(user.uid), true);
+      if (!mediaActive())
+        return;
+      if (kind === "video")
+        this.listener?.onRemoteVideoPublished(String(user.uid), true);
       if (kind === "audio" && this.requestedAudio.has(String(user.uid))) {
         void this.subscribeRemoteAudio(String(user.uid), true).catch(error => {
-          if (active()) this.listener?.onError?.(this.mapError(error));
+          if (active())
+            this.listener?.onError?.(this.mapError(error));
         });
       }
     });
     client.on("user-unpublished", (user, kind) => {
-      if (!mediaActive()) return;
-      if (kind === "video") this.listener?.onRemoteVideoPublished(String(user.uid), false);
-      if (kind === "audio") user.audioTrack?.stop();
+      if (!mediaActive())
+        return;
+      if (kind === "video")
+        this.listener?.onRemoteVideoPublished(String(user.uid), false);
+      if (kind === "audio")
+        user.audioTrack?.stop();
     });
     client.on("user-left", user => {
-      if (mediaActive()) this.listener?.onRemoteVideoPublished(String(user.uid), false);
+      if (mediaActive())
+        this.listener?.onRemoteVideoPublished(String(user.uid), false);
     });
     client.on("stream-message", (uid, data) => {
-      if (mediaActive()) this.listener?.onCustomMessageReceived(String(uid), typeof data === "string" ? data : new TextDecoder().decode(data));
+      if (mediaActive())
+        this.listener?.onCustomMessageReceived(String(uid), typeof data === "string" ? data : new TextDecoder().decode(data));
     });
     client.on("network-quality", quality => {
-      if (mediaActive() && !this.networkQualitySuspended) AgoraRtcStatistics.network(quality, this.listener);
+      if (mediaActive() && !this.networkQualitySuspended)
+        AgoraRtcStatistics.network(quality, this.listener);
     });
     client.on("token-privilege-will-expire", () => {
-      if (active() && !this.tokenExpired) this.listener?.onTokenWillExpire?.();
+      if (active() && !this.tokenExpired)
+        this.listener?.onTokenWillExpire?.();
     });
     client.on("token-privilege-did-expire", handleExpired);
     client.on("connection-state-change", (state, previous, reason) => {
-      if (this.client === client) this.networkQualitySuspended = state !== "CONNECTED";
-      if (active() && state !== "CONNECTED") this.listener?.onNetworkStatistics?.(undefined);
+      if (this.client === client)
+        this.networkQualitySuspended = state !== "CONNECTED";
+      if (active() && state !== "CONNECTED")
+        this.listener?.onNetworkStatistics?.(undefined);
       // SDK 可能先报告因 Token 过期断开，再发 did-expire；合并成同一次恢复请求。
       if (state === "DISCONNECTED" && reason === "TOKEN_EXPIRE") {
         handleExpired();
@@ -824,22 +1141,30 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 判断异步恢复工作是否仍属于当前房间生命周期。
    */
-  private isRoomCurrent(client: AgoraDataStreamClient, version: number): boolean {
+  private isRoomCurrent(
+    client: AgoraDataStreamClient,
+    version: number
+  ): boolean {
     return this.client === client && this.connection !== undefined && this.roomVersion === version;
   }
 
   /**
    * 退房、销毁或换房后停止后续恢复步骤。
    */
-  private ensureRoomCurrent(client: AgoraDataStreamClient, version: number): void {
-    if (!this.isRoomCurrent(client, version)) throw this.cancelled();
+  private ensureRoomCurrent(
+    client: AgoraDataStreamClient,
+    version: number
+  ): void {
+    if (!this.isRoomCurrent(client, version))
+      throw this.cancelled();
   }
 
   /**
    * 获取已初始化的 client。
    */
   private requireClient(): AgoraDataStreamClient {
-    if (!this.client) throw new XmaxError(XmaxErrorCode.rtcError, "Agora is not initialized");
+    if (!this.client)
+      throw new XmaxError(XmaxErrorCode.rtcError, "Agora is not initialized");
     return this.client;
   }
 
@@ -847,7 +1172,8 @@ export class AgoraRtcManager implements RtcManaging {
    * 获取已启动的相机采集。
    */
   private requireCamera(): ICameraVideoTrack {
-    if (!this.cameraSource || !this.camera) throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is not running");
+    if (!this.cameraSource || !this.camera)
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera capture is not running");
     return this.cameraSource;
   }
 
@@ -865,16 +1191,26 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 执行声网操作并统一错误类型。
    */
-  private async run<T>(operation: () => Promise<T>): Promise<T> {
-    try { return await operation(); }
-    catch (error) { throw this.mapError(error); }
+  private async run<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    try {
+      return await operation();
+    }
+    catch (error) {
+      throw this.mapError(error);
+    }
   }
 
   /**
    * 只传递错误码，不回显可能包含 Token 的厂商原始错误消息。
    */
-  private mapError(error: unknown, permissionCode?: XmaxErrorCode): XmaxError {
-    if (error instanceof XmaxError) return error;
+  private mapError(
+    error: unknown,
+    permissionCode?: XmaxErrorCode
+  ): XmaxError {
+    if (error instanceof XmaxError)
+      return error;
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "UNKNOWN";
     const safeCode = /^[A-Z_0-9-]+$/.test(code) ? code : "UNKNOWN";
     return new XmaxError(permissionCode && safeCode === "PERMISSION_DENIED" ? permissionCode : XmaxErrorCode.rtcError, `Agora operation failed (${safeCode})`);
@@ -883,5 +1219,7 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * 构造异步操作失效错误。
    */
-  private cancelled(): XmaxError { return new XmaxError(XmaxErrorCode.cancelled, "Agora operation was cancelled"); }
+  private cancelled(): XmaxError {
+    return new XmaxError(XmaxErrorCode.cancelled, "Agora operation was cancelled");
+  }
 }

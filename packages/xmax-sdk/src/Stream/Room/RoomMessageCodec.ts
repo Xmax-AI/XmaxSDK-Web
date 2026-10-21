@@ -1,3 +1,13 @@
+//
+//  RoomMessageCodec.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 
 /**
@@ -9,7 +19,15 @@ const CHUNK_EVENT = "__trtc_chunk__";
  * 未完成的组包记录。
  */
 interface ChunkRecord {
+
+  /**
+   * 当前分片消息预期接收的总片数。
+   */
   count: number;
+
+  /**
+   * 按分片序号保存的消息片段。
+   */
   parts: Map<number, string>;
 }
 
@@ -21,9 +39,7 @@ interface ChunkRecord {
  * 未收齐时返回 `undefined`，收齐后返回解析后的完整业务消息。
  */
 export class RoomMessageCodec {
-  /**
-   * 协议常量
-   */
+
   /**
    * 触发拆包的消息字节阈值。
    */
@@ -47,7 +63,9 @@ export class RoomMessageCodec {
   /**
    * 创建厂商协议编解码器；TRTC 保持原事件名，Agora 使用 __agora_chunk__；null 表示不拆包。
    */
-  constructor(private readonly chunkEvent: string | null = CHUNK_EVENT) {}
+  constructor(
+    private readonly chunkEvent: string | null = CHUNK_EVENT
+  ) { }
 
   /**
    * 编码出站消息。
@@ -55,7 +73,9 @@ export class RoomMessageCodec {
    * @returns 不超过阈值时返回仅含原消息的单元素数组；
    * 否则返回按当前提供方分片协议包装的 JSON 数组。
    */
-  encodeOutgoing(message: string): string[] {
+  encodeOutgoing(
+    message: string
+  ): string[] {
     if (this.chunkEvent === null || RoomMessageCodec.byteLength(message) <= RoomMessageCodec.chunkThresholdBytes) {
       return [message];
     }
@@ -90,7 +110,10 @@ export class RoomMessageCodec {
    * @returns 返回解析后的业务消息；分片未收齐或 JSON 非法时返回
    * `undefined`；分片收齐后从缓存移除并解析完整消息。
    */
-  processIncoming(senderUserID: string, message: string): unknown {
+  processIncoming(
+    senderUserID: string,
+    message: string
+  ): unknown {
     let parsed: unknown;
     try {
       parsed = JSON.parse(message);
@@ -151,7 +174,12 @@ export class RoomMessageCodec {
    */
   private parseChunk(
     parsed: unknown,
-  ): { eventId: string; index: number; count: number; data: string } | undefined {
+  ): {
+    eventId: string;
+    index: number;
+    count: number;
+    data: string
+  } | undefined {
     if (this.chunkEvent === null || typeof parsed !== "object" || parsed === null) {
       return undefined;
     }
@@ -193,7 +221,10 @@ export class RoomMessageCodec {
   /**
    * 按 UTF-8 字节预算切分字符串，不拆分多字节字符。
    */
-  private static sliceByByteBudget(message: string, budget: number): string[] {
+  private static sliceByByteBudget(
+    message: string,
+    budget: number
+  ): string[] {
     const slices: string[] = [];
     let current = "";
     let currentBytes = 0;
@@ -220,7 +251,9 @@ export class RoomMessageCodec {
   /**
    * 计算字符串的 UTF-8 字节长度。
    */
-  private static byteLength(value: string): number {
+  private static byteLength(
+    value: string
+  ): number {
     return new TextEncoder().encode(value).byteLength;
   }
 

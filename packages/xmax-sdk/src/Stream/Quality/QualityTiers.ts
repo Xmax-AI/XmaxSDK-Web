@@ -1,4 +1,16 @@
-/** 支持自动调档的 RTC 新轨道/新生成任务的默认启动档位；不改变 L1 恢复上限。 */
+//
+//  QualityTiers.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
+/**
+ * 支持自动调档的 RTC 新轨道/新生成任务的默认启动档位；不改变 L1 恢复上限。
+ */
 export const INITIAL_QUALITY_LEVEL = 2;
 
 /**

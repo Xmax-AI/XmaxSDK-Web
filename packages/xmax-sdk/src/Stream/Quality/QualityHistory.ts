@@ -1,12 +1,26 @@
+//
+//  QualityHistory.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { INITIAL_QUALITY_LEVEL, QUALITY_TIERS } from "./QualityTiers";
 import type { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
+/**
+ * 自动调档历史记录的传输方向。
+ */
 type QualityDirection = "uplink" | "downlink";
 
 /**
  * 一小时内成功应用的档位；按 RTC 提供方、模型、方向隔离，不保存媒体或凭据。
  */
 export class QualityHistory {
+
   /**
    * 历史档位有效期，单位为毫秒。
    */
@@ -19,12 +33,14 @@ export class QualityHistory {
     private readonly model: string,
     private readonly provider: RtcProvider,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) { }
 
   /**
    * 无记录、过期、损坏、时钟回退或存储不可用时使用默认 L2。
    */
-  read(direction: QualityDirection): number {
+  read(
+    direction: QualityDirection
+  ): number {
     try {
       const entry = JSON.parse(globalThis.localStorage.getItem(this.key(direction)) ?? "null");
       const now = this.now();
@@ -39,7 +55,10 @@ export class QualityHistory {
   /**
    * 应用成功后保存档位并刷新一小时有效期；下行成功仅表示信令已发送。
    */
-  write(direction: QualityDirection, level: number): void {
+  write(
+    direction: QualityDirection,
+    level: number
+  ): void {
     if (!this.isValid(level)) {
       return;
     }
@@ -51,14 +70,18 @@ export class QualityHistory {
   /**
    * 生成当前方向的存储键；无时间戳的旧记录按无效记录处理。
    */
-  private key(direction: QualityDirection): string {
+  private key(
+    direction: QualityDirection
+  ): string {
     return `xmax:quality:v1:${this.provider}:${encodeURIComponent(this.model)}:${direction}`;
   }
 
   /**
    * 校验档位编号。
    */
-  private isValid(level: number): boolean {
+  private isValid(
+    level: number
+  ): boolean {
     return Number.isInteger(level) && level >= 1 && level <= Object.keys(QUALITY_TIERS).length;
   }
 }

@@ -1,3 +1,13 @@
+//
+//  RecordingController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { RecordingTracks } from "../../Foundation/Media/Recording/RecordingTracks";
@@ -12,43 +22,120 @@ import {
  * 单次录制资源。旧任务封装时仍持有自己的资源，不与新任务混用。
  */
 interface RecordingSession {
+
   /**
    * 任务与借用的远端轨道
    */
   taskID: string;
+
+  /**
+   * 获取本次录制使用的远端音视频轨。
+   */
   readTracks: () => RecordingTracks | undefined;
+
+  /**
+   * 当前媒体源提供的视频轨。
+   */
   videoTrack: MediaStreamTrack;
 
   /**
    * 首帧探测与独立音频图
    */
   video?: HTMLVideoElement;
+
+  /**
+   * 采集显示时间戳的视频帧回调句柄。
+   */
   frameCallback?: number;
+
+  /**
+   * 路由媒体音频使用的 Web Audio 上下文。
+   */
   audioContext?: AudioContext;
+
+  /**
+   * 将 Web Audio 输出转换为媒体音轨的目标节点。
+   */
   audioDestination?: MediaStreamAudioDestinationNode;
+
+  /**
+   * 补齐静音音轨的音频源节点。
+   */
   silenceSource?: ConstantSourceNode;
+
+  /**
+   * 读取源音轨的 Web Audio 节点。
+   */
   audioSource?: MediaStreamAudioSourceNode;
+
+  /**
+   * 当前媒体源提供的音频轨。
+   */
   audioTrack?: MediaStreamTrack;
 
   /**
    * 编码数据与最终结果状态
    */
   recorder?: MediaRecorder;
+
+  /**
+   * 按产生顺序缓存的录制数据块。
+   */
   chunks: Blob[];
+
+  /**
+   * 当前缓存数据的总字节数。
+   */
   bytes: number;
+
+  /**
+   * 本次录制是否曾接入未静音的远端音频轨。
+   */
   hasAudio: boolean;
+
+  /**
+   * 是否已进入录制收尾流程。
+   */
   stopping: boolean;
+
+  /**
+   * 录制最终事件是否已经交付。
+   */
   finished: boolean;
+
+  /**
+   * 当前操作的结束或变更原因。
+   */
   reason: RealtimeRecordingFinishReason;
+
+  /**
+   * 导致当前操作失败的 SDK 错误。
+   */
   error?: XmaxError;
 
   /**
    * 定时任务与共享收尾结果
    */
   timer?: ReturnType<typeof setTimeout>;
+
+  /**
+   * 观察录制时长和轨道状态的定时器。
+   */
   monitor?: ReturnType<typeof setInterval>;
+
+  /**
+   * 限制录制文件收尾等待时长的定时器。
+   */
   finalizationTimer?: ReturnType<typeof setTimeout>;
+
+  /**
+   * 当前操作完成或清理结束时兑现的任务。
+   */
   completion: Promise<void>;
+
+  /**
+   * 结束当前等待并交付结果。
+   */
   resolve: () => void;
 }
 
@@ -57,31 +144,53 @@ interface RecordingSession {
  * 单次约 20 秒，后台调度可能延迟停止；不做精确时长裁剪。
  */
 export class RecordingController {
+
   /**
    * 录制资源上限
    */
   private static readonly durationMs = 20_000;
+
+  /**
+   * 允许处理的录制文件字节数上限。
+   */
   private static readonly maximumBytes = 64 * 1024 * 1024;
+
+  /**
+   * 等待录制准备就绪的最长时间，单位为毫秒。
+   */
   private static readonly preparationTimeoutMs = 10_000;
+
+  /**
+   * 等待录制文件封装结束的最长时间，单位为毫秒。
+   */
   private static readonly finalizationTimeoutMs = 5_000;
 
   /**
    * 任务资源与结果监听
    */
   private session?: RecordingSession;
+
+  /**
+   * 当前事件监听器。
+   */
   private listener?: RealtimeRecordingListener;
 
   /**
    * 设置统一结果监听器；传入 undefined 清除，不停止正在进行的录制。
    */
-  setListener(listener?: RealtimeRecordingListener): void {
+  setListener(
+    listener?: RealtimeRecordingListener
+  ): void {
     this.listener = listener;
   }
 
   /**
    * 开始准备当前任务的录制；准备和录制失败只通过独立事件通知。
    */
-  start(taskID: string, readTracks: () => RecordingTracks | undefined): void {
+  start(
+    taskID: string,
+    readTracks: () => RecordingTracks | undefined
+  ): void {
     if (this.session && !this.session.finished) {
       void this.stop(RealtimeRecordingFinishReason.restarted);
     }
@@ -96,7 +205,9 @@ export class RecordingController {
       }
 
       let resolve!: () => void;
-      const completion = new Promise<void>(done => { resolve = done; });
+      const completion = new Promise<void>(done => {
+        resolve = done;
+      });
       const session: RecordingSession = {
         taskID, readTracks, videoTrack: tracks.videoTrack,
         chunks: [], bytes: 0, hasAudio: false, stopping: false, finished: false,
@@ -116,7 +227,9 @@ export class RecordingController {
   /**
    * 请求收尾并等待最终数据；重复停止共享完成结果，且绝不停止 RTC 原始轨道。
    */
-  stop(reason: RealtimeRecordingFinishReason): Promise<void> {
+  stop(
+    reason: RealtimeRecordingFinishReason
+  ): Promise<void> {
     const session = this.session;
     if (!session) {
       return Promise.resolve();
@@ -129,14 +242,19 @@ export class RecordingController {
   /**
    * 不支持的录制请求使用同一错误出口，不改变生成生命周期。
    */
-  reportFailure(taskID: string, error: XmaxError): void {
+  reportFailure(
+    taskID: string,
+    error: XmaxError
+  ): void {
     this.emit({ type: RealtimeRecordingEventType.failed, taskID, error });
   }
 
   /**
    * 使用固定音频输出轨处理晚到的音频；不在 MediaRecorder 运行中增删轨道。
    */
-  private async prepare(session: RecordingSession): Promise<void> {
+  private async prepare(
+    session: RecordingSession
+  ): Promise<void> {
     const context = new AudioContext();
     session.audioContext = context;
     session.audioDestination = context.createMediaStreamDestination();
@@ -193,7 +311,9 @@ export class RecordingController {
   /**
    * 首帧可用后启动单个音视频录制器，计时不包含连接和媒体准备阶段。
    */
-  private beginRecording(session: RecordingSession): void {
+  private beginRecording(
+    session: RecordingSession
+  ): void {
     if (session.recorder || session.stopping || session.finished) {
       return;
     }
@@ -257,7 +377,9 @@ export class RecordingController {
   /**
    * 轮询仅在录制期间运行；接入原始音频，不连接扬声器，不受播放音量影响。
    */
-  private updateAudio(session: RecordingSession): void {
+  private updateAudio(
+    session: RecordingSession
+  ): void {
     const track = session.readTracks()?.audioTrack;
     const liveTrack = track?.readyState === "live" ? track : undefined;
     if (liveTrack !== session.audioTrack) {
@@ -277,7 +399,10 @@ export class RecordingController {
   /**
    * 标记失败并尽力停止编码；任何错误都不能冒泡到实时生成。
    */
-  private fail(session: RecordingSession, error: XmaxError): void {
+  private fail(
+    session: RecordingSession,
+    error: XmaxError
+  ): void {
     if (session.finished) {
       return;
     }
@@ -288,7 +413,10 @@ export class RecordingController {
   /**
    * 保留最后一个 dataavailable，等待 stop 后再封装；异常路径有收尾超时保护。
    */
-  private stopSession(session: RecordingSession, reason: RealtimeRecordingFinishReason): void {
+  private stopSession(
+    session: RecordingSession,
+    reason: RealtimeRecordingFinishReason
+  ): void {
     if (session.stopping || session.finished) {
       return;
     }
@@ -317,7 +445,9 @@ export class RecordingController {
   /**
    * 一次性交付结果并释放所有自有资源，不保留文件副本。
    */
-  private finish(session: RecordingSession): void {
+  private finish(
+    session: RecordingSession
+  ): void {
     if (session.finished) {
       return;
     }
@@ -334,7 +464,7 @@ export class RecordingController {
     session.silenceSource?.disconnect();
     session.audioDestination?.stream.getTracks().forEach(track => track.stop());
     if (session.audioContext && session.audioContext.state !== "closed") {
-      void session.audioContext.close().catch(() => {});
+      void session.audioContext.close().catch(() => { });
     }
     if (session.recorder) {
       session.recorder.ondataavailable = null;
@@ -383,7 +513,9 @@ export class RecordingController {
   /**
    * 释放首帧探测元素；srcObject 原始轨道不调用 stop。
    */
-  private releaseVideoProbe(session: RecordingSession): void {
+  private releaseVideoProbe(
+    session: RecordingSession
+  ): void {
     const video = session.video;
     if (!video) {
       return;
@@ -402,7 +534,9 @@ export class RecordingController {
   /**
    * 隔离接入方监听器异常，包括异步监听器的 Promise 拒绝。
    */
-  private emit(event: RealtimeRecordingEvent): void {
+  private emit(
+    event: RealtimeRecordingEvent
+  ): void {
     try {
       void Promise.resolve(this.listener?.(event)).catch(() => {
         XmaxLogger.realtime.warning(() => "Recording listener rejected");

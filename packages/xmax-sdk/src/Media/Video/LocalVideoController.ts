@@ -1,3 +1,13 @@
+//
+//  LocalVideoController.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
@@ -11,18 +21,70 @@ import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realt
  * 单个文件播放器及其音视频输出资源。
  */
 interface LocalVideoSource {
+
+  /**
+   * 用于读取或预览源画面的视频元素。
+   */
   video: HTMLVideoElement;
+
+  /**
+   * 承载媒体帧的画布。
+   */
   canvas: HTMLCanvasElement;
+
+  /**
+   * 画布绘制上下文。
+   */
   context: CanvasRenderingContext2D;
+
+  /**
+   * 源视频的浏览器对象 URL，释放源时一并撤销。
+   */
   url: string;
+
+  /**
+   * 取消当前媒体操作及相关等待。
+   */
   abort: AbortController;
+
+  /**
+   * 当前绑定该媒体源的渲染目标。
+   */
   targets: Set<VideoRenderTarget>;
+
+  /**
+   * 当前媒体源对应的 SDK 视频轨道。
+   */
   track?: RealtimeVideoTrack;
+
+  /**
+   * 由当前媒体源输出的浏览器媒体流。
+   */
   stream?: MediaStream;
+
+  /**
+   * 路由媒体音频使用的 Web Audio 上下文。
+   */
   audioContext?: AudioContext;
+
+  /**
+   * 读取源音轨的 Web Audio 节点。
+   */
   audioSource?: MediaElementAudioSourceNode;
+
+  /**
+   * 将 Web Audio 输出转换为媒体音轨的目标节点。
+   */
   audioDestination?: MediaStreamAudioDestinationNode;
+
+  /**
+   * 下一次文件视频绘制任务的句柄。
+   */
   drawTimer?: ReturnType<typeof setInterval>;
+
+  /**
+   * 媒体处理失败时通知上层。
+   */
   onError?: () => void;
 }
 
@@ -31,16 +93,27 @@ interface LocalVideoSource {
  * 同一个播放器驱动音视频，预览始终静音；准备后停在首帧，生成时按配置播放。
  */
 export class LocalVideoController {
+
   /**
    * 当前文件资源与运行期错误通知
    */
   private source?: LocalVideoSource;
-  private readonly onError: (error: XmaxError) => void;
+
+  /**
+   * 媒体处理失败时通知上层。
+   */
+  private readonly onError: (
+    error: XmaxError
+  ) => void;
 
   /**
    * 保存媒体错误处理器，不创建浏览器资源。
    */
-  constructor(onError: (error: XmaxError) => void = () => {}) {
+  constructor(
+    onError: (
+      error: XmaxError
+    ) => void = () => { }
+  ) {
     this.onError = onError;
   }
 
@@ -68,12 +141,16 @@ export class LocalVideoController {
   /**
    * 校验文件和格式，准备首帧与音频输出；应从用户点击事件直接调用以解锁播放。
    */
-  async create(options: {
-    file: Blob;
-    videoFormat: RealtimeVideoFormat;
-    loop?: boolean;
-    includeAudio?: boolean;
-  }, mediaService: MediaServicing, signal: AbortSignal): Promise<RealtimeMediaStream> {
+  async create(
+    options: {
+      file: Blob;
+      videoFormat: RealtimeVideoFormat;
+      loop?: boolean;
+      includeAudio?: boolean;
+    },
+    mediaService: MediaServicing,
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream> {
     if (this.source) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local video before creating another one");
     }
@@ -178,7 +255,9 @@ export class LocalVideoController {
   /**
    * 开始信令发送成功后，从文件开头同步启动音视频；不等待远端首帧。
    */
-  async start(signal: AbortSignal): Promise<void> {
+  async start(
+    signal: AbortSignal
+  ): Promise<void> {
     const source = this.source;
     if (!source?.track) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video is not prepared");
@@ -236,13 +315,16 @@ export class LocalVideoController {
     source.audioSource?.disconnect();
     source.audioDestination?.disconnect();
     URL.revokeObjectURL(source.url);
-    await source.audioContext?.close().catch(() => {});
+    await source.audioContext?.close().catch(() => { });
   }
 
   /**
    * 播放被浏览器拒绝时给出可操作错误；关闭后的迟到播放立即暂停。
    */
-  private play(source: LocalVideoSource, signal: AbortSignal): Promise<void> {
+  private play(
+    source: LocalVideoSource,
+    signal: AbortSignal
+  ): Promise<void> {
     return source.video.play().then(() => {
       if (this.source !== source || source.abort.signal.aborted || signal.aborted) {
         source.video.pause();
@@ -259,12 +341,17 @@ export class LocalVideoController {
   /**
    * 等待 seek 完成，确保重新生成从首帧开始，而非使用旧缓存画面。
    */
-  private async rewind(source: LocalVideoSource, signal: AbortSignal): Promise<void> {
+  private async rewind(
+    source: LocalVideoSource,
+    signal: AbortSignal
+  ): Promise<void> {
     if (source.video.currentTime === 0) {
       return;
     }
     let seeked!: () => void;
-    const ready = new Promise<void>(resolve => { seeked = resolve; });
+    const ready = new Promise<void>(resolve => {
+      seeked = resolve;
+    });
     source.video.addEventListener("seeked", seeked, { once: true });
     try {
       source.video.currentTime = 0;
@@ -277,7 +364,11 @@ export class LocalVideoController {
   /**
    * 给浏览器准备和播放操作设置 10 秒上限，同时响应关闭、取消和解码错误。
    */
-  private wait(source: LocalVideoSource, operation: Promise<unknown>, signal: AbortSignal): Promise<void> {
+  private wait(
+    source: LocalVideoSource,
+    operation: Promise<unknown>,
+    signal: AbortSignal
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const finish = (error?: unknown) => {
         clearTimeout(timer);
@@ -306,7 +397,9 @@ export class LocalVideoController {
   /**
    * 将完整画面缩放到已解析的媒体尺寸，不补模型画布、不按设备方向转置文件尺寸。
    */
-  private draw(source: LocalVideoSource): void {
+  private draw(
+    source: LocalVideoSource
+  ): void {
     const { video, canvas, context } = source;
     if (video.readyState < 2) {
       return;
@@ -319,7 +412,9 @@ export class LocalVideoController {
   /**
    * 解码或绘制失败时停止媒体推进，并报告一次运行期错误。
    */
-  private handleError(source: LocalVideoSource): void {
+  private handleError(
+    source: LocalVideoSource
+  ): void {
     if (this.source !== source || source.drawTimer === undefined) {
       return;
     }

@@ -1,6 +1,20 @@
+//
+//  RoomJoinConfiguration.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { RtcProvider } from "./RtcProvider";
 
+/**
+ * TRTC 进房身份和鉴权参数。
+ */
 export interface RoomJoinConfigurationInit {
+
   /**
    * TRTC 房间号（字符串房间号）。
    */
@@ -31,13 +45,12 @@ export interface RoomJoinConfigurationInit {
  * RTC 房间加入参数。
  */
 export class RoomJoinConfiguration {
+
   /**
    * RTC 提供方。
    */
   readonly provider = RtcProvider.trtc;
-  /**
-   * 进房参数
-   */
+
   /**
    * TRTC 房间号（字符串房间号）。
    */
@@ -65,14 +78,10 @@ export class RoomJoinConfiguration {
 
   /**
    * 创建房间加入参数。
-   *
-   * @param init.roomID TRTC 房间号。
-   * @param init.userID TRTC 登录身份。
-   * @param init.sdkAppID TRTC SDKAppID（字符串形式）。
-   * @param init.userSig TRTC 登录签名。
-   * @param init.privateMapKey TRTC 进房鉴权字段。
    */
-  constructor(init: RoomJoinConfigurationInit) {
+  constructor(
+    init: RoomJoinConfigurationInit
+  ) {
     this.roomID = init.roomID;
     this.userID = init.userID;
     this.sdkAppID = init.sdkAppID;
@@ -85,10 +94,30 @@ export class RoomJoinConfiguration {
  * 声网进房参数；App ID、频道、用户和 Token 必须来自同一会话。
  */
 export interface AgoraRoomJoinConfiguration {
+
+  /**
+   * RTC 提供方，决定进房参数和凭据的解析方式。
+   */
   readonly provider: RtcProvider.agora;
+
+  /**
+   * RTC 房间标识。
+   */
   readonly roomID: string;
+
+  /**
+   * RTC 用户标识。
+   */
   readonly userID: string;
+
+  /**
+   * RTC 应用标识。
+   */
   readonly appID: string;
+
+  /**
+   * 进房及续期使用的鉴权令牌。
+   */
   readonly roomToken: string;
 }
 
@@ -96,11 +125,34 @@ export interface AgoraRoomJoinConfiguration {
  * 火山引擎进房参数，不混用不同厂商的鉴权字段。
  */
 export interface VeRtcRoomJoinConfiguration {
+
+  /**
+   * RTC 提供方，决定进房参数和凭据的解析方式。
+   */
   readonly provider: RtcProvider.vertc;
+
+  /**
+   * RTC 房间标识。
+   */
   readonly roomID: string;
+
+  /**
+   * RTC 用户标识。
+   */
   readonly userID: string;
+
+  /**
+   * RTC 应用标识。
+   */
   readonly appID: string;
+
+  /**
+   * 进房及续期使用的鉴权令牌。
+   */
   readonly roomToken: string;
 }
 
+/**
+ * 按 RTC 提供方区分的进房参数。
+ */
 export type RtcRoomJoinConfiguration = RoomJoinConfiguration | AgoraRoomJoinConfiguration | VeRtcRoomJoinConfiguration;

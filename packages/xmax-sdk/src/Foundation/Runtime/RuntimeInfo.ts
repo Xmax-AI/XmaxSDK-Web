@@ -1,9 +1,23 @@
+//
+//  RuntimeInfo.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * SDK 当前版本号。
  */
 export const XMAX_SDK_VERSION = "1.0.10";
 
+/**
+ * 随业务请求上报的 SDK 与浏览器环境信息。
+ */
 export interface RuntimeInfoSnapshot {
+
   /**
    * 运行平台标识。
    */
@@ -29,9 +43,7 @@ export interface RuntimeInfoSnapshot {
  * 描述 SDK 当前运行环境。
  */
 export class RuntimeInfo {
-  /**
-   * 运行环境快照
-   */
+
   /**
    * 当前运行环境快照。
    */
@@ -45,7 +57,9 @@ export class RuntimeInfo {
   /**
    * 序列化为接口传输使用的 snake_case 字段。
    */
-  static toJSON(snapshot: RuntimeInfoSnapshot = RuntimeInfo.current): Record<string, string> {
+  static toJSON(
+    snapshot: RuntimeInfoSnapshot = RuntimeInfo.current
+  ): Record<string, string> {
     return {
       platform: snapshot.platform,
       os_version: snapshot.osVersion,

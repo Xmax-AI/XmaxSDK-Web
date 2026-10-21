@@ -1,7 +1,18 @@
+//
+//  XmaxError.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 /**
  * SDK 向接入方暴露的统一错误码。
  */
 export enum XmaxErrorCode {
+
   /**
    * API Key 未配置或为空。
    */
@@ -91,15 +102,15 @@ export enum XmaxErrorCode {
 /**
  * SDK 内部组件上报统一错误时使用的监听器。
  */
-export type XmaxErrorListener = (error: XmaxError) => void;
+export type XmaxErrorListener = (
+  error: XmaxError
+) => void;
 
 /**
  * 表示 SDK 抛出或回调给接入方的统一错误。
  */
 export class XmaxError extends Error {
-  /**
-   * 错误信息
-   */
+
   /**
    * SDK 统一错误码。
    */
@@ -125,7 +136,10 @@ export class XmaxError extends Error {
   constructor(
     code: XmaxErrorCode,
     message: string,
-    options?: { apiCode?: number; httpStatus?: number },
+    options?: {
+      apiCode?: number;
+      httpStatus?: number
+    },
   ) {
     super(message);
     this.name = "XmaxError";
@@ -140,7 +154,9 @@ export class XmaxError extends Error {
    * @param error 待转换的错误。
    * @returns 可向接入方抛出或回调的统一错误。
    */
-  static from(error: unknown): XmaxError {
+  static from(
+    error: unknown
+  ): XmaxError {
     if (error instanceof XmaxError) {
       return error;
     }

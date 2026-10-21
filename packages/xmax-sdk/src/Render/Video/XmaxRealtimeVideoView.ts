@@ -1,9 +1,22 @@
+//
+//  XmaxRealtimeVideoView.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { XmaxVideoView } from "./XmaxVideoView";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
+/**
+ * 远端画面预热完成后的渐入时长，单位为毫秒。
+ */
 const REMOTE_FADE_DURATION_MS = 300;
 
 /**
@@ -13,9 +26,7 @@ const REMOTE_FADE_DURATION_MS = 300;
  * 远端轨道置空时立即恢复本地预览。
  */
 export class XmaxRealtimeVideoView {
-  /**
-   * 视图元素
-   */
+
   /**
    * 视图根元素。
    */
@@ -25,13 +36,25 @@ export class XmaxRealtimeVideoView {
    * 视频视图
    */
   private readonly localVideoView: XmaxVideoView;
+
+  /**
+   * 展示生成结果流的远端视频视图。
+   */
   private readonly remoteVideoView: XmaxVideoView;
 
   /**
    * 公共配置
    */
   private currentLocalTrack?: RealtimeVideoTrack;
+
+  /**
+   * 当前绑定的远端视频轨。
+   */
   private currentRemoteTrack?: RealtimeVideoTrack;
+
+  /**
+   * 画面在视口中的缩放与裁剪方式。
+   */
   private contentMode: VideoContentMode;
 
   /**
@@ -41,12 +64,14 @@ export class XmaxRealtimeVideoView {
    * @param options.remoteTrack 需要覆盖显示的远端生成视频轨道。
    * @param options.videoContentMode 本地与远端视频的内容显示模式，默认 fill。
    */
-  constructor(options?: {
-    localTrack?: RealtimeVideoTrack;
-    remoteTrack?: RealtimeVideoTrack;
-    videoContentMode?: VideoContentMode;
-    isInteractionEnabled?: boolean;
-  }) {
+  constructor(
+    options?: {
+      localTrack?: RealtimeVideoTrack;
+      remoteTrack?: RealtimeVideoTrack;
+      videoContentMode?: VideoContentMode;
+      isInteractionEnabled?: boolean;
+    }
+  ) {
     this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
     this.currentLocalTrack = options?.localTrack;
     this.currentRemoteTrack = options?.remoteTrack;
@@ -78,27 +103,41 @@ export class XmaxRealtimeVideoView {
   /**
    * 只控制远端视图的轨迹交互，本地预览始终不接管手势。
    */
-  get isInteractionEnabled(): boolean { return this.remoteVideoView.isInteractionEnabled; }
+  get isInteractionEnabled(): boolean {
+    return this.remoteVideoView.isInteractionEnabled;
+  }
 
   /**
    * 转交远端交互开关。
    */
-  set isInteractionEnabled(enabled: boolean) { this.remoteVideoView.isInteractionEnabled = enabled; }
+  set isInteractionEnabled(
+    enabled: boolean
+  ) {
+    this.remoteVideoView.isInteractionEnabled = enabled;
+  }
 
   /**
    * 远端视图的自定义轨迹效果。
    */
-  get trajectoryRenderer(): TrajectoryEffectRendering | undefined { return this.remoteVideoView.trajectoryRenderer; }
+  get trajectoryRenderer(): TrajectoryEffectRendering | undefined {
+    return this.remoteVideoView.trajectoryRenderer;
+  }
 
   /**
    * undefined 恢复默认效果，不改变轨迹发送逻辑。
    */
-  set trajectoryRenderer(renderer: TrajectoryEffectRendering | undefined) { this.remoteVideoView.trajectoryRenderer = renderer; }
+  set trajectoryRenderer(
+    renderer: TrajectoryEffectRendering | undefined
+  ) {
+    this.remoteVideoView.trajectoryRenderer = renderer;
+  }
 
   /**
    * 替换本地预览轨道；轨道未变化时保留当前绑定。
    */
-  set localTrack(track: RealtimeVideoTrack | undefined) {
+  set localTrack(
+    track: RealtimeVideoTrack | undefined
+  ) {
     if (this.currentLocalTrack === track) {
       return;
     }
@@ -117,7 +156,9 @@ export class XmaxRealtimeVideoView {
   /**
    * 替换远端轨道并重新等待首帧渐入；清空轨道时恢复本地预览。
    */
-  set remoteTrack(track: RealtimeVideoTrack | undefined) {
+  set remoteTrack(
+    track: RealtimeVideoTrack | undefined
+  ) {
     if (this.currentRemoteTrack === track) {
       return;
     }
@@ -135,7 +176,9 @@ export class XmaxRealtimeVideoView {
   /**
    * 同步调整本地与远端视频在容器中的缩放和裁剪方式。
    */
-  set videoContentMode(mode: VideoContentMode) {
+  set videoContentMode(
+    mode: VideoContentMode
+  ) {
     if (this.contentMode === mode) {
       return;
     }
@@ -154,14 +197,18 @@ export class XmaxRealtimeVideoView {
   /**
    * 更新本地预览镜像；不修改采集帧或远端画面。
    */
-  set isLocalMirrored(mirrored: boolean) {
+  set isLocalMirrored(
+    mirrored: boolean
+  ) {
     this.localVideoView.isMirrored = mirrored;
   }
 
   /**
    * 挂载到容器元素。
    */
-  attach(to: HTMLElement): void {
+  attach(
+    to: HTMLElement
+  ): void {
     to.appendChild(this.element);
     this.localVideoView.attach(this.element);
     this.remoteVideoView.attach(this.element);

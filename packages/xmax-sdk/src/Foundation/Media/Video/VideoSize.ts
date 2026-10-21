@@ -1,13 +1,29 @@
+//
+//  VideoSize.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
  * 在缩放上限内计算对齐尺寸，优先保持精确宽高比，不放大源画面。
  */
 export function alignedVideoSize(
-  size: { width: number; height: number },
+  size: {
+    width: number;
+    height: number
+  },
   scale: number,
   alignment: number,
-): { width: number; height: number } {
+): {
+  width: number;
+  height: number
+} {
   const { width, height } = size;
   if (![width, height, alignment].every(value => Number.isSafeInteger(value) && value > 0) ||
     !Number.isFinite(scale) || scale <= 0 || scale > 1) {
