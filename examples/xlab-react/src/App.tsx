@@ -7,9 +7,6 @@ import {
   RealtimeModel,
   RealtimeRecordingEventType,
   modelDisplayName,
-  defaultCameraVideoFormat,
-  cameraPresetSize,
-  RealtimeVideoFormat,
   RtcProvider,
   supportedRtcProviders,
   XmaxClient,
@@ -37,15 +34,9 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 import { CameraPresetPicker } from "./CameraPresetPicker";
+import { resolveCameraConfiguration } from "./cameraConfiguration";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
-
-/** 使用所选预设尺寸，保留模型默认的帧率和编码配置。 */
-function cameraVideoFormat(model: RealtimeModel, preset: RealtimeCameraPreset): RealtimeVideoFormat {
-  const size = cameraPresetSize(preset);
-  const format = defaultCameraVideoFormat(model);
-  return format.resized(size.width, size.height);
-}
 
 /** 会话计时的显示文案（mm:ss）。 */
 function formatElapsed(totalSeconds: number): string {
@@ -257,8 +248,10 @@ export function App() {
   }, []);
 
   const sessionActive = localStream !== undefined;
-  const cameraSize = cameraPresetSize(cameraPreset);
-  const stageStyle = { "--camera-aspect-ratio": cameraSize.width / cameraSize.height } as CSSProperties;
+  const cameraConfiguration = resolveCameraConfiguration(model, cameraPreset, isMobileLayout);
+  // 会话中沿用实际采集规格，窗口跨越移动端断点时只切换布局，不改变画面比例。
+  const stageFormat = (sessionActive && realtimeRef.current?.currentCameraVideoFormat) || cameraConfiguration.videoFormat;
+  const stageStyle = { "--camera-aspect-ratio": stageFormat.width / stageFormat.height } as CSSProperties;
 
   /** 当前页签模式与提交生成时使用的文本条件。 */
   const activeMode =
@@ -371,7 +364,7 @@ export function App() {
         }
       });
       const stream = await realtime.createLocalCameraStream({
-        videoFormat: cameraVideoFormat(model, cameraPreset),
+        videoFormat: cameraConfiguration.videoFormat,
         position: CameraPosition.front,
         useMicrophone,
         enableFrameValidation: true
@@ -655,7 +648,8 @@ export function App() {
           </div>
           <div className="topbarRight">
             <RecordingDownload file={recordingFile} />
-            <CameraPresetPicker value={cameraPreset} disabled={busy} onChange={setCameraPreset} />
+            <CameraPresetPicker value={cameraConfiguration.preset}
+              disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
