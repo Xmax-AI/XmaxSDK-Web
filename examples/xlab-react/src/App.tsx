@@ -1,5 +1,6 @@
 import {
   CameraPosition,
+  RealtimeCameraPreset,
   RealtimeConfiguration,
   RealtimeConnectionState,
   RealtimeContext,
@@ -7,6 +8,7 @@ import {
   RealtimeRecordingEventType,
   modelDisplayName,
   defaultCameraVideoFormat,
+  cameraPresetSize,
   RealtimeVideoFormat,
   RtcProvider,
   supportedRtcProviders,
@@ -24,7 +26,7 @@ import {
 } from "@xmaxai/web-sdk";
 import { XmaxVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
-import { createRef, useEffect, useMemo, useRef, useState } from "react";
+import { createRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { EXAMPLE_MODES, faceRestorationForMode, type ExampleModeKey } from "./presets";
 import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
@@ -34,14 +36,15 @@ import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
+import { CameraPresetPicker } from "./CameraPresetPicker";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 
-/** 按模型默认规格选择桌面横屏或移动端竖屏采集。 */
-function cameraVideoFormat(model: RealtimeModel): RealtimeVideoFormat {
-  const portrait = window.matchMedia("(max-width: 720px)").matches;
+/** 使用所选预设尺寸，保留模型默认的帧率和编码配置。 */
+function cameraVideoFormat(model: RealtimeModel, preset: RealtimeCameraPreset): RealtimeVideoFormat {
+  const size = cameraPresetSize(preset);
   const format = defaultCameraVideoFormat(model);
-  return portrait ? format : format.resized(format.height, format.width);
+  return format.resized(size.width, size.height);
 }
 
 /** 会话计时的显示文案（mm:ss）。 */
@@ -70,6 +73,11 @@ export function App() {
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
   const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1);
+  const [cameraPreset, setCameraPreset] = useState<RealtimeCameraPreset>(() =>
+    window.matchMedia("(max-width: 720px)").matches
+      ? RealtimeCameraPreset.resolution1080x1920
+      : RealtimeCameraPreset.resolution1920x1080,
+  );
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -249,6 +257,8 @@ export function App() {
   }, []);
 
   const sessionActive = localStream !== undefined;
+  const cameraSize = cameraPresetSize(cameraPreset);
+  const stageStyle = { "--camera-aspect-ratio": cameraSize.width / cameraSize.height } as CSSProperties;
 
   /** 当前页签模式与提交生成时使用的文本条件。 */
   const activeMode =
@@ -361,7 +371,7 @@ export function App() {
         }
       });
       const stream = await realtime.createLocalCameraStream({
-        videoFormat: cameraVideoFormat(model),
+        videoFormat: cameraVideoFormat(model, cameraPreset),
         position: CameraPosition.front,
         useMicrophone,
         enableFrameValidation: true
@@ -645,6 +655,7 @@ export function App() {
           </div>
           <div className="topbarRight">
             <RecordingDownload file={recordingFile} />
+            <CameraPresetPicker value={cameraPreset} disabled={busy} onChange={setCameraPreset} />
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
@@ -823,53 +834,59 @@ export function App() {
         </div>
       </header>
 
-      <div className="stageRow">
-        <div className="stage">
-          <XmaxVideo
-            track={localStream?.videoTrack}
-            style={{ width: "100%", height: "100%" }}
-          />
-          <span className="stageLabel">Local</span>
-          {!isMobileLayout && (
-            <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
-              {localStatisticsPanels}
-            </div>
-          )}
-        </div>
-        <div className="stage">
-          {remoteStream && (
-            <div className="remoteVideo" key={remoteStream.id}>
+      <div className="stageViewport" style={stageStyle}>
+        <div className="stageRow">
+          <div className="stageSlot">
+            <div className="stage">
               <XmaxVideo
-                track={remoteStream.videoTrack}
-                isInteractionEnabled
+                track={localStream?.videoTrack}
                 style={{ width: "100%", height: "100%" }}
               />
+              <span className="stageLabel">Local</span>
+              {!isMobileLayout && (
+                <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
+                  {localStatisticsPanels}
+                </div>
+              )}
             </div>
-          )}
-          <span className="stageLabel">Result</span>
-          <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
-            {isMobileLayout && localStatisticsPanels}
-            <StatisticsPanel label="下行视频统计" rows={[
-              { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
-              { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
-              { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
-            ]} />
-            <StatisticsPanel label="下行网络与延迟统计" rows={[
-              { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
-              { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
-              { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-              supportedRtcProviders(model)[0] !== RtcProvider.trtc
-                ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
-                : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
-              { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
-            ]} />
           </div>
-          <span className="watermark">✦ Xmax</span>
-          {(!remoteStream || stateText !== RealtimeConnectionState.generating) && (
-            <span className="stageHint">
-              {isConnected ? "Generating…" : "Waiting for connection…"}
-            </span>
-          )}
+          <div className="stageSlot">
+            <div className="stage">
+              {remoteStream && (
+                <div className="remoteVideo" key={remoteStream.id}>
+                  <XmaxVideo
+                    track={remoteStream.videoTrack}
+                    isInteractionEnabled
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                </div>
+              )}
+              <span className="stageLabel">Result</span>
+              <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
+                {isMobileLayout && localStatisticsPanels}
+                <StatisticsPanel label="下行视频统计" rows={[
+                  { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
+                  { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
+                  { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
+                ]} />
+                <StatisticsPanel label="下行网络与延迟统计" rows={[
+                  { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
+                  { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
+                  { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
+                  supportedRtcProviders(model)[0] !== RtcProvider.trtc
+                    ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
+                    : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
+                  { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
+                ]} />
+              </div>
+              <span className="watermark">✦ Xmax</span>
+              {(!remoteStream || stateText !== RealtimeConnectionState.generating) && (
+                <span className="stageHint">
+                  {isConnected ? "Generating…" : "Waiting for connection…"}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -84,6 +84,8 @@ button:disabled,
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
   padding: 8px 0 24px;
@@ -105,6 +107,7 @@ button:disabled,
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .keyEntry {
@@ -651,10 +654,23 @@ button:disabled,
   display: none;
 }
 
+.stageViewport {
+  width: 100%;
+}
+
 .stageRow {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
+  width: 100%;
+}
+
+/* 固定外层占位，切换渲染比例不改变顶栏和参考图的位置。 */
+.stageSlot {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  container-type: size;
 }
 
 /* 会话页整页垂直居中：顶栏、双屏画面、页签与参考图作为整体居中。 */
@@ -663,11 +679,23 @@ button:disabled,
 }
 
 .stage {
-  position: relative;
-  aspect-ratio: 1920 / 1024;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(100%, calc(100cqh * var(--camera-aspect-ratio)));
+  aspect-ratio: var(--camera-aspect-ratio);
   border-radius: 24px;
   overflow: hidden;
   background: #000;
+}
+
+/* 两个视图向中间靠拢，保留双栏间距，作为一个整体居中。 */
+.stageSlot:first-child .stage {
+  right: 0;
+}
+
+.stageSlot:last-child .stage {
+  left: 0;
 }
 
 /* 远端画面的预热和渐入由 SDK 视频视图统一处理。 */
@@ -1330,29 +1358,32 @@ button:disabled,
     width: min(220px, calc(100vw - 80px));
   }
 
-  /* 会话页改为画中画：大画面远端结果宽度与页面内容两侧对齐，
-     高度占满屏幕剩余空间（内容 FILL 裁切，容器不锁宽高比）；
-     本地预览小画面 9:16 固定在大画面右下角。 */
+  /* 画中画沿用可用高度和右下角占位，内部渲染视图按所选比例居中。 */
   .sessionPage {
     justify-content: flex-start;
     height: 100vh;
     height: 100dvh;
   }
 
-  .stageRow {
-    display: block;
+  .stageViewport {
     position: relative;
     flex: 1;
     min-height: 0;
   }
 
-  .stageRow > .stage:last-child {
+  .stageRow {
+    display: block;
+    position: relative;
+    height: 100%;
+  }
+
+  .stageRow > .stageSlot:last-child {
     width: 100%;
     height: 100%;
     aspect-ratio: auto;
   }
 
-  .stageRow > .stage:first-child {
+  .stageRow > .stageSlot:first-child {
     position: absolute;
     right: 10px;
     bottom: 10px;
@@ -1360,12 +1391,22 @@ button:disabled,
     width: 25%;
     max-width: 110px;
     aspect-ratio: 9 / 16;
+  }
+
+  .stageSlot:first-child .stage {
     border-radius: 14px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 
+  .stageSlot:first-child .stage,
+  .stageSlot:last-child .stage {
+    left: 50%;
+    right: auto;
+    transform: translate(-50%, -50%);
+  }
+
   /* 小画面放不下角标，移动端隐藏；上行统计面板由 JS 并入大画面左上角。 */
-  .stageRow > .stage:first-child .stageLabel {
+  .stageSlot:first-child .stageLabel {
     display: none;
   }
 
