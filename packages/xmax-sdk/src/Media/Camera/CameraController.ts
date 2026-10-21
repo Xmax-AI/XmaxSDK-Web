@@ -30,8 +30,8 @@ import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraContr
  *
  * 采集由 RTC 层完成（只采不发），控制器把采集视频轨装入
  * `MediaStream` 后挂到预览视图；切换摄像头时原位替换流内视频轨，
- * 已挂载的视图无需重新绑定。麦克风在实时连接建立时由 RTC 层启动
- * （M2 接入），当前仅维护配置与权限。
+ * 已挂载的视图无需重新绑定。麦克风在实时连接建立时由 RTC 层启动，
+ * 本控制器维护配置与权限。
  */
 export class CameraController implements CameraControlling {
 
@@ -101,6 +101,16 @@ export class CameraController implements CameraControlling {
    * 创建当前摄像头流时选择的亮度检查开关。
    */
   private storedFrameValidationEnabled = true;
+
+  /**
+   * 当前摄像头输出的顺时针旋转角度，更新规格时保留。
+   */
+  private storedRotation: CameraRotation = 0;
+
+  /**
+   * 正在更新规格的轨道，期间忽略底层替换旧原生轨产生的结束事件。
+   */
+  private formatUpdatingTrack?: RealtimeVideoTrack;
 
   /**
    * 创建相机控制器。
@@ -226,6 +236,7 @@ export class CameraController implements CameraControlling {
       this.activeTrack = track;
       this.storedUseMicrophone = options.useMicrophone;
       this.storedFrameValidationEnabled = options.enableFrameValidation ?? true;
+      this.storedRotation = options.rotation ?? 0;
       this.hasCapturedFrame = false;
       this.isPreviewAttached = false;
       this.registerPreviewBinding(track);
@@ -260,6 +271,7 @@ export class CameraController implements CameraControlling {
 
     this.storedUseMicrophone = false;
     this.storedFrameValidationEnabled = true;
+    this.storedRotation = 0;
     this.hasCapturedFrame = false;
     this.isPreviewAttached = false;
 
@@ -269,6 +281,53 @@ export class CameraController implements CameraControlling {
     if (track) {
       VideoRenderRegistry.unregister(track);
       track.mediaStreamTrack = undefined;
+    }
+  }
+
+  /**
+   * 更新采集规格，底层成功后才替换预览轨和元数据；失败保留原有绑定。
+   */
+  async updateVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void> {
+    const track = this.activeTrack;
+    const position = track?.position;
+    if (!track || !position || !track.mediaStreamTrack) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera preview is not started");
+    }
+    const resolved = this.resolveVideoFormat(videoFormat);
+    if (!this.rtcManager.updateCameraCapture) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "The RTC provider does not support camera format updates");
+    }
+
+    const previous = track.mediaStreamTrack;
+    this.formatUpdatingTrack = track;
+    try {
+      const mediaTrack = await this.rtcManager.updateCameraCapture({
+        width: resolved.width,
+        height: resolved.height,
+        frameRate: resolved.fps,
+        position,
+        rotation: this.storedRotation,
+      });
+      if (this.activeTrack !== track) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera stream changed during format update");
+      }
+
+      track.updateVideoFormat(resolved);
+      track.mediaStreamTrack = mediaTrack;
+      if (previous !== mediaTrack) {
+        this.previewStream?.removeTrack(previous);
+        this.previewStream?.addTrack(mediaTrack);
+        this.observeMediaTrack(track, mediaTrack);
+      }
+    } finally {
+      if (this.formatUpdatingTrack === track) {
+        this.formatUpdatingTrack = undefined;
+      }
+      if (this.activeTrack === track && track.mediaStreamTrack?.readyState === "ended") {
+        this.errorListener(new XmaxError(XmaxErrorCode.mediaError, "Camera capture ended during format update"));
+      }
     }
   }
 
@@ -372,7 +431,7 @@ export class CameraController implements CameraControlling {
       this.notifyPreviewReady(track);
     }
     mediaTrack.addEventListener("ended", () => {
-      if (!isCurrent()) {
+      if (!isCurrent() || this.formatUpdatingTrack === track) {
         return;
       }
       this.errorListener(

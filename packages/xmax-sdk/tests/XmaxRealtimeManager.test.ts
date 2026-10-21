@@ -13,6 +13,8 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
+import { RealtimeCameraPreset } from "../src/Core/Realtime/RealtimeCameraPreset";
+import { RealtimeQualityLevel } from "../src/Core/Realtime/RealtimeQualityLevel";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
@@ -91,16 +93,19 @@ class CameraControllingStub implements CameraControlling {
   stopCalls = 0;
   previewReadyHandler?: CameraPreviewReadyHandler;
   waitForValidCameraFrame = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
+  updateVideoFormat = vi.fn(async (format: RealtimeVideoFormat): Promise<void> => {
+    this.currentTrack?.updateVideoFormat(format);
+  });
 
   setPreviewReadyHandler(handler?: CameraPreviewReadyHandler): void {
     this.previewReadyHandler = handler;
   }
 
-  async createLocalCameraStream(options?: { enableFrameValidation?: boolean }): Promise<RealtimeMediaStream> {
+  async createLocalCameraStream(options?: { enableFrameValidation?: boolean; videoFormat?: RealtimeVideoFormat }): Promise<RealtimeMediaStream> {
     this.isFrameValidationEnabled = options?.enableFrameValidation ?? true;
     const track = new RealtimeVideoTrack({
       id: "video0",
-      videoFormat: testVideoFormat,
+      videoFormat: options?.videoFormat ?? testVideoFormat,
       position: CameraPosition.front,
     });
     this.currentTrack = track;
@@ -336,10 +341,55 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
+describe("XmaxRealtimeManager camera formats", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function preview() {
+    const s = makeManager();
+    const format = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24, minimumBitrate: 1000, maximumBitrate: 4000 });
+    const local = await s.manager.createLocalCameraStream({ videoFormat: format, position: CameraPosition.front, useMicrophone: false });
+    s.camera.previewReadyHandler?.(() => true);
+    await vi.waitFor(() => expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready));
+    return { ...s, local, format };
+  }
+
+  it("switches preview presets without replacing the SDK track or bitrate options", async () => {
+    const s = await preview();
+    expect(s.manager.currentCameraPreset).toBe(RealtimeCameraPreset.resolution1080x1920);
+    const track = s.local.videoTrack;
+    await s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
+    expect(s.local.videoTrack).toBe(track);
+    expect(s.manager.currentCameraVideoFormat).toEqual(s.format.resized(1408, 1408));
+    expect(s.manager.currentCameraPreset).toBe(RealtimeCameraPreset.resolution1408x1408);
+    expect(s.stream.encoderConfigFormats).toHaveLength(0);
+    expect(s.session.createCalls).toBe(0);
+    await s.manager.connect(s.local);
+    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await s.manager.close();
+    expect(s.manager.currentCameraVideoFormat).toBeUndefined();
+    expect(s.manager.currentCameraPreset).toBeUndefined();
+  });
+
+  it("keeps the original media format after failure and prevents overlapping updates", async () => {
+    const s = await preview();
+    s.camera.updateVideoFormat.mockRejectedValueOnce(new Error("capture failed"));
+    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408)).rejects.toThrow("capture failed");
+    expect(s.manager.currentCameraVideoFormat).toBe(s.format);
+    const gate = makeDeferred<void>();
+    s.camera.updateVideoFormat.mockReturnValueOnce(gate.promise);
+    const pending = s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
+    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const closing = s.manager.close();
+    gate.resolve(); await rejected; await closing;
+    expect(s.manager.currentCameraVideoFormat).toBeUndefined();
+  });
+});
+
 describe("XmaxRealtimeManager interaction lifecycle", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it.each(["test-trtc", RealtimeModel.x2_1_1_preview_cn, "test-vertc"])("binds %s output gestures only after generation and keeps model coordinates during quality changes", async model => {
+  it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("binds %s output gestures only after generation and keeps model coordinates during quality changes", async model => {
     const s = makeManager(async () => false, false, model);
     const provider = s.manager.options.provider;
     if (provider !== RtcProvider.trtc) {
@@ -407,7 +457,7 @@ describe("XmaxRealtimeManager interaction lifecycle", () => {
 });
 
 describe("XmaxRealtimeManager adaptive quality", () => {
-  const adaptiveModel = RealtimeModel.x2_1_1_preview_cn;
+  const adaptiveModel = RealtimeModel.x2_1;
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   function historyStorage() {
@@ -452,6 +502,58 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     };
     return { ...s, localStream, sample, samples, start };
   }
+
+  it("exposes typed levels, retains the media baseline and continues automatic adaptation after manual selection", async () => {
+    const s = setup();
+    expect(s.manager.uplinkQualityLevel).toBeUndefined();
+    expect(s.manager.downlinkQualityLevel).toBeUndefined();
+    await s.start();
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l2);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l2);
+    const baseline = s.manager.currentCameraVideoFormat;
+    await s.manager.setUplinkQualityLevel(RealtimeQualityLevel.l4);
+    await s.manager.setDownlinkQualityLevel(RealtimeQualityLevel.l5);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l4);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l5);
+    expect(s.manager.currentCameraVideoFormat).toBe(baseline);
+    await s.samples(1, 6);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l3);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l4);
+    await s.manager.disconnect();
+    expect(s.manager.uplinkQualityLevel).toBeUndefined();
+    expect(s.manager.downlinkQualityLevel).toBeUndefined();
+    await s.manager.close();
+  });
+
+  it("keeps the previous typed levels after failures and rejects invalid levels", async () => {
+    const s = setup(); await s.start();
+    s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failed");
+    await expect(s.manager.setUplinkQualityLevel(RealtimeQualityLevel.l5)).rejects.toThrow("encoder failed");
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l2);
+    s.stream.updateDownlinkVideoResolution.mockRejectedValueOnce(new Error("send failed"));
+    await expect(s.manager.setDownlinkQualityLevel(RealtimeQualityLevel.l5)).rejects.toThrow("send failed");
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l2);
+    for (const level of [0, 6, 1.5, NaN, "upgrade"]) {
+      await expect(s.manager.setUplinkQualityLevel(level as RealtimeQualityLevel)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    }
+    await s.manager.close();
+  });
+
+  it("supports manual levels on X2.0 VeRTC without enabling automatic adaptation", async () => {
+    const s = setup(30, RealtimeModel.x2_0);
+    s.localStream.videoTrack!.updateVideoFormat(new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 }));
+    await s.start();
+    expect(s.manager.options.provider).toBe(RtcProvider.vertc);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l1);
+    await s.manager.setUplinkQualityLevel(RealtimeQualityLevel.l3);
+    await s.manager.setDownlinkQualityLevel(RealtimeQualityLevel.l5);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l3);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l5);
+    await s.samples(1, 10);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l3);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l5);
+    await s.manager.close();
+  });
 
   it("selects a compatible initial uplink tier and rejects incompatible manual or automatic downgrades", async () => {
     historyStorage();
@@ -660,7 +762,8 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.localStream.videoTrack!.videoFormat).toBe(previous);
 
     const other = setup(30, "test-vertc"); await other.start();
-    await expect(other.manager.adjustUplinkQuality("upgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await other.manager.adjustUplinkQuality("downgrade");
+    expect(other.manager.uplinkQualityLevel).toBe(2);
     await other.manager.close();
   });
 
@@ -682,8 +785,9 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
     await s.manager.close();
     const other = setup(30, "test-vertc"); await other.start();
-    await expect(other.manager.adjustDownlinkQuality("downgrade")).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-    expect(other.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await other.manager.adjustDownlinkQuality("downgrade");
+    expect(other.manager.downlinkQualityLevel).toBe(2);
+    expect(other.stream.updateDownlinkVideoResolution).toHaveBeenCalledOnce();
     await other.manager.close();
   });
 
@@ -1014,7 +1118,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
   });
 
   it("updates interpolation dimensions and retains the target when toggled, without treating it as observed statistics", async () => {
-    const s = setup(30, RealtimeModel.x2_1_1_preview_cn, true); const remote = await s.start();
+    const s = setup(30, RealtimeModel.x2_1, true); const remote = await s.start();
     let rendering: RemoteFrameInterpolationOptions | undefined;
     const view = { isMirrored: false, setMediaStream: vi.fn(),
       setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; } };
@@ -1044,7 +1148,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const s = setup();
     s.camera.currentTrack = undefined;
     const localStream = await s.manager.createNetworkVideoStream({ url: "https://example.com/video.mp4",
-      videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }) });
+      videoFormat: new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 }) });
     const starting = s.manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
     s.stream.confirmationDeferreds[0]!.resolve();
@@ -1055,11 +1159,11 @@ describe("XmaxRealtimeManager adaptive quality", () => {
       points: [{ x: 50, y: 50 }], viewportSize: { width: 100, height: 100 },
       contentMode: VideoContentMode.fill, mirrored: false,
     });
-    expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: 512, y: 960 }]);
+    expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: 540, y: 960 }]);
     expect(s.stream.beginCalls[0]!.paddingContain).toBe(false);
     for (let i = 0; i < 3; i++) await s.sample(0, 5);
-    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 818, height: 1536 });
-    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 664, height: 1248 }, expect.any(Function));
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 864, height: 1536 });
+    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 702, height: 1248 }, expect.any(Function));
     expect(s.stream.encoderConfigFormats).toHaveLength(0);
     await s.manager.close();
   });
@@ -1116,7 +1220,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
 
 describe("XmaxRealtimeManager external video", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-  const videoFormat = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
+  const videoFormat = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
 
   function setup(model = "test-trtc") {
     const s = makeManager(undefined, false, model);
@@ -1126,7 +1230,7 @@ describe("XmaxRealtimeManager external video", () => {
     return { ...s, source, clone, options };
   }
 
-  it.each(["test-trtc", RealtimeModel.x2_1_1_preview_cn, "test-vertc"])("publishes video only without preview and preserves caller ownership for %s", async model => {
+  it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("publishes video only without preview and preserves caller ownership for %s", async model => {
     const s = setup(model);
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
     const provider = s.manager.options.provider;
@@ -1143,7 +1247,7 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
-      ? new RealtimeVideoFormat({ ...videoFormat, width: 818, height: 1536, fps: 24 })
+      ? new RealtimeVideoFormat({ ...videoFormat, width: 864, height: 1536, fps: 24 })
       : provider === RtcProvider.vertc ? videoFormat : new RealtimeVideoFormat({ ...videoFormat, fps: 24 }));
     const generating = s.manager.startGeneration({ localStream: local, context: testContext });
     await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
@@ -1231,7 +1335,7 @@ describe("XmaxRealtimeManager local video", () => {
   afterEach(() => vi.restoreAllMocks());
   const options = {
     file: new Blob(["video fixture"]),
-    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
   };
 
   function setupFile(includeAudio = true, provider = RtcProvider.agora) {
@@ -1250,7 +1354,7 @@ describe("XmaxRealtimeManager local video", () => {
     const start = vi.spyOn(LocalVideoController.prototype, "start").mockResolvedValue();
     const pause = vi.spyOn(LocalVideoController.prototype, "pause").mockImplementation(() => {});
     const stop = vi.spyOn(LocalVideoController.prototype, "stop").mockImplementation(async () => { active = false; });
-    const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1_1_preview_cn, [RtcProvider.vertc]: "test-vertc" }[provider];
+    const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
     const s = makeManager(undefined, false, model);
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
@@ -1332,7 +1436,7 @@ describe("XmaxRealtimeManager local video", () => {
     await s.manager.connect(local);
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio, publishLocalMedia: true });
     expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
-      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1530, height: 816, fps: 24 })
+      ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1536, height: 864, fps: 24 })
       : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...options.videoFormat, fps: 24 }) : options.videoFormat]);
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.start).not.toHaveBeenCalled();
@@ -1387,7 +1491,7 @@ describe("XmaxRealtimeManager local image", () => {
   afterEach(() => vi.restoreAllMocks());
   const options = {
     file: new Blob(["image fixture"]),
-    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
   };
 
   function setupImage(provider = RtcProvider.trtc) {
@@ -1402,7 +1506,7 @@ describe("XmaxRealtimeManager local image", () => {
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     });
     const stop = vi.spyOn(LocalImageController.prototype, "stop").mockImplementation(() => { active = false; });
-    const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1_1_preview_cn, [RtcProvider.vertc]: "test-vertc" }[provider];
+    const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
     const s = makeManager(undefined, false, model);
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
@@ -1421,7 +1525,7 @@ describe("XmaxRealtimeManager local image", () => {
     await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
     expect(s.stream.encoderConfigFormats[0]).toBe(mediaFormat);
     expect(s.stream.beginCalls[0]).toMatchObject({
-      videoFormat: { width: 1024, height: 1920 },
+      videoFormat: { width: 1408, height: 1408 },
       paddingContain: true,
       targetSize: { width: 600, height: 600 },
     });
@@ -1504,7 +1608,7 @@ describe("XmaxRealtimeManager local image", () => {
 describe("XmaxRealtimeManager network video", () => {
   const options = {
     url: "https://example.com/video.mp4",
-    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
   };
 
   it("joins receive-only, sends the source, retains preview on disconnect and releases it on close", async () => {

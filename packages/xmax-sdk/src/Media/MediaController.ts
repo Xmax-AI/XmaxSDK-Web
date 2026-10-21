@@ -202,6 +202,18 @@ export class MediaController implements MediaControlling {
   }
 
   /**
+   * 更新活动摄像头规格，保留预览与其他媒体资源。
+   */
+  updateCameraFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void> {
+    if (this.source !== "camera") {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera preview is not started");
+    }
+    return this.camera.updateVideoFormat(videoFormat);
+  }
+
+  /**
    * 同步准备网络视频源；地址校验失败不初始化 RTC。
    */
   createNetworkVideoStream(

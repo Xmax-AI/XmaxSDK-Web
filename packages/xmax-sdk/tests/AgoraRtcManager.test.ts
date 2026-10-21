@@ -82,6 +82,34 @@ afterEach(async () => {
 });
 
 describe("AgoraRtcManager", () => {
+  it("updates preview capture through the camera SDK without joining or publishing", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1080, height: 1920, frameRate: 30, position: CameraPosition.front });
+    const updated = await s.manager.updateCameraCapture({ width: 1408, height: 1408, frameRate: 24, position: CameraPosition.front });
+    expect(updated).toBe(s.native);
+    expect(s.camera.setEncoderConfiguration).toHaveBeenCalledWith({ width: 1408, height: 1408, frameRate: 24 });
+    expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledOnce();
+    expect(s.camera.close).not.toHaveBeenCalled();
+    expect(s.client.join).not.toHaveBeenCalled();
+    expect(s.client.publish).not.toHaveBeenCalled();
+    await s.manager.joinRoom(credentials);
+    await expect(s.manager.updateCameraCapture({ width: 1920, height: 1080, frameRate: 30, position: CameraPosition.front })).rejects.toThrow("Disconnect Agora");
+  });
+
+  it("rejects late camera format completion after destruction", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.startCameraCapture({ width: 1080, height: 1920, frameRate: 30, position: CameraPosition.front });
+    const gate = deferred<void>();
+    s.camera.setEncoderConfiguration.mockReturnValueOnce(gate.promise);
+    const updating = s.manager.updateCameraCapture({ width: 1408, height: 1408, frameRate: 30, position: CameraPosition.front });
+    const rejected = expect(updating).rejects.toMatchObject({ code: "CANCELLED" });
+    await s.manager.destroy();
+    gate.resolve();
+    await rejected;
+  });
+
 
   it("publishes and previews the rotated track, retaining sender-only adaptation and microphone capture", async () => {
     const s = setup();

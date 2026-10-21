@@ -16,6 +16,7 @@ import type { LocalImageController } from "./Image/LocalImageController";
 import type { InteractionControlling } from "./Interaction/InteractionControlling";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeMediaStream } from "../Service/Realtime/RealtimeMediaStream";
+import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeReferenceVideo } from "../Service/Realtime/RealtimeReferenceVideo";
 
 /**
@@ -86,6 +87,13 @@ export interface MediaControlling extends InteractionControlling {
   createLocalCameraStream(
     options: Parameters<CameraControlling["createLocalCameraStream"]>[0]
   ): Promise<RealtimeMediaStream>;
+
+  /**
+   * 更新当前摄像头媒体规格，其他媒体源不支持。
+   */
+  updateCameraFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void>;
 
   /**
    * 创建服务端读取的网络视频源，RTC 初始化由 prepareSource 完成。

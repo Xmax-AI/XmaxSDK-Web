@@ -10,7 +10,7 @@ class VideoTrack extends EventTarget {
   clone = vi.fn((): VideoTrack => new VideoTrack());
 }
 
-const videoFormat = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
+const videoFormat = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
 const media = new MediaService();
 
 describe("ExternalVideoController", () => {

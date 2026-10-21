@@ -61,7 +61,8 @@ export function supportsQualityEncoding(
   format: RealtimeVideoFormat
 ): boolean {
   const defaults = EncodingBitratePolicy.resolve(format.width, format.height, format.fps);
-  return (format.minimumBitrate ?? defaults.minimum) <= (format.maximumBitrate ?? defaults.maximum);
+  const maximum = format.maximumBitrate ?? defaults.maximum;
+  return (format.minimumBitrate ?? Math.min(500, maximum)) <= maximum;
 }
 
 /**

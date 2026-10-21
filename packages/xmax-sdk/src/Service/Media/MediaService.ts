@@ -36,7 +36,7 @@ export class MediaService implements MediaServicing {
    * 创建媒体服务。
    */
   constructor(
-    model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn
+    model: RealtimeModelName = RealtimeModel.x2_1
   ) {
     this.model = model;
   }

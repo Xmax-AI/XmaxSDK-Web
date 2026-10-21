@@ -37,7 +37,7 @@ const ENCODER_PREFERENCE_MAP: Record<
 /**
  * 根据实时视频格式配置 RTC 视频编码参数。
  *
- * 默认最低码率为 100 kbps，最高码率由共享预算策略计算。
+ * 默认最低码率为 500 kbps，且不超过当前最高码率；最高码率由共享预算策略计算。
  * 格式显式指定码率时以显式值为准。
  */
 export class EncodingController implements EncodingControlling {
@@ -83,8 +83,8 @@ export class EncodingController implements EncodingControlling {
       const defaults = EncodingBitratePolicy.resolve(
         videoFormat.width, videoFormat.height, videoFormat.fps,
       );
-      minimum = videoFormat.minimumBitrate ?? defaults.minimum;
       maximum = videoFormat.maximumBitrate ?? defaults.maximum;
+      minimum = videoFormat.minimumBitrate ?? Math.min(500, maximum);
     }
 
     if (minimum > maximum) {

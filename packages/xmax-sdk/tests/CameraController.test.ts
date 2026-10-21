@@ -117,6 +117,8 @@ class RtcManagingStub implements RtcManaging {
 
   async configureVideoEncoding(): Promise<void> {}
 
+  updateCameraCapture = vi.fn(async (_options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> => this.makeTrack());
+
   encodingConfigurations: VideoEncodingConfiguration[] = [];
 
   // 房间与发布能力：相机管线测试不涉及，空实现满足接口。
@@ -176,7 +178,7 @@ function makeController() {
   const controller = new CameraController({
     permissionManager: permission,
     rtcManager: rtc,
-    mediaService: new MediaService(RealtimeModel.x2_1_1_preview_cn),
+    mediaService: new MediaService(RealtimeModel.x2_1),
   });
   return { controller, rtc, permission };
 }
@@ -192,19 +194,72 @@ function attachPreview(track: { mediaStreamTrack?: MediaStreamTrack } & object) 
 }
 
 const defaultFormat = new RealtimeVideoFormat({
-  width: 1024,
+  width: 1080,
   height: 1920,
   fps: 30,
 });
 
 describe("CameraController", () => {
+  it("updates capture in place while retaining the SDK track and mounted preview", async () => {
+    const { controller, rtc } = makeController();
+    const local = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, position: CameraPosition.back, useMicrophone: true, rotation: 90,
+    });
+    const track = local.videoTrack!;
+    const original = track.mediaStreamTrack;
+    const setMediaStream = vi.fn();
+    const view = { isMirrored: false, setMediaStream };
+    const binding = VideoRenderRegistry.binding(track)!;
+    binding.attachHandler(view, "fill" as never);
+    const preview = setMediaStream.mock.calls[0]![0] as MediaStream;
+    const target = new RealtimeVideoFormat({ width: 1408, height: 1408, fps: 24, minimumBitrate: 1200, maximumBitrate: 4000 });
+    await controller.updateVideoFormat(target);
+    expect(controller.currentTrack).toBe(track);
+    expect(track.videoFormat).toEqual(target);
+    expect(track.mediaStreamTrack).not.toBe(original);
+    expect(preview.getTracks()).toEqual([track.mediaStreamTrack]);
+    expect(VideoRenderRegistry.binding(track)).toBe(binding);
+    expect(setMediaStream).toHaveBeenCalledOnce();
+    expect(rtc.updateCameraCapture).toHaveBeenCalledWith({ width: 1408, height: 1408, frameRate: 24, position: CameraPosition.back, rotation: 90 });
+    expect(controller.useMicrophone).toBe(true);
+    expect(rtc.startCalls).toHaveLength(1);
+    await controller.stopLocalCameraStream();
+  });
+
+  it("keeps track metadata and preview when a capture format update fails", async () => {
+    const { controller, rtc } = makeController();
+    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false });
+    const track = local.videoTrack!, format = track.videoFormat, native = track.mediaStreamTrack;
+    rtc.updateCameraCapture.mockRejectedValueOnce(new Error("capture failed"));
+    await expect(controller.updateVideoFormat(defaultFormat.resized(1408, 1408))).rejects.toThrow("capture failed");
+    expect(track.videoFormat).toBe(format);
+    expect(track.mediaStreamTrack).toBe(native);
+    await expect(controller.updateVideoFormat(defaultFormat.resized(1280, 720))).rejects.toThrow("does not support input resolution");
+    expect(rtc.updateCameraCapture).toHaveBeenCalledOnce();
+    await controller.stopLocalCameraStream();
+  });
+
+  it("does not restore metadata after close during a capture format update", async () => {
+    const { controller, rtc } = makeController();
+    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false });
+    let finish!: (track: MediaStreamTrack) => void;
+    rtc.updateCameraCapture.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = controller.updateVideoFormat(defaultFormat.resized(1408, 1408));
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await controller.stopLocalCameraStream();
+    finish({} as MediaStreamTrack);
+    await rejected;
+    expect(controller.currentTrack).toBeUndefined();
+    expect(local.videoTrack!.mediaStreamTrack).toBeUndefined();
+  });
+
   it("forwards rotation without swapping the public format or changing preview mirroring", async () => {
     const { controller, rtc } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, rotation: 90,
     });
-    expect(rtc.startCalls[0]).toMatchObject({ width: 1024, height: 1920, rotation: 90 });
-    expect(stream.videoTrack?.videoFormat).toMatchObject({ width: 1024, height: 1920 });
+    expect(rtc.startCalls[0]).toMatchObject({ width: 1080, height: 1920, rotation: 90 });
+    expect(stream.videoTrack?.videoFormat).toMatchObject({ width: 1080, height: 1920 });
     expect(attachPreview(stream.videoTrack!).isMirrored).toBe(true);
     await controller.stopLocalCameraStream();
   });
@@ -299,7 +354,7 @@ describe("CameraController", () => {
     });
 
     expect(stream.videoTrack?.id).toBe("video0");
-    expect(stream.videoTrack?.videoFormat?.width).toBe(1024);
+    expect(stream.videoTrack?.videoFormat?.width).toBe(1080);
     expect(stream.videoTrack?.videoFormat?.height).toBe(1920);
     expect(rtc.initializeCalls).toBe(1);
     expect(rtc.startCalls).toHaveLength(1);

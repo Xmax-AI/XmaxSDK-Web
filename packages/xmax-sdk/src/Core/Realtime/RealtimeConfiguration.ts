@@ -18,7 +18,7 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 export class RealtimeConfiguration {
 
   /**
-   * 实时生成使用的模型；未知名称原样透传到测试环境，媒体与 RTC 默认配置同 x2.1.1-preview-cn。
+   * 实时生成使用的模型；未知名称原样透传到测试环境，媒体与 RTC 默认配置同 X2.1。
    */
   readonly model: RealtimeModelName;
 

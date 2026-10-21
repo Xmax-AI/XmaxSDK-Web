@@ -232,11 +232,11 @@ const client = new XmaxClient(
 );
 
 const realtime = client.createRealtimeManager(
-  new RealtimeConfiguration({ model: RealtimeModel.x2_1_1_preview_cn })
+  new RealtimeConfiguration({ model: RealtimeModel.x2_1 })
 );
 
 const localStream = await realtime.createLocalCameraStream({
-  videoFormat: new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 }),
+  videoFormat: new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 }),
   position: CameraPosition.front,
   useMicrophone: false,
   enableFrameValidation: true, // Optional; waits a fixed 200ms camera warmup before publishing; false skips it.
@@ -266,6 +266,37 @@ videoView.remoteTrack = remoteStream.videoTrack;
 
 Add a `video-container` element with an explicit width and height to your page.
 The view displays a local camera preview until the first generated frame arrives.
+
+`RealtimeModel.x2_1` uses Agora and supports 1920×1080, 1080×1920, 1408×1408,
+1152×1536, and 1536×1152. `RealtimeModel.x2_0` uses VeRTC, defaults to 832×1472,
+and resolves other dimensions within its pixel budget. Known models use the realtime
+endpoint for `XmaxEnvironment.china` or `XmaxEnvironment.global`; custom model names
+are sent unchanged to the test endpoint.
+
+Once the camera preview reaches `RealtimeConnectionState.ready`, you can change
+its format before connecting. Presets retain the current frame rate and bitrate options:
+
+```javascript
+import { RealtimeCameraPreset } from "@xmaxai/web-sdk";
+
+await realtime.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
+console.log(realtime.currentCameraVideoFormat, realtime.currentCameraPreset);
+```
+
+During generation, select an uplink or downlink quality level directly:
+
+```javascript
+import { RealtimeQualityLevel } from "@xmaxai/web-sdk";
+
+await realtime.setUplinkQualityLevel(RealtimeQualityLevel.l3);
+await realtime.setDownlinkQualityLevel(RealtimeQualityLevel.l2);
+console.log(realtime.uplinkQualityLevel, realtime.downlinkQualityLevel);
+```
+
+Automatic adaptation continues after a manual change on supported RTC providers;
+VeRTC applies manual levels only. L5 scales width and height to 40% of the media
+baseline. The default uplink minimum bitrate is 500 kbps, capped at the selected
+maximum bitrate; explicit bitrate settings take precedence.
 
 Use `updateUplinkVideoFormat` after creating the local camera stream, including during
 generation, to change upstream encoding without reconnecting or restarting the task:

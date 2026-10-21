@@ -24,6 +24,8 @@ import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import type { RealtimeVideoSampleMethod } from "../../Service/Realtime/RealtimeReferenceVideo";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
+import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
+import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
 
 /**
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
@@ -48,6 +50,50 @@ export interface XmaxRealtimeManaging {
   readonly currentState: RealtimeState;
 
   /**
+   * 当前摄像头媒体规格，不随上行调档变化；没有摄像头流时为空。
+   */
+  readonly currentCameraVideoFormat?: RealtimeVideoFormat;
+
+  /**
+   * 当前摄像头尺寸匹配的预设；没有摄像头或尺寸未匹配预设时为空。
+   */
+  readonly currentCameraPreset?: RealtimeCameraPreset;
+
+  /**
+   * 更新预览就绪且未连接的摄像头规格，保留 SDK 轨道与视图绑定。
+   * 传入预设时保留当前帧率、码率和编码偏好，尺寸仍按模型规则解析。
+   */
+  updateCameraFormat(
+    format: RealtimeVideoFormat | RealtimeCameraPreset
+  ): Promise<void>;
+
+  /**
+   * 当前连接成功应用的上行档位；未连接、断开或没有本地上行时为空。
+   */
+  readonly uplinkQualityLevel?: RealtimeQualityLevel;
+
+  /**
+   * 当前连接成功提交的下行档位；尚未开始生成、未连接或断开时为空，实际回传可能稍晚生效。
+   */
+  readonly downlinkQualityLevel?: RealtimeQualityLevel;
+
+  /**
+   * 在生成中指定上行编码档位，不改变媒体采集规格和生成画布。
+   * Agora、TRTC 的自动调档从新档位继续；VeRTC 仅应用手动档位。
+   */
+  setUplinkQualityLevel(
+    level: RealtimeQualityLevel
+  ): Promise<void>;
+
+  /**
+   * 在生成中指定下行回传档位；已启用自动调档时，从新档位继续判断。
+   * 发送成功表示请求已提交，不代表服务端已经返回新尺寸。
+   */
+  setDownlinkQualityLevel(
+    level: RealtimeQualityLevel
+  ): Promise<void>;
+
+  /**
    * 插帧功能开关；不随首帧等待、跳帧或视图挂载变化，不支持或故障降级时关闭。
    */
   readonly isFrameInterpolationEnabled: boolean;
@@ -60,9 +106,9 @@ export interface XmaxRealtimeManaging {
   ): Promise<void>;
 
   /**
-   * 手动升/降一档上行配置；仅支持正在生成的 Agora、TRTC 会话。
-   * Agora 调整分辨率、帧率和编码码率；TRTC 只调整帧率，保留尺寸和码率配置。
-   * 保留原始 L1 基准，不改变下行尺寸；自动调档仍保持开启。
+   * 手动升/降一档上行配置，需要正在生成且存在本地上行。
+   * Agora、VeRTC 调整分辨率、帧率和编码码率；TRTC 只调整帧率，保留尺寸和码率配置。
+   * 保留原始 L1 基准，不改变下行尺寸；已启用的自动调档保持开启。
    * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
    */
   adjustUplinkQuality(
@@ -70,8 +116,8 @@ export interface XmaxRealtimeManaging {
   ): Promise<void>;
 
   /**
-   * 手动升/降一档下行输出尺寸，便于调试 change_target_size；仅支持正在生成的 Agora、TRTC 会话。
-   * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；自动调档仍保持开启。
+   * 手动升/降一档下行输出尺寸，需要正在生成。
+   * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；已启用的自动调档保持开启。
    * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
    */
   adjustDownlinkQuality(

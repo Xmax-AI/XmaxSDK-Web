@@ -78,6 +78,13 @@ export interface RtcManaging {
   ): Promise<MediaStreamTrack>;
 
   /**
+   * 更新正在预览的摄像头采集规格，返回当前原生输出轨；不切换设备或发布媒体。
+   */
+  updateCameraCapture?(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack>;
+
+  /**
    * 在前置和后置摄像头之间切换。
    *
    * @returns 切换后的视频轨。

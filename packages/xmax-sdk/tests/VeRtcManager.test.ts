@@ -173,6 +173,30 @@ describe("VeRTC file media", () => {
 });
 
 describe("VeRTC media and protocol", () => {
+  it("updates camera preview without restarting capture and rejects changes after joining", async () => {
+    const s = setup();
+    await s.manager.initialize();
+    await s.capture();
+    expect(await s.manager.updateCameraCapture({ width: 832, height: 1472, frameRate: 24, position: CameraPosition.front })).toBe(s.native);
+    expect(s.engine.setVideoEncoderConfig).toHaveBeenLastCalledWith({
+      width: 832, height: 1472, frameRate: 24, maxKbps: 1000, preferCodecName: "H264", contentHint: "motion",
+    });
+    expect(s.engine.startVideoCapture).toHaveBeenCalledOnce();
+    expect(s.engine.stopVideoCapture).not.toHaveBeenCalled();
+    await s.manager.joinRoom(credentials);
+    await expect(s.manager.updateCameraCapture({ width: 1472, height: 832, frameRate: 24, position: CameraPosition.front })).rejects.toThrow("Disconnect VeRTC");
+  });
+
+  it("does not restore a camera after stopping during a format update", async () => {
+    const s = setup();
+    await s.manager.initialize(); await s.capture();
+    const gate = deferred<void>();
+    s.engine.setVideoEncoderConfig.mockReturnValueOnce(gate.promise);
+    const pending = s.manager.updateCameraCapture({ width: 832, height: 1472, frameRate: 24, position: CameraPosition.front });
+    const rejected = expect(pending).rejects.toMatchObject({ code: "CANCELLED" });
+    await s.manager.stopCameraCapture(); gate.resolve(); await rejected;
+  });
+
   it("exposes raw remote audio independently of playback volume", async () => {
     const s = setup();
     await s.joined();

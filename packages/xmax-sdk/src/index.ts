@@ -19,6 +19,8 @@ export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
  * Core / Realtime
  */
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
+export { RealtimeCameraPreset, cameraPresetSize } from "./Core/Realtime/RealtimeCameraPreset";
+export { RealtimeQualityLevel } from "./Core/Realtime/RealtimeQualityLevel";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
 /**
@@ -53,7 +55,7 @@ export type {
   RemoteVideoStatistics,
   RemoteVideoStatisticsListener,
 } from "./Foundation/RTC/VideoStatistics";
-export { XmaxEnvironment, apiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
+export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
 /**
  * Service / Realtime
@@ -71,6 +73,7 @@ export {
   RealtimeModel,
   modelDisplayName,
   supportedRtcProviders,
+  supportedVideoFormats,
   defaultCameraVideoFormat,
   defaultFrameRate,
 } from "./Service/Realtime/RealtimeModel";

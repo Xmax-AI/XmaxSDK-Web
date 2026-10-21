@@ -407,6 +407,40 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
+   * 更新未发布的摄像头采集规格，保留本地轨道及旋转输出。
+   */
+  async updateCameraCapture(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack> {
+    const source = this.requireCamera();
+    const camera = this.camera!;
+    const client = this.requireClient();
+    const version = this.captureVersion;
+    if (this.connection || this.videoPublishRequested) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Disconnect Agora before updating camera capture");
+    }
+    const rotation = options.rotation ?? 0;
+    validateCameraRotation(rotation);
+    if ((rotation !== 0) !== !!this.cameraRotation) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera format updates must preserve rotation");
+    }
+    const ensureCurrent = () => {
+      if (this.camera !== camera || this.cameraSource !== source || this.client !== client || version !== this.captureVersion) {
+        throw this.cancelled();
+      }
+    };
+    const size = rtcOrientedVideoSize(rotation === 90 || rotation === 270
+      ? { width: options.height, height: options.width } : options);
+    await this.run(() => source.setEncoderConfiguration({ width: size.width, height: size.height, frameRate: options.frameRate }));
+    ensureCurrent();
+    if (this.cameraRotation) {
+      await this.cameraRotation.updateFormat(options.width, options.height, options.frameRate);
+      ensureCurrent();
+    }
+    return camera.getMediaStreamTrack();
+  }
+
+  /**
    * 切换声网相机设备并返回切换后的原生轨道。
    */
   async switchCameraCapture(

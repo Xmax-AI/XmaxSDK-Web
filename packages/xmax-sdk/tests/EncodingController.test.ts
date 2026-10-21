@@ -95,10 +95,11 @@ describe("EncodingController.configure", () => {
     ][] = [
       [1500, 3000, RealtimeVideoEncoderPreference.maintainFramerate, 1500, 3000],
       [0, 500, RealtimeVideoEncoderPreference.maintainQuality, 0, 500],
-      [undefined, 4000, RealtimeVideoEncoderPreference.maintainFramerate, 100, 4000],
+      [undefined, 4000, RealtimeVideoEncoderPreference.maintainFramerate, 500, 4000],
+      [undefined, 200, RealtimeVideoEncoderPreference.maintainFramerate, 200, 200],
       [1500, undefined, RealtimeVideoEncoderPreference.maintainFramerate, 1500, 2166],
       [2000, 2000, RealtimeVideoEncoderPreference.maintainFramerate, 2000, 2000],
-      [undefined, undefined, RealtimeVideoEncoderPreference.maintainQuality, 100, 2166],
+      [undefined, undefined, RealtimeVideoEncoderPreference.maintainQuality, 500, 2166],
     ];
 
     for (const [minimum, maximum, preference, expectedMinimum, expectedMaximum] of cases) {
@@ -130,7 +131,6 @@ describe("EncodingController.configure", () => {
       [undefined, 0],
       [3000, 1500],
       [4000, undefined],
-      [undefined, 99],
     ];
 
     for (const [minimum, maximum] of cases) {
@@ -185,7 +185,7 @@ describe("EncodingController.configure", () => {
     for (const [width, height, fps, , maximum] of cases) {
       await controller.configure(new RealtimeVideoFormat({ width, height, fps }));
       const configuration = lastConfiguration(rtcManager);
-      expect(configuration.minimumBitrate).toBe(100);
+      expect(configuration.minimumBitrate).toBe(Math.min(500, configuration.maximumBitrate));
       expect(configuration.maximumBitrate).toBe(Math.max(100, Math.round(maximum * 0.6)));
     }
   });
@@ -210,7 +210,7 @@ describe("EncodingController.configure", () => {
     for (const [width, height, fps, , maximum] of cases) {
       await controller.configure(new RealtimeVideoFormat({ width, height, fps }));
       const configuration = lastConfiguration(rtcManager);
-      expect(configuration.minimumBitrate).toBe(100);
+      expect(configuration.minimumBitrate).toBe(Math.min(500, configuration.maximumBitrate));
       expect(configuration.maximumBitrate).toBe(maximum);
     }
   });

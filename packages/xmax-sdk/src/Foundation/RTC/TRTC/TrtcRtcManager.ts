@@ -310,6 +310,38 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
+   * 更新未连接的摄像头采集尺寸与帧率，保留当前设备和采集生命周期。
+   */
+  async updateCameraCapture(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack> {
+    const engine = this.requireEngine();
+    if (!this.isCapturing || this.externalVideo || this.isInRoom) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A disconnected camera preview is required");
+    }
+    const size = rtcOrientedVideoSize(options);
+    try {
+      await engine.updateLocalVideo({
+        option: {
+          profile: {
+            width: size.width, height: size.height, frameRate: options.frameRate, bitrate: CAPTURE_PLACEHOLDER_BITRATE,
+          }
+        }
+      });
+      if (this.lease?.engine !== engine || !this.isCapturing) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera capture stopped during format update");
+      }
+      const track = engine.getVideoTrack();
+      if (!track) {
+        throw new XmaxError(XmaxErrorCode.mediaError, "RTC engine did not produce a camera video track");
+      }
+      return track;
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  /**
    * 启动摄像头采集（不发布）。
    *
    * @returns 采集到的视频轨。

@@ -80,6 +80,13 @@ export interface CameraControlling {
   stopLocalCameraStream(): Promise<void>;
 
   /**
+   * 更新摄像头尺寸、采集帧率和编码元数据，保留 SDK 轨道与预览绑定。
+   */
+  updateVideoFormat(
+    videoFormat: RealtimeVideoFormat
+  ): Promise<void>;
+
+  /**
    * 在前置和后置摄像头之间切换，保留当前视频轨道。
    * @throws 相机流尚未启动或设备切换失败时抛出错误。
    */

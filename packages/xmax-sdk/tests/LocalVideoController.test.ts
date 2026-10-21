@@ -99,7 +99,7 @@ describe("LocalVideoController", () => {
     expect(resolutionBuckets(media.model)).toEqual(bucketsBefore);
   });
 
-  it.each([RealtimeModel.x2_1_1_preview_cn, "custom-model"])("uses metadata rather than requested dimensions for %s", async (model) => {
+  it.each([RealtimeModel.x2_1, "custom-model"])("uses metadata rather than requested dimensions for %s", async (model) => {
     const s = setup();
     const local = await s.controller.create({
       ...options, videoFormat: new RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),

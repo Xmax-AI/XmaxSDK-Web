@@ -314,6 +314,21 @@ describe("TrtcRtcManager performance logging", () => {
 });
 
 describe("TrtcRtcManager", () => {
+  it("updates the preview profile without restarting capture or publishing", async () => {
+    const { manager, engine } = makeManager();
+    await manager.initialize();
+    const options = { width: 1080, height: 1920, frameRate: 30, position: CameraPosition.front };
+    await manager.startCameraCapture(options);
+    expect(await manager.updateCameraCapture({ ...options, width: 1408, height: 1408, frameRate: 24 })).toBe(engine.localVideoTrack);
+    expect(engine.updateLocalVideoCalls.at(-1)).toMatchObject({ option: { profile: { width: 1408, height: 1408, frameRate: 24 } } });
+    expect(engine.startLocalVideoCalls).toHaveLength(1);
+    expect(engine.stopLocalVideoCalls).toBe(0);
+    expect(engine.enterRoomCalls).toHaveLength(0);
+    await manager.joinRoom(joinConfig);
+    await expect(manager.updateCameraCapture(options)).rejects.toThrow("disconnected camera preview");
+    await manager.destroy();
+  });
+
   it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
     const { manager, engine } = makeManager();
     await expect(manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,

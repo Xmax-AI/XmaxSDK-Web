@@ -6,6 +6,7 @@ import {
   RealtimeModel,
   RealtimeRecordingEventType,
   modelDisplayName,
+  defaultCameraVideoFormat,
   RealtimeVideoFormat,
   RtcProvider,
   supportedRtcProviders,
@@ -36,14 +37,11 @@ import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 
-/** 相机采集格式：桌面横屏 1920×1024，窄屏竖屏 1024×1920。 */
-function cameraVideoFormat(): RealtimeVideoFormat {
+/** 按模型默认规格选择桌面横屏或移动端竖屏采集。 */
+function cameraVideoFormat(model: RealtimeModel): RealtimeVideoFormat {
   const portrait = window.matchMedia("(max-width: 720px)").matches;
-  return new RealtimeVideoFormat(
-    portrait
-      ? { width: 1024, height: 1920, fps: 30 }
-      : { width: 1920, height: 1024, fps: 30 },
-  );
+  const format = defaultCameraVideoFormat(model);
+  return portrait ? format : format.resized(format.height, format.width);
 }
 
 /** 会话计时的显示文案（mm:ss）。 */
@@ -71,7 +69,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
-  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1_1_preview_cn);
+  const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [useMicrophone, setUseMicrophone] = useState(false);
@@ -363,7 +361,7 @@ export function App() {
         }
       });
       const stream = await realtime.createLocalCameraStream({
-        videoFormat: cameraVideoFormat(),
+        videoFormat: cameraVideoFormat(model),
         position: CameraPosition.front,
         useMicrophone,
         enableFrameValidation: true

@@ -18,6 +18,20 @@ afterEach(() => {
 });
 
 describe("CameraRotationProcessor", () => {
+  it("resizes the rotation output without recreating its stream or output track", async () => {
+    const s = setup();
+    const started = s.processor.setSource(s.source);
+    await Promise.resolve(); s.frame(); await started;
+    await s.processor.updateFormat(1408, 1408, 24);
+    expect(s.canvas.width).toBe(1408);
+    expect(s.canvas.height).toBe(1408);
+    expect(s.output.applyConstraints).toHaveBeenCalledWith({ frameRate: 24 });
+    expect(s.canvas.captureStream).toHaveBeenCalledOnce();
+    expect(s.output.stop).not.toHaveBeenCalled();
+    expect(s.source.stop).not.toHaveBeenCalled();
+    expect(s.output.requestFrame).toHaveBeenCalled();
+  });
+
   it.each([90, 180, 270] as const)("rotates %s degrees clockwise and produces the target size only after a real frame", async rotation => {
     const s = setup(rotation);
     if (rotation === 180) { s.video.videoWidth = 1024; s.video.videoHeight = 1920; }

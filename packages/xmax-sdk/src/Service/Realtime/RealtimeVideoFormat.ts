@@ -47,7 +47,7 @@ export interface RealtimeVideoFormatInit {
   fps: number;
 
   /**
-   * 最低上传码率，单位为 kbps；缺省使用 SDK 默认值，0 表示不设最低码率。
+   * 最低上传码率，单位为 kbps；缺省取 500 与最高码率的较小值，0 表示不设下限。
    */
   minimumBitrate?: number;
 
@@ -83,7 +83,7 @@ export class RealtimeVideoFormat {
   readonly fps: number;
 
   /**
-   * 最低上传码率，单位为 kbps；缺省使用 SDK 默认值，0 表示不设下限；仅支持该参数的 RTC 链路生效。
+   * 最低上传码率，单位为 kbps；缺省取 500 与最高码率的较小值，0 表示不设下限；仅支持该参数的 RTC 链路生效。
    */
   readonly minimumBitrate?: number;
 

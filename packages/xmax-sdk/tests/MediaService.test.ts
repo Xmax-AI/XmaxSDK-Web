@@ -16,14 +16,14 @@ describe("MediaService media, generation and target sizes", () => {
   });
 
   it("retains camera bucket validation and chooses generation canvases independently", () => {
-    expect(service.resolveMediaSize({ width: 1024, height: 1920 }, "camera")).toEqual({ width: 1024, height: 1920 });
+    expect(service.resolveMediaSize({ width: 1080, height: 1920 }, "camera")).toEqual({ width: 1080, height: 1920 });
     expect(() => service.resolveMediaSize({ width: 1280, height: 720 }, "camera")).toThrow("does not support input resolution");
-    expect(service.resolveGenerationSize({ width: 1280, height: 720 })).toEqual({ width: 1920, height: 1024 });
-    expect(service.resolveGenerationSize({ width: 720, height: 1280 })).toEqual({ width: 1024, height: 1920 });
+    expect(service.resolveGenerationSize({ width: 1280, height: 720 })).toEqual({ width: 1920, height: 1080 });
+    expect(service.resolveGenerationSize({ width: 720, height: 1280 })).toEqual({ width: 1080, height: 1920 });
     const square = service.resolveGenerationSize({ width: 600, height: 600 });
-    expect(square).toEqual(ModelDefinition.resolutionBuckets(service.model)[0]);
+    expect(square).toEqual({ width: 1408, height: 1408 });
     square.width = 1;
-    expect(ModelDefinition.resolutionBuckets(service.model)[0]!.width).toBe(1024);
+    expect(ModelDefinition.resolutionBuckets(service.model)[2]!.width).toBe(1408);
   });
 
   it("resolves downlink bounds using the fixed media ratio and four-pixel alignment", () => {
@@ -56,8 +56,8 @@ describe("MediaService.resolveModelInputSize", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it.each([
-    [RealtimeModel.x2_1_1_preview_cn, 1024, 1920],
-    [RealtimeModel.x2_1_1_preview_us, 1024, 1920],
+    [RealtimeModel.x2_0, 832, 1472],
+    [RealtimeModel.x2_1, 1080, 1920],
   ] as const)("keeps the default camera format unchanged for %s", (model, width, height) => {
     const service = new MediaService(model);
     const format = defaultCameraVideoFormat(model);
@@ -66,19 +66,19 @@ describe("MediaService.resolveModelInputSize", () => {
     expect(service.resolveModelInputSize(format)).toEqual({ width, height });
   });
 
-  it.each(Object.values(RealtimeModel))("accepts exact resolution bucket matches for %s", (model) => {
+  it.each([RealtimeModel.x2_1])("accepts exact resolution bucket matches for %s", (model) => {
     const service = new MediaService(model);
-    expect(service.resolveModelInputSize({ width: 1024, height: 1920 })).toEqual({
-      width: 1024,
+    expect(service.resolveModelInputSize({ width: 1080, height: 1920 })).toEqual({
+      width: 1080,
       height: 1920,
     });
-    expect(service.resolveModelInputSize({ width: 1920, height: 1024 })).toEqual({
+    expect(service.resolveModelInputSize({ width: 1920, height: 1080 })).toEqual({
       width: 1920,
-      height: 1024,
+      height: 1080,
     });
   });
 
-  it.each(Object.values(RealtimeModel))("rejects non-bucket resolutions for %s", (model) => {
+  it.each([RealtimeModel.x2_1])("rejects non-bucket resolutions for %s", (model) => {
     const service = new MediaService(model);
     try {
       service.resolveModelInputSize({ width: 832, height: 1472 });
@@ -114,6 +114,6 @@ describe("MediaService.resolveModelInputSize", () => {
   });
 
   it("uses the CN model as the default media service model", () => {
-    expect(new MediaService().model).toBe(RealtimeModel.x2_1_1_preview_cn);
+    expect(new MediaService().model).toBe(RealtimeModel.x2_1);
   });
 });

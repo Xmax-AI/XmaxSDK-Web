@@ -25,11 +25,19 @@ export enum XmaxEnvironment {
 }
 
 /**
- * 实时会话和存储服务使用的环境默认地址。
+ * 通用 API 与存储服务使用的环境地址。
  */
 const API_BASE_URLS: Record<XmaxEnvironment, string> = {
   [XmaxEnvironment.china]: "https://cloud.xmax.22duck.cn/open/api/v1",
   [XmaxEnvironment.global]: "https://api.xmax.cloud/open/api/v1",
+};
+
+/**
+ * 实时会话服务的环境地址。
+ */
+const REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
+  [XmaxEnvironment.china]: "https://cloud.xmax.22duck.cn/open/api/v1",
+  [XmaxEnvironment.global]: "https://api.xmax.ai/open/api/v1",
 };
 
 /**
@@ -47,6 +55,15 @@ export function apiBaseURL(
   environment: XmaxEnvironment
 ): string {
   return API_BASE_URLS[environment];
+}
+
+/**
+ * 环境对应的实时会话 API 地址。
+ */
+export function realtimeApiBaseURL(
+  environment: XmaxEnvironment
+): string {
+  return REALTIME_API_BASE_URLS[environment];
 }
 
 /**

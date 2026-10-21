@@ -27,7 +27,7 @@ import { RenderController } from "../../Render/RenderController";
 import type { RenderControlling } from "../../Render/RenderControlling";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
 import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
-import type { ModelSize } from "../../Service/Realtime/RealtimeModel";
+import { resolutionBuckets, type ModelSize } from "../../Service/Realtime/RealtimeModel";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -59,6 +59,8 @@ import { RealtimeErrorHandler } from "./RealtimeErrorHandler";
 import { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
+import { RealtimeCameraPreset, cameraPresetSize } from "./RealtimeCameraPreset";
+import { RealtimeQualityLevel } from "./RealtimeQualityLevel";
 import { XmaxRealtimeConnectionManager } from "./XmaxRealtimeConnectionManager";
 import { XmaxRealtimeGenerationManager } from "./XmaxRealtimeGenerationManager";
 
@@ -436,6 +438,92 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
+   * 当前摄像头的固定媒体规格，不读取调档后的上行编码尺寸。
+   */
+  get currentCameraVideoFormat(): RealtimeVideoFormat | undefined {
+    return this.mediaController.source === "camera"
+      ? this.resolvedMediaVideoFormat ?? this.currentLocalTrack?.videoFormat
+      : undefined;
+  }
+
+  /**
+   * 按摄像头媒体宽高匹配预设，不受编码帧率和档位影响。
+   */
+  get currentCameraPreset(): RealtimeCameraPreset | undefined {
+    const format = this.currentCameraVideoFormat;
+    return format && Object.values(RealtimeCameraPreset).find(preset => {
+      const size = cameraPresetSize(preset);
+      return size.width === format.width && size.height === format.height;
+    });
+  }
+
+  /**
+   * 当前已连接会话成功应用的上行档位。
+   */
+  get uplinkQualityLevel(): RealtimeQualityLevel | undefined {
+    const track = this.currentUplinkTrack;
+    const state = this.currentState.connectionState;
+    return (state === RealtimeConnectionState.connected || state === RealtimeConnectionState.starting || state === RealtimeConnectionState.generating) && track
+      ? this.qualityStates.get(track)?.level as RealtimeQualityLevel | undefined
+      : undefined;
+  }
+
+  /**
+   * 当前已连接会话成功提交的下行档位。
+   */
+  get downlinkQualityLevel(): RealtimeQualityLevel | undefined {
+    const state = this.currentState.connectionState;
+    return state === RealtimeConnectionState.connected || state === RealtimeConnectionState.starting || state === RealtimeConnectionState.generating
+      ? this.downlinkQualityState?.level as RealtimeQualityLevel | undefined
+      : undefined;
+  }
+
+  /**
+   * 在媒体操作内更新未连接的摄像头规格，成功后重建调档基准。
+   */
+  async updateCameraFormat(
+    format: RealtimeVideoFormat | RealtimeCameraPreset
+  ): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.media, undefined, async token => {
+      const current = this.currentCameraVideoFormat;
+      if (this.currentState.connectionState !== RealtimeConnectionState.ready ||
+        this.connectionManager.currentSessionID || !current) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera preview must be ready and disconnected before updating its format");
+      }
+
+      const size = typeof format === "string" ? cameraPresetSize(format) : undefined;
+      const requested = size ? current.resized(size.width, size.height) : format as RealtimeVideoFormat;
+      if (!requested || typeof requested.validate !== "function") {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A camera format or preset is required");
+      }
+      token.ensureCurrent();
+      await this.mediaController.updateCameraFormat(requested);
+      token.ensureCurrent();
+      const track = this.currentLocalTrack!;
+      this.resolvedMediaVideoFormat = track.videoFormat;
+      this.qualityStates.delete(track);
+    });
+  }
+
+  /**
+   * 指定上行档位，成功后自动调档继续从新档位判断。
+   */
+  setUplinkQualityLevel(
+    level: RealtimeQualityLevel
+  ): Promise<void> {
+    return this.updateQualityLevel(level, false, true);
+  }
+
+  /**
+   * 指定下行档位，沿用尺寸信令和插帧配置更新流程。
+   */
+  setDownlinkQualityLevel(
+    level: RealtimeQualityLevel
+  ): Promise<void> {
+    return this.updateQualityLevel(level, true, true);
+  }
+
+  /**
    * 当前是否请求启用插帧；能力探测或运行期降级后可能为 false。
    */
   get isFrameInterpolationEnabled(): boolean {
@@ -471,28 +559,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   async adjustUplinkQuality(
     direction: "upgrade" | "downgrade"
   ): Promise<void> {
-    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
-      const controller = this.qualityController;
-      const track = this.currentUplinkTrack;
-      const state = track && this.qualityStates.get(track);
-      if (!controller || !state || this.currentState.connectionState !== RealtimeConnectionState.generating ||
-        (direction !== "upgrade" && direction !== "downgrade")) {
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Uplink quality adjustment requires an active adaptive-quality generation and a valid direction");
-      }
-
-      const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
-      if (level === state.level)
-        return;
-
-      if (!supportsQualityEncoding(this.uplinkQualityFormat(state.baseline, level))) {
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Quality level conflicts with explicit bitrate constraints");
-      }
-
-      this.adaptiveQualityRevision++;
-      controller.resetSamples();
-      await this.applyUplinkQuality(level, token);
-      controller.start(level);
-    });
+    return this.updateQualityLevel(direction, false);
   }
 
   /**
@@ -541,21 +608,52 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   async adjustDownlinkQuality(
     direction: "upgrade" | "downgrade"
   ): Promise<void> {
+    return this.updateQualityLevel(direction, true);
+  }
+
+  /**
+   * 指定档位和逐级调档共用操作租约；失败时保留最近成功的档位。
+   */
+  private async updateQualityLevel(
+    requested: RealtimeQualityLevel | "upgrade" | "downgrade",
+    downlink: boolean,
+    absolute = false
+  ): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
-      const controller = this.downlinkQualityController;
-      const state = this.downlinkQualityState;
-      if (!controller || !state || this.currentState.connectionState !== RealtimeConnectionState.generating ||
-        (direction !== "upgrade" && direction !== "downgrade")) {
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Downlink quality adjustment requires an active adaptive-quality generation and a valid direction");
+      const track = this.currentUplinkTrack;
+      const state = downlink ? this.downlinkQualityState : track && this.qualityStates.get(track);
+      if (!state || this.currentState.connectionState !== RealtimeConnectionState.generating) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Quality adjustment requires an active generation");
       }
-      const level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + (direction === "upgrade" ? -1 : 1)));
-      if (level === state.level)
+
+      let level = NaN;
+      if (absolute) {
+        if (typeof requested === "number") {
+          level = requested;
+        }
+      } else if (requested === "upgrade" || requested === "downgrade") {
+        const step = requested === "upgrade" ? -1 : 1;
+        level = Math.max(1, Math.min(Object.keys(QUALITY_TIERS).length, state.level + step));
+      }
+      if (!Number.isInteger(level) || level < 1 || level > Object.keys(QUALITY_TIERS).length) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported quality level or direction");
+      }
+      if (level === state.level) {
         return;
+      }
+      if (!downlink && !supportsQualityEncoding(this.uplinkQualityFormat(state.baseline, level))) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Quality level conflicts with explicit bitrate constraints");
+      }
+
       this.adaptiveQualityRevision++;
-      controller.resetSamples();
-      await this.applyDownlinkQuality(level, token);
-      // 手动选择作为新的目标档位，后续自动判断从这里重新累计样本。
-      controller.start(level);
+      const controller = downlink ? this.downlinkQualityController : this.qualityController;
+      controller?.resetSamples();
+      if (downlink) {
+        await this.applyDownlinkQuality(level, token);
+      } else {
+        await this.applyUplinkQuality(level, token);
+      }
+      controller?.start(level);
     });
   }
 
@@ -1386,9 +1484,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     paddingContain: boolean;
   } {
     const paddingContain = this.mediaController.usesContainPadding;
-    const size = paddingContain ? this.mediaService.resolveGenerationSize(videoFormat) : undefined;
+    const usesPixelBudget = this.mediaController.source === "camera" && resolutionBuckets(this.options.model).length === 0;
+    const size = paddingContain || usesPixelBudget ? this.mediaService.resolveGenerationSize(videoFormat) : undefined;
     return {
-      generationVideoFormat: size ? videoFormat.resized(size.width, size.height) : videoFormat,
+      generationVideoFormat: size && (size.width !== videoFormat.width || size.height !== videoFormat.height)
+        ? videoFormat.resized(size.width, size.height) : videoFormat,
       paddingContain,
     };
   }
@@ -1412,8 +1512,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private resolveInitialUplinkQuality(
     track: RealtimeVideoTrack
   ): QualityState | undefined {
-    if (!this.qualityController)
-      return undefined;
     if (this.mediaController.source === "networkVideo")
       return undefined;
     if (this.qualityStates.has(track))
@@ -1423,7 +1521,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     if (!baseline)
       return undefined;
 
-    let level = this.qualityHistory!.read("uplink");
+    let level = this.qualityHistory?.read("uplink") ?? 1;
     while (level > 1 && !supportsQualityEncoding(this.uplinkQualityFormat(baseline, level))) {
       level--;
     }
@@ -1479,9 +1577,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       // 支持自动调档的新轨道读取历史档位（缺省 L2）；保留 L1 基准，重连优先沿用内存状态。
       const initialQuality = this.resolveInitialUplinkQuality(localTrack);
-      const initialFormat = initialQuality
+      const initialFormat = initialQuality && this.qualityController
         ? this.uplinkQualityFormat(initialQuality.baseline, initialQuality.level)
-        : undefined;
+        : initialQuality?.baseline;
       const remote = await this.connectionManager.connect({
         localTrack,
         remoteVideoFormat: this.resolvedMediaVideoFormat ?? localTrack.videoFormat,

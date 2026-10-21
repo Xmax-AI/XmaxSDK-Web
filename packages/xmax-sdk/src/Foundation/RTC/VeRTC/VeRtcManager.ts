@@ -378,6 +378,34 @@ export class VeRtcManager implements RtcManaging {
   }
 
   /**
+   * 更新未连接的摄像头采集规格，复用引擎和当前设备。
+   */
+  async updateCameraCapture(
+    options: RtcCameraCaptureOptions
+  ): Promise<MediaStreamTrack> {
+    const engine = this.requireEngine();
+    this.requireCamera();
+    if (this.connection) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Disconnect VeRTC before updating camera capture");
+    }
+    const version = this.captureVersion;
+    const size = rtcOrientedVideoSize(options);
+    await this.run(() => engine.setVideoEncoderConfig({
+      width: size.width, height: size.height, frameRate: options.frameRate, maxKbps: 1000,
+      preferCodecName: this.sdk!.VideoCodecType.H264, contentHint: "motion",
+    }));
+    if (engine !== this.engine || version !== this.captureVersion) {
+      throw this.cancelled();
+    }
+    const track = engine.getLocalStreamTrack(this.sdk!.StreamIndex.STREAM_INDEX_MAIN, "video");
+    if (!track) {
+      throw new XmaxError(XmaxErrorCode.rtcError, "VeRTC camera track is unavailable");
+    }
+    this.camera = track;
+    return track;
+  }
+
+  /**
    * 切换前后置摄像头，返回切换后的视频轨。
    */
   async switchCameraCapture(

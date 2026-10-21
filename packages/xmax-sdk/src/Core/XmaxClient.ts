@@ -20,7 +20,7 @@ import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
-import { apiBaseURL, nonRealtimeApiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
+import { apiBaseURL, realtimeApiBaseURL, nonRealtimeApiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
 import { NonRealtimeTaskService } from "../Service/NonRealtime/NonRealtimeTaskService";
 import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
 import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";
@@ -62,7 +62,7 @@ export class XmaxClient {
 
   /**
    * 创建实时媒体 Manager。
-   * 模型专用地址优先于环境默认地址，并用于该 Manager 的整个会话生命周期。
+   * 已知模型按环境选择实时会话地址；自定义模型使用测试地址，覆盖整个会话生命周期。
    *
    * @param options 实时生成模型等业务配置。
    * @returns 可用于本地相机预览、实时连接与生成的实时 Manager。
@@ -70,10 +70,8 @@ export class XmaxClient {
   createRealtimeManager(
     options: RealtimeConfiguration
   ): XmaxRealtimeManaging {
-    const baseURL = modelBaseURL(options.model);
-    const apiService = baseURL
-      ? new ApiService({ apiKey: this.configuration.apiKey, baseURL })
-      : this.apiService;
+    const baseURL = modelBaseURL(options.model) ?? realtimeApiBaseURL(this.configuration.environment);
+    const apiService = new ApiService({ apiKey: this.configuration.apiKey, baseURL });
 
     return new XmaxRealtimeManager(options, {
       apiService,
@@ -97,10 +95,10 @@ export class XmaxClient {
   /**
    * 创建媒体处理与能力查询 Service。
    *
-   * @param model 媒体输入规则使用的模型，默认为 `x2.1.1-preview-cn`。
+   * @param model 媒体输入规则使用的模型，默认为 `x2.1`。
    */
   createMediaService(
-    model: RealtimeModelName = RealtimeModel.x2_1_1_preview_cn
+    model: RealtimeModelName = RealtimeModel.x2_1
   ): MediaServicing {
     return new MediaService(model);
   }

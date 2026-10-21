@@ -8,7 +8,7 @@ export function cameraRotationEnvironment() {
     kind: "video", readyState: "live", stop: vi.fn(),
   }) as unknown as MediaStreamTrack;
   const output = Object.assign(new EventTarget(), {
-    kind: "video", readyState: "live", stop: vi.fn(), requestFrame: vi.fn(),
+    kind: "video", readyState: "live", stop: vi.fn(), requestFrame: vi.fn(), applyConstraints: vi.fn(async () => {}),
     getSettings: vi.fn(() => ({ width: 1024, height: 1920, frameRate: 30 })),
   }) as unknown as CanvasCaptureMediaStreamTrack;
   const context = { setTransform: vi.fn(), rotate: vi.fn(), drawImage: vi.fn() };

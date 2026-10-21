@@ -50,7 +50,7 @@ describe("qualityVideoFormat", () => {
     for (let level = 1; level <= 5; level++) await encoder.configure(qualityVideoFormat(baseline, level));
     const configs = configureVideoEncoding.mock.calls.map(call => call[0]);
     for (let index = 1; index < configs.length; index++) {
-      expect(configs[index]!.minimumBitrate).toBe(100);
+      expect(configs[index]!.minimumBitrate).toBe(Math.min(500, configs[index]!.maximumBitrate));
       expect(configs[index]!.maximumBitrate).toBeLessThan(configs[index - 1]!.maximumBitrate);
     }
     await encoder.configure(qualityVideoFormat(baseline, 1));
@@ -82,7 +82,7 @@ describe("qualityVideoFormat", () => {
     const baseline = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30, minimumBitrate: 3000 });
     expect(supportsQualityEncoding(qualityVideoFormat(baseline, 1))).toBe(true);
     expect(supportsQualityEncoding(qualityVideoFormat(baseline, 2))).toBe(false);
-    expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: undefined, maximumBitrate: 99 }))).toBe(false);
+    expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: undefined, maximumBitrate: 99 }))).toBe(true);
     expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: 0, maximumBitrate: 99 }))).toBe(true);
   });
 

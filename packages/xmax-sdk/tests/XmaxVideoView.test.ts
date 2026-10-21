@@ -331,7 +331,7 @@ describe("network video preview", () => {
   afterEach(() => vi.unstubAllGlobals());
   const options = {
     url: "https://example.com/video.mp4?signature=abc",
-    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
+    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
   };
 
   it("renders a muted URL directly without capture, keeps progress and releases all views", () => {

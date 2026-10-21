@@ -186,6 +186,31 @@ export class CameraRotationProcessor {
   }
 
   /**
+   * 更新旋转画布与输出帧率，复用当前输出轨道和源帧调度。
+   */
+  async updateFormat(
+    width: number,
+    height: number,
+    frameRate: number
+  ): Promise<void> {
+    if (this.stopped) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation has stopped");
+    }
+    const version = this.version;
+    const output = this.stream?.getVideoTracks()[0];
+    await output?.applyConstraints({ frameRate });
+    if (this.stopped || this.version !== version) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation source changed");
+    }
+    Object.assign(this.options, { width, height, frameRate });
+    this.canvas.width = width;
+    this.canvas.height = height;
+    if (this.draw()) {
+      this.requestFrame();
+    }
+  }
+
+  /**
    * 停止旋转调度并释放输出轨，保留原始摄像头轨的所有权。
    */
   stop(): void {
