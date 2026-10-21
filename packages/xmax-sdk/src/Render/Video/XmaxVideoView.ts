@@ -49,6 +49,21 @@ export class XmaxVideoView {
   readonly videoElement: HTMLVideoElement;
 
   /**
+   * 视频与插帧画布共用的显示层，与触控轨迹层独立。
+   */
+  private readonly videoLayer: HTMLDivElement;
+
+  /**
+   * 首帧预热只影响媒体内容，不影响轨迹交互层。
+   */
+  private readonly warmupLayer: HTMLDivElement;
+
+  /**
+   * 视频画面是否可见。
+   */
+  private videoVisible = true;
+
+  /**
    * 首帧实际提交显示时调用（一次性；换轨后重新武装）。
    */
   frameDisplayHandler?: () => void;
@@ -151,7 +166,17 @@ export class XmaxVideoView {
     this.element.style.position = "relative";
     this.element.style.overflow = "hidden";
     this.element.style.backgroundColor = "black";
-    this.warmupController = new RenderWarmupController(this.element);
+
+    this.videoLayer = document.createElement("div");
+    Object.assign(this.videoLayer.style, {
+      position: "absolute", inset: "0", pointerEvents: "none", opacity: "1",
+    });
+    this.element.appendChild(this.videoLayer);
+
+    this.warmupLayer = document.createElement("div");
+    Object.assign(this.warmupLayer.style, { position: "absolute", inset: "0" });
+    this.videoLayer.appendChild(this.warmupLayer);
+    this.warmupController = new RenderWarmupController(this.warmupLayer);
 
     this.videoElement = document.createElement("video");
     this.statisticsController = new RenderStatisticsController(this.videoElement);
@@ -166,7 +191,27 @@ export class XmaxVideoView {
 
     this.applyContentMode();
 
-    this.element.appendChild(this.videoElement);
+    this.warmupLayer.appendChild(this.videoElement);
+  }
+
+  /**
+   * 是否显示视频画面，默认 true；隐藏时保留播放、解码和触控轨迹。
+   */
+  get isVideoVisible(): boolean {
+    return this.videoVisible;
+  }
+
+  /**
+   * 即时切换视频和插帧画布的显隐，不改变触控配置或媒体流。
+   */
+  set isVideoVisible(
+    visible: boolean
+  ) {
+    if (this.videoVisible === visible) {
+      return;
+    }
+    this.videoVisible = visible;
+    this.videoLayer.style.opacity = visible ? "1" : "0";
   }
 
   /**
@@ -183,7 +228,7 @@ export class XmaxVideoView {
     enabled: boolean
   ) {
     this.interactionEnabled = enabled;
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled && !this.warmupController.isPending);
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled);
   }
 
   /**
@@ -425,7 +470,7 @@ export class XmaxVideoView {
     });
     this.interpolationCanvas = canvas;
     this.applyContentMode();
-    this.element.appendChild(canvas);
+    this.warmupLayer.appendChild(canvas);
 
     const options = this.interpolationOptions;
     const pipeline = new RemoteVideoFramePipeline(this.videoElement, canvas, {
@@ -565,7 +610,7 @@ export class XmaxVideoView {
    * 应用显示模式与镜像样式。
    */
   private applyContentMode(): void {
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled && !this.warmupController.isPending);
+    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled);
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
     if (this.interpolationCanvas) {
@@ -595,7 +640,7 @@ export class XmaxVideoView {
     }
     const overlay = new TrajectoryOverlayView(this.customTrajectoryRenderer ?? new DefaultTrajectoryEffectRenderer());
     this.trajectoryOverlay = overlay;
-    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled && !this.warmupController.isPending);
+    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled);
     this.element.appendChild(overlay.element);
     binding.attach(overlay);
   }

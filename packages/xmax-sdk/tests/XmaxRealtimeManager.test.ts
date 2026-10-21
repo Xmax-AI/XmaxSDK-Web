@@ -3325,6 +3325,33 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
     expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
   });
 
+  it("静态触控在任务确认后即可发送轨迹，不等待远端首帧", async () => {
+    const { manager, camera, stream } = makeManager(async () => false);
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const mediaTrack = Object.assign(new EventTarget(), { muted: true }) as MediaStreamTrack;
+    remote.videoTrack!.mediaStreamTrack = mediaTrack;
+    const listen = vi.spyOn(mediaTrack, "addEventListener");
+    const send = vi.spyOn(stream, "sendTracks");
+    const pending = manager.startGeneration({
+      localStream,
+      context: new RealtimeContext({ prompt: "", referencePath: "https://example.com/input.jpg" }),
+      extraParams: { static_generate: true, static_image_path: "https://example.com/input.jpg" },
+    });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(listen).not.toHaveBeenCalledWith("unmute", expect.any(Function));
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
+    expect(manager.currentState.taskID).toBeTruthy();
+    TrajectoryRegistry.binding(remote.videoTrack!)!.submit({
+      points: [{ x: 50, y: 50 }], viewportSize: { width: 100, height: 100 },
+      contentMode: VideoContentMode.fit, mirrored: false,
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    await manager.close();
+  });
+
   it("等待远端轨就绪时断开：立即取消等待，只停止一次任务", async () => {
     const { manager, camera, stream } = makeManager(async () => false);
     const localStream = makeLocalStream(camera);

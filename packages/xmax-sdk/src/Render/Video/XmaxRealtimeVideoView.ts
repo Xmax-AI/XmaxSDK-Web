@@ -234,6 +234,7 @@ export class XmaxRealtimeVideoView {
     this.remoteVideoView.element.style.transition = "";
     this.remoteVideoView.element.style.opacity = "0";
     this.remoteVideoView.element.style.visibility = "hidden";
+    this.remoteVideoView.element.style.backgroundColor = "black";
 
     if (!remoteTrack) {
       return;
@@ -242,6 +243,8 @@ export class XmaxRealtimeVideoView {
     // SDK 远端轨道由单轨视图统一预热和渐入，不再叠加容器动画。
     if (VideoRenderRegistry.binding(remoteTrack)?.renderWarmupMs !== undefined) {
       this.remoteVideoView.element.style.visibility = "visible";
+      this.remoteVideoView.element.style.opacity = "1";
+      this.remoteVideoView.element.style.backgroundColor = "transparent";
       this.remoteVideoView.track = remoteTrack;
       return;
     }

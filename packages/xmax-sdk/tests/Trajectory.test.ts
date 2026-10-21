@@ -194,11 +194,17 @@ describe("Trajectory bindings and video views", () => {
     view.track = remote;
     expect((view.element as unknown as Element).children).toHaveLength(2);
     const overlay = (view.element as unknown as Element).children[1]! as unknown as HTMLElement;
+    render.setRemoteMedia({} as MediaStreamTrack);
     pointer(overlay, "pointerdown");
     expect(send).not.toHaveBeenCalled();
     render.setInteractionEnabled(true, format);
+    view.isVideoVisible = false;
     pointer(overlay, "pointerdown");
     expect(send).toHaveBeenCalledOnce();
+    expect(overlay.style.pointerEvents).toBe("auto");
+    expect(view.element.style.pointerEvents).toBeUndefined();
+    expect((view.element as unknown as Element).children[0]!.children[0]!.style.opacity).toBe("0");
+    expect((view.element as unknown as Element).children[0]!.style.opacity).toBe("0");
     view.isInteractionEnabled = false;
     pointer(overlay, "pointerdown");
     expect(send).toHaveBeenCalledOnce();

@@ -41,7 +41,7 @@ export class RenderWarmupController {
   ) { }
 
   /**
-   * 是否仍在等待首帧或预热完成；期间不允许对不可见画面交互。
+   * 媒体内容是否仍在等待首帧或预热完成。
    */
   get isPending(): boolean {
     return this.durationMs !== undefined && !this.completed;

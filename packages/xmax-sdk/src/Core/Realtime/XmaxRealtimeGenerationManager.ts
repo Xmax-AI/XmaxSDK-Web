@@ -171,8 +171,10 @@ export class XmaxRealtimeGenerationManager {
       options.ensureCurrent();
       this.currentContext = context;
 
-      // 生成确认后再等待远端轨道就绪，并应用远端音频配置。
-      await options.waitUntilRemoteReady();
+      // 静态触控任务确认后即可交互，让轨迹驱动首帧；录制仍等待远端媒体就绪。
+      if (options.extraParams?.static_generate !== true || options.onRemoteReady) {
+        await options.waitUntilRemoteReady();
+      }
       options.ensureCurrent();
       options.onRemoteReady?.(taskID);
       options.ensureCurrent();

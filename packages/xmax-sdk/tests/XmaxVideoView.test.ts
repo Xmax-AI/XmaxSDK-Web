@@ -12,7 +12,8 @@ import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeRefer
 
 class ElementStub extends EventTarget {
   style: Record<string, string> = {};
-  appendChild(): void {}
+  readonly children: ElementStub[] = [];
+  appendChild(child: ElementStub): void { this.children.push(child); }
   remove(): void {}
 }
 
@@ -81,6 +82,65 @@ function makeView(useFrameCallback = true, renderWarmupMs?: number) {
   return { view, video, onBindingFrame, onViewFrame, onWarmup };
 }
 
+function mediaLayer(view: XmaxVideoView): ElementStub {
+  return (view.element as unknown as ElementStub).children[0]!.children[0]!;
+}
+
+describe("video visibility", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("hides only video content while preserving playback, frame callbacks and interaction settings", () => {
+    const { view, video, onViewFrame } = makeView();
+    const root = view.element as unknown as ElementStub;
+    const videoLayer = root.children[0]!;
+    const source = video.srcObject;
+    const pauseCalls = video.pause.mock.calls.length;
+    expect(view.isVideoVisible).toBe(true);
+    expect(mediaLayer(view).children).toContain(video);
+
+    view.isVideoVisible = false;
+    expect(videoLayer.style.opacity).toBe("0");
+    expect(root.style.opacity).toBeUndefined();
+    expect(root.style.pointerEvents).toBeUndefined();
+    expect(view.isInteractionEnabled).toBe(true);
+    expect(video.srcObject).toBe(source);
+    expect(video.pause).toHaveBeenCalledTimes(pauseCalls);
+    video.nextFrame();
+    expect(onViewFrame).toHaveBeenCalledOnce();
+
+    view.isInteractionEnabled = false;
+    view.isVideoVisible = true;
+    expect(videoLayer.style.opacity).toBe("1");
+    expect(view.isInteractionEnabled).toBe(false);
+    expect(video.srcObject).toBe(source);
+    view.detach();
+  });
+
+  it("preserves hidden video across warmup, generation preparation and stream changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, video, onWarmup } = makeView(true, 1000);
+      const layer = (view.element as unknown as ElementStub).children[0]!;
+      view.isVideoVisible = false;
+      video.nextFrame();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(onWarmup).toHaveBeenCalledOnce();
+      expect(mediaLayer(view).style.opacity).toBe("1");
+      expect(layer.style.opacity).toBe("0");
+      view.prepareForGeneration();
+      view.setMediaStream({} as MediaStream);
+      video.nextFrame();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(layer.style.opacity).toBe("0");
+      view.isVideoVisible = true;
+      expect(layer.style.opacity).toBe("1");
+      view.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("remote render warmup", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
@@ -108,7 +168,7 @@ describe("remote render warmup", () => {
 
   it.each([true, false])("waits 1000 ms after the first frame then fades once (frame callback: %s)", async useFrameCallback => {
     const { view, video, onBindingFrame, onViewFrame, onWarmup } = makeView(useFrameCallback, 1000);
-    expect(view.element.style.opacity).toBe("0");
+    expect(mediaLayer(view).style.opacity).toBe("0");
     expect(video.srcObject).not.toBeNull();
     await vi.advanceTimersByTimeAsync(2000);
     expect(onWarmup).not.toHaveBeenCalled();
@@ -118,11 +178,13 @@ describe("remote render warmup", () => {
     expect(onBindingFrame).toHaveBeenCalledOnce();
     expect(onViewFrame).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(999);
-    expect(view.element.style.opacity).toBe("0");
+    expect(mediaLayer(view).style.opacity).toBe("0");
     expect(onWarmup).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(view.element.style.opacity).toBe("1");
-    expect(view.element.style.transition).toBe("opacity 300ms ease-in-out");
+    expect(mediaLayer(view).style.opacity).toBe("1");
+    expect(mediaLayer(view).style.transition).toBe("opacity 300ms ease-in-out");
+    expect(view.element.style.opacity).toBeUndefined();
+    expect(view.element.style.pointerEvents).toBeUndefined();
     expect(onWarmup).toHaveBeenCalledOnce();
     expect(video.pause).not.toHaveBeenCalled();
     video.nextFrame();
@@ -154,7 +216,7 @@ describe("remote render warmup", () => {
   it("does not delay a local binding and respects reduced motion for remote fade", async () => {
     const local = makeView();
     local.video.nextFrame();
-    expect(local.view.element.style.opacity).not.toBe("0");
+    expect(mediaLayer(local.view).style.opacity).not.toBe("0");
     expect(vi.getTimerCount()).toBe(0);
     local.view.detach();
 
@@ -162,8 +224,8 @@ describe("remote render warmup", () => {
     const remote = makeView(true, 1000);
     remote.video.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(remote.view.element.style.opacity).toBe("1");
-    expect(remote.view.element.style.transition).toBe("none");
+    expect(mediaLayer(remote.view).style.opacity).toBe("1");
+    expect(mediaLayer(remote.view).style.transition).toBe("none");
     remote.view.detach();
   });
 
@@ -193,10 +255,13 @@ describe("remote render warmup", () => {
     });
     const view = new XmaxRealtimeVideoView({ remoteTrack });
     expect(target!.element.style.visibility).toBe("visible");
-    expect(target!.element.style.opacity).toBe("0");
+    expect(target!.element.style.opacity).toBe("1");
+    expect(target!.element.style.backgroundColor).toBe("transparent");
+    expect(mediaLayer(target!).style.opacity).toBe("0");
     videos[1]!.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
     expect(target!.element.style.opacity).toBe("1");
+    expect(mediaLayer(target!).style.opacity).toBe("1");
     expect(onWarmup).toHaveBeenCalledOnce();
     expect(animate).not.toHaveBeenCalled();
     view.remoteTrack = undefined;
@@ -251,7 +316,11 @@ describe("video render statistics", () => {
     let tick: FrameRequestCallback | undefined;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { tick = callback; return 1; });
     vi.stubGlobal("cancelAnimationFrame", () => { tick = undefined; });
+    view.isVideoVisible = false;
     view.setFrameInterpolation({ size: { width: 320, height: 180 }, onFailure: vi.fn() });
+    const layer = (view.element as unknown as ElementStub).children[0]!;
+    expect(mediaLayer(view).children).toHaveLength(2);
+    expect(mediaLayer(view).children[0]).toBe(video);
     video.nextFrame(0, 1);
     await vi.advanceTimersByTimeAsync(0);
     video.nextFrame(0.04, 2);
@@ -264,6 +333,9 @@ describe("video render statistics", () => {
     tick?.(performance.now());
     await vi.advanceTimersByTimeAsync(920);
     expect(listener).toHaveBeenLastCalledWith({ source: "canvas", frameRate: 3, originalFrameRate: 2, interpolatedFrameRate: 1 });
+    expect(layer.style.opacity).toBe("0");
+    view.isVideoVisible = true;
+    expect(layer.style.opacity).toBe("1");
 
     view.setFrameInterpolation(undefined);
     video.nextFrame(0.12, 4);
