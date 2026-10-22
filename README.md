@@ -344,10 +344,10 @@ and encoding settings are retained. The server adapts the media to a separate mo
 canvas using `padding: "contain"`, while the requested output follows the media's
 aspect ratio and downlink quality tier.
 
-Camera, local-image, and local-video gestures use normalized coordinates in `[0, 1]`
-relative to the resolved media, independent of encoding quality changes.
-Network video and external tracks retain their existing sizing and pixel-coordinate
-behavior.
+Camera, local-image, local-video, and external-track gestures use normalized
+coordinates in `[0, 1]` relative to their media, independent of encoding quality changes.
+External tracks retain their existing sizing behavior. Network video retains its
+existing sizing and pixel-coordinate behavior.
 
 <br>
 
@@ -441,6 +441,11 @@ Use `trajectoryRenderer` to supply a `TrajectoryEffectRendering` implementation 
 custom visuals, or leave it undefined to use the default glowing trail. A renderer
 only controls visuals, not sampling or signaling; use a separate instance per view
 and release its animation resources in `reset()`.
+
+`DefaultTrajectoryEffectRenderer` is also exported for shared interaction overlays
+that need the exact SDK visuals. Mount its `element`, feed viewport CSS-pixel
+`TrajectoryPoint` values through `renderBegan` / `renderMoved` / `renderEnded`,
+and call `reset()` before removing it. This visual renderer does not send tracks.
 
 The generated response to dragging depends on the model and generation prompt.
 

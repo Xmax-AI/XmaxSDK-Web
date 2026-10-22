@@ -137,7 +137,7 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 摄像头、本地图片和本地视频使用固定媒体尺寸及归一化交互坐标。
+   * 摄像头、本地图片和本地视频使用固定媒体尺寸。
    */
   get usesResolvedMediaSize(): boolean {
     return this.source === "camera" || this.usesContainPadding;
@@ -349,13 +349,15 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 使用固定媒体基准启用交互，不读取调档后的编码规格或生成画布。
+   * 使用固定媒体基准启用交互，外部视频轨也发送归一化坐标。
+   * 不读取调档后的编码规格或生成画布；网络视频保留像素坐标协议。
    */
   startInteraction(
     taskID: string,
     format: RealtimeVideoFormat
   ): void {
-    this.interaction.startInteraction(taskID, format, this.usesResolvedMediaSize ? "normalized" : "pixels");
+    const normalized = this.source === "externalVideo" || this.usesResolvedMediaSize;
+    this.interaction.startInteraction(taskID, format, normalized ? "normalized" : "pixels");
   }
 
   /**

@@ -121,5 +121,6 @@ export { StoredFile } from "./Service/Storage/StoredFile";
 export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
 export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
+export { DefaultTrajectoryEffectRenderer } from "./Render/Trajectory/DefaultTrajectoryEffectRenderer";
 export type { TrajectoryEffectRendering } from "./Render/Trajectory/TrajectoryEffectRendering";
 export type { TrajectoryID, TrajectoryPoint } from "./Render/Trajectory/TrajectoryPoint";

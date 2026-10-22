@@ -1222,11 +1222,11 @@ describe("XmaxRealtimeManager external video", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   const videoFormat = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
 
-  function setup(model = "test-trtc") {
+  function setup(model = "test-trtc", format = videoFormat) {
     const s = makeManager(undefined, false, model);
     const clone = Object.assign(new EventTarget(), { kind: "video", readyState: "live", stop: vi.fn() });
     const source = { kind: "video", readyState: "live", clone: vi.fn(() => clone), stop: vi.fn() };
-    const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat };
+    const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat: format };
     return { ...s, source, clone, options };
   }
 
@@ -1273,6 +1273,59 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.rtc.destroy).toHaveBeenCalledOnce();
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
     await expect(s.manager.connect(local)).rejects.toThrow("must be created and started");
+  });
+
+  it.each([
+    ["test-trtc", 1920, 1080], [RealtimeModel.x2_1, 1920, 1080], ["test-vertc", 1920, 1080],
+    ["test-trtc", 1080, 1920], [RealtimeModel.x2_1, 1080, 1920], ["test-vertc", 1080, 1920],
+  ] as const)("keeps normalized external-camera tracks for %s at %s × %s across quality changes and restarts", async (model, width, height) => {
+    const s = setup(model, new RealtimeVideoFormat({ width, height, fps: 30 }));
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "external-interaction", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    const send = vi.spyOn(s.stream, "sendTracks");
+    const local = await s.manager.createExternalVideoStream(s.options);
+    try {
+      for (const restart of [false, true]) {
+        const index = s.stream.beginCalls.length;
+        const starting = s.manager.startGeneration({ localStream: local, context: testContext, restart });
+        await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(index + 1));
+        s.stream.confirmationDeferreds[index]!.resolve();
+        const remote = await starting;
+        completeRenderWarmup(remote);
+        const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
+        for (const mirrored of [false, true]) {
+          binding.submit({
+            points: [{ x: width / 8, y: height * 3 / 8 }],
+            viewportSize: { width: width / 2, height: height / 2 },
+            contentMode: VideoContentMode.fill, mirrored,
+          });
+          expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: mirrored ? 0.75 : 0.25, y: 0.75 }]);
+          await Promise.resolve();
+        }
+        if (!restart && provider !== RtcProvider.vertc) {
+          await s.manager.adjustUplinkQuality("downgrade");
+          await s.manager.adjustDownlinkQuality("downgrade");
+          binding.submit({
+            points: [{ x: width / 8, y: height * 3 / 8 }],
+            viewportSize: { width: width / 2, height: height / 2 },
+            contentMode: VideoContentMode.fill, mirrored: false,
+          });
+          expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: 0.25, y: 0.75 }]);
+          await Promise.resolve();
+        }
+        binding.submit({
+          points: [{ x: -10, y: height }], viewportSize: { width: width / 2, height: height / 2 },
+          contentMode: VideoContentMode.fill, mirrored: false,
+        });
+        expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: 0, y: 1 }]);
+        await Promise.resolve();
+      }
+    } finally { await s.manager.close(); }
   });
 
   it("rejects conflicting sources without touching the current input", async () => {
