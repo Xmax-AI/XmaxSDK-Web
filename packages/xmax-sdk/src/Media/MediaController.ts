@@ -15,7 +15,6 @@ import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoForma
 import { CameraController } from "./Camera/CameraController";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
 import { LocalVideoController } from "./Video/LocalVideoController";
-import { NetworkVideoController } from "./Video/NetworkVideoController";
 import { ExternalVideoController } from "./Video/ExternalVideoController";
 import { LocalImageController } from "./Image/LocalImageController";
 import { InteractionController } from "./Interaction/InteractionController";
@@ -42,11 +41,6 @@ export class MediaController implements MediaControlling {
    * 本地静止图片的视频输出组件。
    */
   private readonly image: LocalImageController;
-
-  /**
-   * 服务端读取的网络视频源控制器。
-   */
-  private readonly network = new NetworkVideoController();
 
   /**
    * 外部视频轨的所有权和结束事件管理组件。
@@ -95,15 +89,8 @@ export class MediaController implements MediaControlling {
   /**
    * 当前可发布的轨道。
    */
-  get uplinkTrack() {
-    return this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
-  }
-
-  /**
-   * 当前本地源轨道，包含无上行的网络视频。
-   */
   get currentTrack() {
-    return this.uplinkTrack ?? this.network.currentTrack;
+    return this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
   }
 
   /**
@@ -118,9 +105,6 @@ export class MediaController implements MediaControlling {
     }
     if (this.image.isActive) {
       return "localImage";
-    }
-    if (this.network.currentTrack) {
-      return "networkVideo";
     }
     if (this.camera.currentTrack) {
       return "camera";
@@ -155,20 +139,6 @@ export class MediaController implements MediaControlling {
    */
   get isFrameValidationEnabled() {
     return this.source === "camera" && this.camera.isFrameValidationEnabled;
-  }
-
-  /**
-   * 网络视频的服务端读取参数。
-   */
-  get referenceVideo() {
-    return this.network.reference;
-  }
-
-  /**
-   * 网络视频完成回调。
-   */
-  get onNetworkVideoFinish() {
-    return this.network.onFinish;
   }
 
   /**
@@ -211,16 +181,6 @@ export class MediaController implements MediaControlling {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera preview is not started");
     }
     return this.camera.updateVideoFormat(videoFormat);
-  }
-
-  /**
-   * 同步准备网络视频源；地址校验失败不初始化 RTC。
-   */
-  createNetworkVideoStream(
-    options: Parameters<MediaControlling["createNetworkVideoStream"]>[0]
-  ) {
-    this.ensureNoLocalSource();
-    return this.network.create(options, this.dependencies.mediaService);
   }
 
   /**
@@ -329,7 +289,6 @@ export class MediaController implements MediaControlling {
   async stopLocalStream(): Promise<void> {
     this.stopInteraction();
     const external = this.source !== undefined && this.source !== "camera";
-    this.network.stop();
 
     try {
       if (external) {
@@ -350,14 +309,13 @@ export class MediaController implements MediaControlling {
 
   /**
    * 使用固定媒体基准启用交互，外部视频轨也发送归一化坐标。
-   * 不读取调档后的编码规格或生成画布；网络视频保留像素坐标协议。
+   * 不读取调档后的编码规格或生成画布。
    */
   startInteraction(
     taskID: string,
     format: RealtimeVideoFormat
   ): void {
-    const normalized = this.source === "externalVideo" || this.usesResolvedMediaSize;
-    this.interaction.startInteraction(taskID, format, normalized ? "normalized" : "pixels");
+    this.interaction.startInteraction(taskID, format);
   }
 
   /**

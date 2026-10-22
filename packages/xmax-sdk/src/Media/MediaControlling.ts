@@ -10,14 +10,12 @@
 
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
 import type { LocalVideoController } from "./Video/LocalVideoController";
-import type { NetworkVideoController } from "./Video/NetworkVideoController";
 import type { ExternalVideoController } from "./Video/ExternalVideoController";
 import type { LocalImageController } from "./Image/LocalImageController";
 import type { InteractionControlling } from "./Interaction/InteractionControlling";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeMediaStream } from "../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
-import type { RealtimeReferenceVideo } from "../Service/Realtime/RealtimeReferenceVideo";
 
 /**
  * 媒体层统一入口，不向 Core 暴露内部媒体控制器。
@@ -25,19 +23,14 @@ import type { RealtimeReferenceVideo } from "../Service/Realtime/RealtimeReferen
 export interface MediaControlling extends InteractionControlling {
 
   /**
-   * 活动源及可发布轨道；网络视频没有本地上行轨。
+   * 当前活动媒体源的可发布视频轨道。
    */
   readonly currentTrack?: RealtimeVideoTrack;
 
   /**
-   * 实际发布到 RTC 的本地视频轨；网络视频没有上行轨。
-   */
-  readonly uplinkTrack?: RealtimeVideoTrack;
-
-  /**
    * 当前活动媒体源类型。
    */
-  readonly source?: "camera" | "localVideo" | "localImage" | "networkVideo" | "externalVideo";
+  readonly source?: "camera" | "localVideo" | "localImage" | "externalVideo";
 
   /**
    * 当前媒体源是否提供可发布的音频轨。
@@ -48,16 +41,6 @@ export interface MediaControlling extends InteractionControlling {
    * 是否在摄像头发布前等待亮度合格的帧。
    */
   readonly isFrameValidationEnabled: boolean;
-
-  /**
-   * 服务端读取的网络视频地址及采样配置。
-   */
-  readonly referenceVideo?: RealtimeReferenceVideo;
-
-  /**
-   * 网络视频生成完成时的业务通知。
-   */
-  readonly onNetworkVideoFinish?: () => void;
 
   /**
    * 本地文件媒体由服务端按包含模式适配生成画布。
@@ -94,13 +77,6 @@ export interface MediaControlling extends InteractionControlling {
   updateCameraFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
-
-  /**
-   * 创建服务端读取的网络视频源，RTC 初始化由 prepareSource 完成。
-   */
-  createNetworkVideoStream(
-    options: Parameters<NetworkVideoController["create"]>[0]
-  ): RealtimeMediaStream;
 
   /**
    * 创建文件视频源并解锁播放，RTC 初始化由 prepareSource 完成。

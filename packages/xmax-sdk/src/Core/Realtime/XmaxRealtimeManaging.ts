@@ -21,7 +21,6 @@ import type {
 } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
-import type { RealtimeVideoSampleMethod } from "../../Service/Realtime/RealtimeReferenceVideo";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
 import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
@@ -219,25 +218,6 @@ export interface XmaxRealtimeManaging {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 创建服务端直接读取的 HTTP/HTTPS 网络视频源，不采集或发布本地音视频。
-   * 本地预览静音播放一次，独立于服务端进度；创建源不会开始生成。
-   * 地址必须可由服务端直接访问，不转发浏览器 Cookie 或自定义鉴权头。
-   * @param options.url 服务端可直接访问的 HTTP/HTTPS 视频地址。
-   * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
-   * @param options.sampleMethod 服务端采样方式，默认 time。
-   * @param options.onFinish 当前任务收到服务端完成消息且生成就绪后调用一次，不代表尾帧已播放完。
-   * @throws 地址、格式无效或已有活动媒体源时抛错；close 释放源，disconnect 保留预览。
-   */
-  createNetworkVideoStream(
-    options: {
-      url: string;
-      videoFormat: RealtimeVideoFormat;
-      sampleMethod?: RealtimeVideoSampleMethod;
-      onFinish?: () => void;
-    }
-  ): Promise<RealtimeMediaStream>;
-
-  /**
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
    * Canvas 保留完整内容并按媒体尺寸规则缩放，文件音频独立上行，本地预览始终静音。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
@@ -330,11 +310,11 @@ export interface XmaxRealtimeManaging {
   /**
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
-   * 创建实时会话、加入 RTC 房间并启动会话心跳；摄像头源发布本地流，网络视频源仅接收。
+   * 创建实时会话、加入 RTC 房间、发布本地媒体并启动会话心跳。
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地图片、本地视频文件或网络视频源。
+   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地图片或本地视频文件。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
@@ -361,7 +341,7 @@ export interface XmaxRealtimeManaging {
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    * 返回后请将远端流挂载到 SDK 视频视图；首帧及渲染预热完成后状态才进入 generating。
    *
-   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
+   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨或本地文件。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
    * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。

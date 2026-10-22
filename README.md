@@ -489,7 +489,7 @@ the 1000 ms render warmup are complete, then becomes
 dismiss your loading UI. Without an SDK video view, the state stays `starting`.
 
 At generation start, the SDK sends `params.mirror: true` for the front camera
-and `false` for the rear camera, local files, and network videos. The backend
+and `false` for the rear camera and local files. The backend
 mirrors the input; generated results are not automatically mirrored in the
 browser. The front-camera local preview remains mirrored independently.
 This flag is sent only with `start`: switching cameras during an active generation

@@ -8,17 +8,10 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { RealtimeReferenceVideo } from "./RealtimeReferenceVideo";
-
 /**
  * 实时生成指令和参考资源。
  */
 export interface RealtimeContextInit {
-
-  /**
-   * 服务端直接读取的网络视频。
-   */
-  referenceVideo?: RealtimeReferenceVideo;
 
   /**
    * 实时生成使用的文本条件。
@@ -37,11 +30,6 @@ export interface RealtimeContextInit {
 export class RealtimeContext {
 
   /**
-   * 服务端直接读取的网络视频。
-   */
-  readonly referenceVideo?: RealtimeReferenceVideo;
-
-  /**
    * 实时生成使用的文本条件。
    */
   readonly prompt: string;
@@ -57,7 +45,6 @@ export class RealtimeContext {
   constructor(
     init: RealtimeContextInit
   ) {
-    this.referenceVideo = init.referenceVideo && Object.freeze({ ...init.referenceVideo });
     this.prompt = init.prompt.trim();
     const normalizedReferencePath = init.referencePath?.trim();
     this.referencePath = normalizedReferencePath || undefined;

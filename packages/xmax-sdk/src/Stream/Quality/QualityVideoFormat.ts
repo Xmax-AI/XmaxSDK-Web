@@ -35,7 +35,7 @@ export function qualityVideoMaximumSize(
 }
 
 /**
- * 计算上行偶数对齐尺寸；优先保持精确比例，网络视频与外部轨道可按宽高分别取整。
+ * 计算上行偶数对齐尺寸；优先保持精确比例，外部轨道可按宽高分别取整。
  */
 export function qualityVideoSize(
   baseline: RealtimeVideoFormat,

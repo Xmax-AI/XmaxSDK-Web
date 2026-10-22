@@ -215,7 +215,7 @@ export class RoomController implements RoomControlling {
    * @param options.taskID 当前生成任务标识。
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
    * @param options.mirror 是否由后端镜像输入画面，默认 false。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.extraParams 合并到本次 start 的 params，不缓存。

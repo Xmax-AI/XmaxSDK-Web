@@ -26,16 +26,9 @@ export interface VideoRenderTarget {
   prepareForGeneration?: () => void;
 
   /**
-   * 网络视频预览使用的播放器；自定义目标可以不提供。
+   * 视图内部播放器；自定义目标可以不提供。
    */
   readonly videoElement?: HTMLVideoElement;
-
-  /**
-   * 设置静音、单次播放的网络视频；传 null 释放地址。
-   */
-  setVideoURL?: (
-    url: string | null
-  ) => void;
 
   /**
    * 画面是否镜像显示（仅影响显示，不影响发布流）。

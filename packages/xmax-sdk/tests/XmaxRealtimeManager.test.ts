@@ -6,7 +6,6 @@ import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
 import { LocalImageController } from "../src/Media/Image/LocalImageController";
-import { RealtimeVideoSampleMethod } from "../src/Service/Realtime/RealtimeReferenceVideo";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
@@ -140,7 +139,6 @@ class CameraControllingStub implements CameraControlling {
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
   getRemoteRecordingTracks = vi.fn(() => undefined);
-  activateNetworkVideoCompletion = vi.fn((_onFinish?: () => void): void => {});
   async updateCredentials(): Promise<void> {}
   networkStatisticsListener?: NetworkStatisticsListener;
 
@@ -163,7 +161,7 @@ class StreamControllingStub implements StreamControlling {
   hasGenerationTask = false;
   remoteAudioVolume = 1;
 
-  connectCalls: { connection: RealtimeSessionConnection; includeLocalAudio: boolean; publishLocalMedia: boolean }[] = [];
+  connectCalls: { connection: RealtimeSessionConnection; includeLocalAudio: boolean }[] = [];
   disconnectCalls = 0;
   beginCalls: StreamGenerationOptions[] = [];
   updateCalls: StreamGenerationOptions[] = [];
@@ -196,19 +194,16 @@ class StreamControllingStub implements StreamControlling {
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
-    publishLocalMedia = true,
     measureRtcJoin?: () => () => void,
   ): Promise<void> {
     const completeRtcJoin = measureRtcJoin?.();
     if (this.failConnect) {
       throw this.failConnect;
     }
-    this.connectCalls.push({ connection, includeLocalAudio, publishLocalMedia });
+    this.connectCalls.push({ connection, includeLocalAudio });
     ensureActive();
     completeRtcJoin?.();
-    if (publishLocalMedia) {
-      await beforePublish?.();
-    }
+    await beforePublish?.();
     ensureActive();
   }
 
@@ -1144,30 +1139,6 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.updateDownlinkVideoResolution).toHaveBeenCalledTimes(2);
   });
 
-  it("adapts receive-only network video even without an uplink track", async () => {
-    const s = setup();
-    s.camera.currentTrack = undefined;
-    const localStream = await s.manager.createNetworkVideoStream({ url: "https://example.com/video.mp4",
-      videoFormat: new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 }) });
-    const starting = s.manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
-    s.stream.confirmationDeferreds[0]!.resolve();
-    const remote = await starting;
-    completeRenderWarmup(remote);
-    const send = vi.spyOn(s.stream, "sendTracks");
-    TrajectoryRegistry.binding(remote.videoTrack!)!.submit({
-      points: [{ x: 50, y: 50 }], viewportSize: { width: 100, height: 100 },
-      contentMode: VideoContentMode.fill, mirrored: false,
-    });
-    expect(send).toHaveBeenLastCalledWith(s.manager.currentState.taskID, [{ x: 540, y: 960 }]);
-    expect(s.stream.beginCalls[0]!.paddingContain).toBe(false);
-    for (let i = 0; i < 3; i++) await s.sample(0, 5);
-    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 864, height: 1536 });
-    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID, { width: 702, height: 1248 }, expect.any(Function));
-    expect(s.stream.encoderConfigFormats).toHaveLength(0);
-    await s.manager.close();
-  });
-
   it("does not count downlink samples while generation is awaiting confirmation", async () => {
     const s = setup();
     const starting = s.manager.startGeneration({ localStream: s.localStream, context: testContext });
@@ -1244,7 +1215,7 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
     expect(s.camera.currentTrack).toBeUndefined();
     await s.manager.connect(local);
-    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false });
     expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
     expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
       ? new RealtimeVideoFormat({ ...videoFormat, width: 864, height: 1536, fps: 24 })
@@ -1266,7 +1237,7 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.clone.stop).not.toHaveBeenCalled();
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
     await s.manager.connect(local);
-    expect(s.stream.connectCalls[1]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+    expect(s.stream.connectCalls[1]).toMatchObject({ includeLocalAudio: false });
     await s.manager.close();
     expect(s.clone.stop).toHaveBeenCalledOnce();
     expect(s.source.stop).not.toHaveBeenCalled();
@@ -1487,7 +1458,7 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
     expect(s.start).not.toHaveBeenCalled();
     await s.manager.connect(local);
-    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio, publishLocalMedia: true });
+    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: includeAudio });
     expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
       ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1536, height: 864, fps: 24 })
       : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...options.videoFormat, fps: 24 }) : options.videoFormat]);
@@ -1596,7 +1567,7 @@ describe("XmaxRealtimeManager local image", () => {
       expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: s.video, audioTrack: undefined });
       expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
       await s.manager.connect(local);
-      expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: true });
+      expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false });
       expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
 
       const generating = s.manager.startGeneration({ localStream: local, context: testContext });
@@ -1655,107 +1626,6 @@ describe("XmaxRealtimeManager local image", () => {
     await closing;
     expect(s.rtc.setExternalMediaTracks).not.toHaveBeenCalled();
     expect(s.stop).toHaveBeenCalledOnce();
-  });
-});
-
-describe("XmaxRealtimeManager network video", () => {
-  const options = {
-    url: "https://example.com/video.mp4",
-    videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
-  };
-
-  it("joins receive-only, sends the source, retains preview on disconnect and releases it on close", async () => {
-    const { manager, camera, stream, rtc } = makeManager();
-    const timings: RealtimeLaunchTiming[] = [];
-    await manager.setLaunchTimingListener(timing => { timings.push(timing); });
-    const onFinish = vi.fn();
-    const localStream = await manager.createNetworkVideoStream({ ...options, onFinish });
-    expect(rtc.initialize).toHaveBeenCalledOnce();
-    expect(camera.currentTrack).toBeUndefined();
-    expect(localStream.videoTrack?.mediaStreamTrack).toBeUndefined();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
-
-    const starting = manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-    expect(stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false, publishLocalMedia: false });
-    expect(stream.encoderConfigFormats).toEqual([]);
-    expect(camera.waitForValidCameraFrame).not.toHaveBeenCalled();
-    expect(stream.beginCalls[0]!.context.referenceVideo).toEqual({ path: options.url, sampleMethod: RealtimeVideoSampleMethod.time });
-    expect(stream.beginCalls[0]!.mirror).toBe(false);
-    stream.confirmationDeferreds[0]!.resolve();
-    await starting;
-    expect(stream.activateAudioCalls).toBe(1);
-    const callback = stream.activateNetworkVideoCompletion.mock.calls[0]![0]!;
-    callback();
-    expect(onFinish).toHaveBeenCalledOnce();
-    expect(timings.at(-1)?.cameraMs).toBeUndefined();
-    expect(timings.at(-1)?.publishMs).toBeUndefined();
-    expect(timings.at(-1)?.sessionMs).toBeTypeOf("number");
-    expect(timings.at(-1)?.rtcJoinMs).toBeTypeOf("number");
-
-    await manager.stopLocalCameraStream();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
-    await manager.disconnect();
-    callback();
-    expect(onFinish).toHaveBeenCalledOnce();
-    expect(VideoRenderRegistry.binding(localStream.videoTrack!)).toBeDefined();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
-    await manager.connect(localStream);
-    expect(stream.connectCalls[1]!.publishLocalMedia).toBe(false);
-    await manager.close();
-    expect(VideoRenderRegistry.binding(localStream.videoTrack!)).toBeUndefined();
-    expect(rtc.destroy).toHaveBeenCalledOnce();
-    await expect(manager.connect(localStream)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-  });
-
-  it("rejects overlapping sources and uplink changes without disturbing the active source", async () => {
-    const { manager, camera } = makeManager();
-    const local = await manager.createNetworkVideoStream(options);
-    await expect(manager.createNetworkVideoStream(options)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-    await expect(manager.createLocalCameraStream({ videoFormat: options.videoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-    await expect(manager.updateUplinkVideoFormat(options.videoFormat)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-    expect(VideoRenderRegistry.binding(local.videoTrack!)).toBeDefined();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
-    await manager.close();
-    makeLocalStream(camera);
-    await expect(manager.createNetworkVideoStream(options)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
-    await manager.close();
-  });
-
-  it("cleans up failed initialization and allows a retry", async () => {
-    const { manager, rtc } = makeManager();
-    rtc.initialize.mockRejectedValueOnce(new Error("init failed"));
-    await expect(manager.createNetworkVideoStream(options)).rejects.toThrow("init failed");
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
-    await manager.createNetworkVideoStream(options);
-    await manager.close();
-  });
-
-  it("preserves the source after a failed connection", async () => {
-    const { manager, session } = makeManager();
-    const local = await manager.createNetworkVideoStream(options);
-    session.failCreate = new XmaxError(XmaxErrorCode.sessionError, "failed");
-    await expect(manager.connect(local)).rejects.toThrow("failed");
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
-    expect(VideoRenderRegistry.binding(local.videoTrack!)).toBeDefined();
-    session.failCreate = undefined;
-    await manager.connect(local);
-    await manager.close();
-  });
-
-  it("cancels creation on close and releases an engine that finishes initializing late", async () => {
-    const { manager, rtc } = makeManager();
-    const initialization = makeDeferred<void>();
-    rtc.initialize.mockReturnValueOnce(initialization.promise);
-    const creation = manager.createNetworkVideoStream(options);
-    const rejected = expect(creation).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
-    const closing = manager.close();
-    initialization.resolve();
-    await Promise.all([rejected, closing]);
-    expect(rtc.destroy).toHaveBeenCalledOnce();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
-    await manager.createNetworkVideoStream(options);
-    await manager.close();
   });
 });
 
@@ -2411,7 +2281,7 @@ describe("XmaxRealtimeManager launch timing", () => {
       return session.session;
     });
     vi.spyOn(stream, "updateUplinkVideoFormat").mockImplementation(async () => { now += 30; });
-    vi.spyOn(stream, "connect").mockImplementation(async (_connection, _audio, ensureActive, beforePublish, _publish, measureRtcJoin) => {
+    vi.spyOn(stream, "connect").mockImplementation(async (_connection, _audio, ensureActive, beforePublish, measureRtcJoin) => {
       const completeRtcJoin = measureRtcJoin?.();
       now += 350;
       ensureActive();
@@ -2500,7 +2370,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     } else if (stage === "encoding") {
       vi.spyOn(stream, "updateUplinkVideoFormat").mockRejectedValue(new Error("stage failed"));
     } else {
-      vi.spyOn(stream, "connect").mockImplementation(async (_connection, _audio, ensureActive, beforePublish, _publish, measureRtcJoin) => {
+      vi.spyOn(stream, "connect").mockImplementation(async (_connection, _audio, ensureActive, beforePublish, measureRtcJoin) => {
         const completeRtcJoin = measureRtcJoin?.();
         ensureActive();
         completeRtcJoin?.();

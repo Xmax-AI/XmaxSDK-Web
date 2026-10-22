@@ -70,7 +70,7 @@ export interface StreamGenerationOptions {
   restart?: boolean;
 
   /**
-   * 当前连接的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。
+   * 当前连接的回传尺寸，缺省时不发送。
    */
   targetSize?: RoomEventTargetSize;
 
@@ -161,7 +161,6 @@ export interface StreamControlling {
    * @param includeLocalAudio 是否随本地视频一起发布本地音频。
    * @param ensureActive 在异步边界校验当前连接操作仍然有效的回调。
    * @param beforePublish 发布前的可选媒体就绪检查，不阻塞进房。
-   * @param publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
    * @param measureRtcJoin 仅测量 RTC 适配器进房调用，不含房间消息配置与心跳启动。
    * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
    */
@@ -170,7 +169,6 @@ export interface StreamControlling {
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
-    publishLocalMedia?: boolean,
     measureRtcJoin?: () => () => void,
   ): Promise<void>;
 
@@ -194,7 +192,7 @@ export interface StreamControlling {
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.context 本次生成条件。
    * @param options.restart 是否保留连接并替换当前生成任务，默认 false；不预先发送 stop。
-   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
    * @param options.mirror 是否由后端镜像输入画面，默认 false。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.onStartSent start 发送成功后的回调，不等待生成确认。
@@ -213,13 +211,6 @@ export interface StreamControlling {
    * @throws 当前生成流尚未确认，或 RTC 音量和订阅配置失败时抛出错误。
    */
   activateRemoteAudio(): Promise<void>;
-
-  /**
-   * 生成就绪后启用网络视频完成回调；提前收到的完成消息会延后交付一次。
-   */
-  activateNetworkVideoCompletion(
-    onFinish?: () => void
-  ): void;
 
   /**
    * 发送生成条件变更信令。

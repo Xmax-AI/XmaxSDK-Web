@@ -43,7 +43,7 @@ export class InteractionCoordinateMapper {
 
   /**
    * 忽略黑边和无效点，撤销显示镜像后返回归一化坐标。
-   * 网络视频使用 pixels 模式发送媒体像素坐标。
+   * 可选 pixels 模式返回媒体像素坐标。
    */
   static map(
     point: {

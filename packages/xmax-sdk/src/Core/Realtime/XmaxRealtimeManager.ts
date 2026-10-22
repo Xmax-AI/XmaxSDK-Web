@@ -396,7 +396,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           await this.applyUplinkQuality(change.to, token, signal);
         });
       }, undefined, {}, level => {
-        const track = this.currentUplinkTrack;
+        const track = this.currentLocalTrack;
         const state = track && this.qualityStates.get(track);
         return !!state && supportsQualityEncoding(this.uplinkQualityFormat(state.baseline, level));
       });
@@ -461,7 +461,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 当前已连接会话成功应用的上行档位。
    */
   get uplinkQualityLevel(): RealtimeQualityLevel | undefined {
-    const track = this.currentUplinkTrack;
+    const track = this.currentLocalTrack;
     const state = this.currentState.connectionState;
     return (state === RealtimeConnectionState.connected || state === RealtimeConnectionState.starting || state === RealtimeConnectionState.generating) && track
       ? this.qualityStates.get(track)?.level as RealtimeQualityLevel | undefined
@@ -570,11 +570,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     token: RealtimeOperationToken,
     signal?: AbortSignal
   ): Promise<void> {
-    const track = this.currentUplinkTrack;
+    const track = this.currentLocalTrack;
     const state = track && this.qualityStates.get(track);
     const ensureActive = () => {
       token.ensureCurrent();
-      if (signal?.aborted || !track || !state || track !== this.currentUplinkTrack ||
+      if (signal?.aborted || !track || !state || track !== this.currentLocalTrack ||
         state !== this.qualityStates.get(track) || this.currentState.connectionState !== RealtimeConnectionState.generating) {
         throw new XmaxError(XmaxErrorCode.cancelled, "Adaptive video format update was cancelled");
       }
@@ -620,7 +620,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     absolute = false
   ): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
-      const track = this.currentUplinkTrack;
+      const track = this.currentLocalTrack;
       const state = downlink ? this.downlinkQualityState : track && this.qualityStates.get(track);
       if (!state || this.currentState.connectionState !== RealtimeConnectionState.generating) {
         throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Quality adjustment requires an active generation");
@@ -1009,31 +1009,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 创建网络视频源并初始化接收端 RTC；预览是否加载成功不影响服务端读取视频。
-   * @param options.url 服务端可直接访问的 HTTP/HTTPS 视频地址。
-   * @param options.videoFormat 模型输入及生成画面规格，不是上行编码参数。
-   * @param options.sampleMethod 服务端采样方式，默认 time。
-   * @param options.onFinish 服务端完成当前任务后的回调，不代表尾帧已播放完。
-   */
-  async createNetworkVideoStream(
-    options: Parameters<XmaxRealtimeManaging["createNetworkVideoStream"]>[0]
-  ): Promise<RealtimeMediaStream> {
-    return this.coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
-      this.mediaController.ensureNoLocalSource();
-      const stream = this.mediaController.createNetworkVideoStream(options);
-      token.setFailureScope(RealtimeTerminationScope.all);
-      this.launchTimer.start();
-      this.clearVideoStatistics();
-
-      await this.mediaController.prepareSource(() => token.ensureCurrent());
-      token.ensureCurrent();
-      this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
-      await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
-      return stream;
-    });
-  }
-
-  /**
    * 创建文件音视频源并准备外部轨道；准备失败时统一释放本次媒体和 RTC 资源。
    * @param options.file 包含可解码视频的本地 File 或 Blob。
    * @param options.videoFormat 期望的视频规格；尺寸按宽高比匹配模型档位。
@@ -1112,13 +1087,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 当前可发布的本地视频轨，不包含服务端直接读取的网络视频。
-   */
-  private get currentUplinkTrack(): RealtimeVideoTrack | undefined {
-    return this.mediaController.uplinkTrack;
-  }
-
-  /**
    * 当前 Manager 拥有的媒体源轨道。
    */
   private get currentLocalTrack(): RealtimeVideoTrack | undefined {
@@ -1143,7 +1111,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     videoFormat: RealtimeVideoFormat
   ): Promise<void> {
     await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
-      const track = this.currentUplinkTrack;
+      const track = this.currentLocalTrack;
       const previousFormat = track?.videoFormat;
       if (!track || !previousFormat) {
         throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local camera, external or file video stream is not started");
@@ -1186,7 +1154,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     fps: number,
     token: RealtimeOperationToken
   ): Promise<void> {
-    const track = this.currentUplinkTrack;
+    const track = this.currentLocalTrack;
     const previous = track?.videoFormat;
     const state = this.currentState.connectionState;
     if (!track || !previous ||
@@ -1225,7 +1193,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       downlink.resetSamples();
       return;
     }
-    const track = this.currentUplinkTrack;
+    const track = this.currentLocalTrack;
     if (!track) {
       controller.stop();
     } else if (!controller.snapshot.active) {
@@ -1308,11 +1276,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 使用当前 Manager 创建的本地流建立实时连接。
    *
-   * 创建实时会话、加入 RTC 房间并启动会话心跳；摄像头源发布本地流，网络视频源仅接收。
+   * 创建实时会话、加入 RTC 房间、发布本地媒体并启动会话心跳。
    * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
    * 返回的远端媒体流在生成开始后承载远端生成画面。
    *
-   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
+   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨或本地文件。
    * @returns 远端生成结果占位的媒体流。
    * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
    * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
@@ -1348,7 +1316,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
    * 返回后请将远端流挂载到 SDK 视频视图；首帧及渲染预热完成后状态才进入 generating。
    *
-   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨、本地文件或网络视频源。
+   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨或本地文件。
    * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
    * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
@@ -1406,12 +1374,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           token.ensureCurrent();
           return this.connectionManager.makeRemoteStream();
         }
-        const supplied = this.generationManager.validateContext(options.context);
-        const referenceVideo = this.mediaController.referenceVideo;
-        if (!referenceVideo && supplied.referenceVideo) {
-          throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Create a network video stream before using a reference video");
-        }
-        const context = referenceVideo ? new RealtimeContext({ ...supplied, referenceVideo }) : supplied;
+        const context = this.generationManager.validateContext(options.context);
 
         // 尚未连接时先建立实时连接。
         if (currentState.connectionState !== RealtimeConnectionState.connected && !hasGeneration) {
@@ -1494,7 +1457,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 从固定媒体基准计算下行尺寸；网络视频和外部轨道保留原有偶数取整规则。
+   * 从固定媒体基准计算下行尺寸；外部轨道保留原有偶数取整规则。
    */
   private resolveTargetSize(
     videoFormat: RealtimeVideoFormat,
@@ -1512,8 +1475,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private resolveInitialUplinkQuality(
     track: RealtimeVideoTrack
   ): QualityState | undefined {
-    if (this.mediaController.source === "networkVideo")
-      return undefined;
     if (this.qualityStates.has(track))
       return undefined;
 
@@ -1594,7 +1555,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         },
         model: this.options.model,
         includeLocalAudio: this.mediaController.hasAudio,
-        publishLocalMedia: this.mediaController.source !== "networkVideo",
         ensureCurrent: () => token.ensureCurrent(),
         onPublished: () => {
           this.acceptsVideoStatistics = true;
@@ -1717,18 +1677,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     await this.completeGenerationPresentation();
     token.ensureCurrent();
     this.qualityHistory?.write("downlink", initialLevel);
-
-    const onFinish = this.mediaController.onNetworkVideoFinish;
-    if (this.mediaController.source === "networkVideo") {
-      this.streamController.activateNetworkVideoCompletion(() => {
-        if (this.currentState.taskID === taskID &&
-          (this.currentState.connectionState === RealtimeConnectionState.starting ||
-            this.currentState.connectionState === RealtimeConnectionState.generating)) {
-          void this.recordingController.stop(RealtimeRecordingFinishReason.generationEnded);
-          return onFinish?.();
-        }
-      });
-    }
 
     return this.connectionManager.makeRemoteStream();
   }

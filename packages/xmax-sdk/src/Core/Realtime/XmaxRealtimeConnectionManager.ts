@@ -110,7 +110,6 @@ export class XmaxRealtimeConnectionManager {
    * @param options.ensureCurrent 校验当前操作仍有效。
    * @param options.onPublished 本地发布完成后的回调。
    * @param options.beforePublish 发布前的可选异步检查。
-   * @param options.publishLocalMedia 是否发布本地媒体，默认 true；网络视频源传 false。
    * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
    */
   async connect(
@@ -124,7 +123,6 @@ export class XmaxRealtimeConnectionManager {
       ensureCurrent: () => void;
       onPublished: () => void;
       beforePublish?: () => Promise<void>;
-      publishLocalMedia?: boolean;
     }
   ): Promise<RealtimeMediaStream> {
     const sessionService = this.requireSessionService();
@@ -160,12 +158,9 @@ export class XmaxRealtimeConnectionManager {
         "Local video stream has no video format",
       );
     }
-    const publishLocalMedia = options.publishLocalMedia ?? true;
-    if (publishLocalMedia) {
-      await streamController.updateUplinkVideoFormat(videoFormat);
-      options.ensureCurrent();
-      options.onVideoEncoderConfigured?.();
-    }
+    await streamController.updateUplinkVideoFormat(videoFormat);
+    options.ensureCurrent();
+    options.onVideoEncoderConfigured?.();
     options.ensureCurrent();
 
     let completePublish: (() => void) | undefined;
@@ -178,7 +173,7 @@ export class XmaxRealtimeConnectionManager {
       await options.beforePublish?.();
       options.ensureCurrent();
       completePublish = this.dependencies.timing.startPublish();
-    }, publishLocalMedia, () => this.dependencies.timing.startRtcJoin());
+    }, () => this.dependencies.timing.startRtcJoin());
     options.ensureCurrent();
     completePublish?.();
     options.onPublished();

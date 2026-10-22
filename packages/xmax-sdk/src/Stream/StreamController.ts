@@ -128,15 +128,6 @@ interface StreamState {
    */
   activeRemoteStream?: RemoteStream;
 
-  /**
-   * 当前网络视频生成完成通知的调度状态。
-   */
-  networkVideoCompletion?: {
-    taskID: string;
-    finished: boolean;
-    scheduled: boolean;
-    onFinish?: () => void;
-  };
 }
 
 /**
@@ -292,7 +283,6 @@ export class StreamController implements StreamControlling {
 
     this.roomController.setListener({
       onRoomMessage: (sender, message) => {
-        this.handleNetworkVideoCompletion(sender, message);
         this.roomListener?.onRoomMessage(sender, message);
       },
     });
@@ -424,7 +414,6 @@ export class StreamController implements StreamControlling {
     includeLocalAudio: boolean,
     ensureActive: () => void,
     beforePublish?: () => Promise<void>,
-    publishLocalMedia = true,
     measureRtcJoin?: () => () => void,
   ): Promise<void> {
     this.configureRoom({ roomID: connection.roomID, botID: connection.botID });
@@ -437,11 +426,9 @@ export class StreamController implements StreamControlling {
         `└─ roomID: ${connection.roomID}, botID: ${connection.botID ?? "(未设置)"}`,
     );
 
-    if (publishLocalMedia) {
-      await beforePublish?.();
-      ensureActive();
-      await this.publishLocalStream(includeLocalAudio);
-    }
+    await beforePublish?.();
+    ensureActive();
+    await this.publishLocalStream(includeLocalAudio);
   }
 
   /**
@@ -469,7 +456,7 @@ export class StreamController implements StreamControlling {
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.context 本次生成条件。
    * @param options.restart 是否保留连接并替换当前生成任务，默认 false；不预先发送 stop。
-   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
    * @param options.mirror 是否由后端镜像输入画面，默认 false。
    * @param options.faceRestoration 是否回贴原始人脸，默认 false。
    * @param options.onStartSent start 发送成功后的回调，不等待生成确认。
@@ -523,9 +510,6 @@ export class StreamController implements StreamControlling {
     };
 
     this.state.generationTaskID = taskID;
-    this.state.networkVideoCompletion = options.context.referenceVideo
-      ? { taskID, finished: false, scheduled: false }
-      : undefined;
     this.state.generationWaiter = waiter;
     // 发送可能先失败，提前接住确认 Promise，避免产生无人处理的拒绝。
     void confirmation.catch(() => { });
@@ -684,59 +668,6 @@ export class StreamController implements StreamControlling {
     listener?: RoomListener
   ): void {
     this.roomListener = listener;
-  }
-
-  /**
-   * 生成状态已提交后登记完成通知，避免快速任务在启动返回前交付完成事件。
-   */
-  activateNetworkVideoCompletion(
-    onFinish?: () => void
-  ): void {
-    const completion = this.state.networkVideoCompletion;
-    if (completion) {
-      completion.onFinish = onFinish;
-      this.deliverNetworkVideoCompletion();
-    }
-  }
-
-  /**
-   * 仅接受当前任务和目标机器人的完成消息；不因完成事件立即退房。
-   */
-  private handleNetworkVideoCompletion(
-    sender: string,
-    message: Record<string, unknown>
-  ): void {
-    const state = this.state;
-    const completion = state.networkVideoCompletion;
-    if (!state.roomID || !completion || completion.taskID !== state.generationTaskID ||
-      message.event !== "video_stopped" || message.uid !== completion.taskID ||
-      !sender || (state.botID && sender !== state.botID)) {
-      return;
-    }
-    completion.finished = true;
-    this.deliverNetworkVideoCompletion();
-  }
-
-  /**
-   * 异步交付一次完成通知；执行前复核任务，隔离用户回调异常。
-   */
-  private deliverNetworkVideoCompletion(): void {
-    const state = this.state;
-    const completion = state.networkVideoCompletion;
-    if (!completion?.finished || !completion.onFinish || completion.scheduled) {
-      return;
-    }
-    completion.scheduled = true;
-    queueMicrotask(() => {
-      if (this.state !== state || state.generationTaskID !== completion.taskID) {
-        return;
-      }
-      try {
-        void Promise.resolve(completion.onFinish?.()).catch(() => { });
-      } catch {
-        // 完成回调异常不得中断远端尾帧播放或资源释放。
-      }
-    });
   }
 
   /**
@@ -1029,7 +960,6 @@ export class StreamController implements StreamControlling {
     const remoteAudioUserIDs = [...this.state.subscribedRemoteAudioUserIDs];
     this.state.generationTaskID = undefined;
     this.state.generationWaiter = undefined;
-    this.state.networkVideoCompletion = undefined;
     this.state.activeRemoteStream = undefined;
     this.state.subscribedRemoteAudioUserIDs.clear();
 

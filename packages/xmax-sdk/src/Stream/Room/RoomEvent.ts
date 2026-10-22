@@ -57,7 +57,7 @@ export interface RoomEventGenerationOptions {
   context: RealtimeContext;
 
   /**
-   * 服务端生成后的回传尺寸，缺省时不发送；网络视频 start 默认使用生成尺寸。
+   * 服务端生成后的回传尺寸，缺省时不发送。
    */
   targetSize?: RoomEventTargetSize;
 
@@ -92,7 +92,7 @@ export class RoomEvent {
    * @param options.taskID 当前生成任务标识。
    * @param options.videoFormat 模型生成使用的视频规格。
    * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送；网络视频默认使用生成尺寸。
+   * @param options.targetSize 回传尺寸，缺省时不发送。
    * @param options.minimumBitrate 服务端回传的最低码率，单位为 kbps。
    * @param options.maximumBitrate 服务端回传的最高码率，单位为 kbps。
    * @param options.mirror 是否由后端镜像输入画面，默认 false。
@@ -122,18 +122,9 @@ export class RoomEvent {
         min_bitrate: options.minimumBitrate,
         max_bitrate: options.maximumBitrate,
         mirror: options.mirror ?? false,
-        ...(options.context.referenceVideo && {
-          ref_video_path: options.context.referenceVideo.path,
-          sample_method: options.context.referenceVideo.sampleMethod,
-          target_size: [
-            options.targetSize?.width ?? options.videoFormat.width,
-            options.targetSize?.height ?? options.videoFormat.height,
-          ],
-        }),
       },
       user_id: options.userID,
       uid: options.taskID,
-      ...(options.context.referenceVideo && { session_uid: options.taskID }),
     });
   }
 
