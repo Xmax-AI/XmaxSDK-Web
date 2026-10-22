@@ -37,6 +37,12 @@ export interface VideoStatistics {
    * 实际码率，单位 kbps。
    */
   readonly bitrateKbps?: number;
+
+  /**
+   * 本端到 RTC 云端的往返延迟，单位 ms；本地统计对应发送链路，远端统计对应接收链路。
+   * 仅保留厂商提供的测量值，未提供时为空。
+   */
+  readonly rttMs?: number;
 }
 
 /**

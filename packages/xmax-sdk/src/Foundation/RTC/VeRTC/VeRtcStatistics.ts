@@ -26,6 +26,7 @@ export class VeRtcStatistics {
     return Object.freeze({
       width: this.valid(stats.encodedFrameWidth, 1), height: this.valid(stats.encodedFrameHeight, 1),
       frameRate: this.valid(stats.sentFrameRate), bitrateKbps: this.valid(stats.sentKBitrate),
+      rttMs: this.valid(stats.rtt),
       uplinkLossPercent: this.loss(stats.videoLossRate),
     });
   }
