@@ -49,7 +49,11 @@ export class ExternalVideoController {
   }
 
   /**
-   * 校验并克隆外部视频轨，保留调用方对原始轨道的所有权。
+   * 校验并克隆外部视频轨，按统一媒体规则解析上行基准，不修改原始轨道像素。
+   *
+   * @param options 外部 live 视频轨及原始媒体规格。
+   * @param mediaService 当前模型的媒体尺寸解析服务。
+   * @returns 持有轨道副本和解析后固定媒体规格的本地流。
    */
   create(
     options: {
@@ -64,9 +68,9 @@ export class ExternalVideoController {
     if (!videoTrack || videoTrack.kind !== "video" || videoTrack.readyState !== "live" || typeof videoTrack.clone !== "function") {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External video requires a live video MediaStreamTrack");
     }
-    videoFormat.validate();
-    const size = mediaService.resolveModelInputSize(videoFormat);
+    const size = mediaService.resolveMediaSize(videoFormat, "external");
     const format = videoFormat.resized(size.width, size.height);
+    format.validate();
     const nativeTrack = videoTrack.clone();
     if (nativeTrack.readyState !== "live") {
       nativeTrack.stop();

@@ -114,20 +114,6 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 文件媒体保留自身比例，生成画布由服务端填充。
-   */
-  get usesContainPadding(): boolean {
-    return this.source === "localImage" || this.source === "localVideo";
-  }
-
-  /**
-   * 摄像头、本地图片和本地视频使用固定媒体尺寸。
-   */
-  get usesResolvedMediaSize(): boolean {
-    return this.source === "camera" || this.usesContainPadding;
-  }
-
-  /**
    * 当前源需要发布的音频能力。
    */
   get hasAudio() {

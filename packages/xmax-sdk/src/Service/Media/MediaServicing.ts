@@ -22,10 +22,14 @@ export interface MediaServicing {
 
   /**
    * 解析原始媒体尺寸，不放大、限制像素面积并按 4 对齐；仅摄像头校验模型桶。
+   *
+   * @param sourceMediaSize 原始媒体尺寸。
+   * @param source 媒体来源，文件媒体和外部轨道接受任意比例。
+   * @returns 用于固定媒体基准和初始上行编码的尺寸。
    */
   resolveMediaSize(
     sourceMediaSize: ModelSize,
-    source: "camera" | "image" | "video"
+    source: "camera" | "image" | "video" | "external"
   ): ModelSize;
 
   /**
@@ -58,7 +62,7 @@ export interface MediaServicing {
   ): Promise<boolean>;
 
   /**
-   * 外部轨道使用模型支持的输入尺寸规则。
+   * 解析模型支持的采集规格或生成画布，不处理媒体像素。
    *
    * 分辨率桶非空时必须精确匹配；否则按像素面积上下限等比缩放并对齐到
    * 模型要求的像素倍数。

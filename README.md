@@ -340,14 +340,16 @@ Animated images are captured as a single still frame.
 For local images and local videos, the SDK reads the actual media dimensions,
 limits the pixel area, and aligns the result to multiples of 4 without enlarging it.
 The `videoFormat` width and height remain accepted for compatibility; frame rate
-and encoding settings are retained. The server adapts the media to a separate model
-canvas using `padding: "contain"`, while the requested output follows the media's
-aspect ratio and downlink quality tier.
+and encoding settings are retained. External video tracks use the same size rules;
+pass their original dimensions in `createExternalVideoStream({ videoTrack, videoFormat })`.
+The SDK selects a separate model generation canvas without processing video frames.
+It sends `padding: "contain"` only when the resolved media and canvas aspect ratios
+differ. Requested output dimensions follow the fixed media size and downlink quality
+tier. Uplink quality changes do not change the generation canvas or media baseline.
 
 Camera, local-image, local-video, and external-track gestures use normalized
 coordinates in `[0, 1]` relative to their media, independent of encoding quality changes.
-External tracks retain their existing sizing behavior. Network video retains its
-existing sizing and pixel-coordinate behavior.
+Network video retains its existing sizing and pixel-coordinate behavior.
 
 <br>
 

@@ -43,7 +43,7 @@ import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { StreamController } from "../../Stream/StreamController";
 import { QualityController } from "../../Stream/Quality/QualityController";
-import { qualityVideoFormat, qualityVideoMaximumSize, qualityVideoSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
+import { qualityVideoFormat, qualityVideoMaximumSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
 import { QUALITY_TIERS } from "../../Stream/Quality/QualityTiers";
 import { QualityHistory } from "../../Stream/Quality/QualityHistory";
 import type { StreamControlling } from "../../Stream/StreamControlling";
@@ -1062,7 +1062,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 接入外部视频轨；不创建采集设备或预览，所有异步失败统一释放 SDK 副本。
    * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
-   * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
+   * @param options.videoFormat 原始视频轨的尺寸、帧率及编码配置；按统一媒体规则解析固定基准，不裁剪或补边。
+   * @returns 持有外部轨道副本和解析后媒体规格的本地流。
    */
   async createExternalVideoStream(
     options: Parameters<XmaxRealtimeManaging["createExternalVideoStream"]>[0]
@@ -1365,9 +1366,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             videoFormat,
             ...this.resolveGenerationFormat(videoFormat),
             context: options.context,
-            targetSize: this.mediaController.usesResolvedMediaSize || this.downlinkQualityController
-              ? this.downlinkQualityState?.size
-              : undefined,
+            targetSize: this.downlinkQualityState?.size,
             faceRestoration: options.faceRestoration ?? false,
             extraParams,
           });
@@ -1431,14 +1430,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     baseline: RealtimeVideoFormat,
     level: number
   ): RealtimeVideoFormat {
-    const format = qualityVideoFormat(baseline, level, this.mediaController.usesResolvedMediaSize);
+    const format = qualityVideoFormat(baseline, level);
     return this.options.provider === RtcProvider.trtc
       ? format.resized(baseline.width, baseline.height)
       : format;
   }
 
   /**
-   * 本地图片与视频单独选择生成画布；其他来源沿用媒体规格。
+   * 从固定媒体基准选择模型生成画布，媒体与画布比例不一致时为非相机源启用服务端补边。
+   * 只生成信令配置，不改变上行轨道或其编码尺寸。
+   *
+   * @param videoFormat 固定媒体规格，不受上行调档影响。
+   * @returns 模型支持的生成画布规格及服务端补边策略。
    */
   private resolveGenerationFormat(
     videoFormat: RealtimeVideoFormat
@@ -1446,26 +1449,31 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     generationVideoFormat: RealtimeVideoFormat;
     paddingContain: boolean;
   } {
-    const paddingContain = this.mediaController.usesContainPadding;
-    const usesPixelBudget = this.mediaController.source === "camera" && resolutionBuckets(this.options.model).length === 0;
-    const size = paddingContain || usesPixelBudget ? this.mediaService.resolveGenerationSize(videoFormat) : undefined;
+    if (this.mediaController.source === "camera" && resolutionBuckets(this.options.model).length > 0) {
+      return { generationVideoFormat: videoFormat, paddingContain: false };
+    }
+
+    const size = this.mediaService.resolveGenerationSize(videoFormat);
+    const paddingContain = this.mediaController.source !== "camera" &&
+      videoFormat.width * size.height !== videoFormat.height * size.width;
     return {
-      generationVideoFormat: size && (size.width !== videoFormat.width || size.height !== videoFormat.height)
+      generationVideoFormat: size.width !== videoFormat.width || size.height !== videoFormat.height
         ? videoFormat.resized(size.width, size.height) : videoFormat,
       paddingContain,
     };
   }
 
   /**
-   * 从固定媒体基准计算下行尺寸；外部轨道保留原有偶数取整规则。
+   * 从固定媒体基准计算下行尺寸，所有来源共用保留比例和按 4 对齐的规则。
+   *
+   * @param videoFormat 固定媒体规格。
+   * @param level 下行清晰度档位。
+   * @returns 不放大且符合档位边界的回传尺寸。
    */
   private resolveTargetSize(
     videoFormat: RealtimeVideoFormat,
     level: number
   ): ModelSize {
-    if (!this.mediaController.usesResolvedMediaSize) {
-      return qualityVideoSize(videoFormat, level, false);
-    }
     return this.mediaService.resolveTargetSize(videoFormat, qualityVideoMaximumSize(videoFormat, level));
   }
 
@@ -1615,10 +1623,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
 
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
-    const targetSize = this.downlinkQualityController || this.mediaController.usesResolvedMediaSize
-      ? this.resolveTargetSize(videoFormat, initialLevel)
-      : undefined;
-    await this.prepareFrameInterpolation(targetSize ?? videoFormat, token);
+    const targetSize = this.resolveTargetSize(videoFormat, initialLevel);
+    await this.prepareFrameInterpolation(targetSize, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
     this.remoteRenderWarmupCompletedHandler = undefined;

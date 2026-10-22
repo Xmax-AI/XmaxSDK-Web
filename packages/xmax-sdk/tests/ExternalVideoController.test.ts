@@ -43,10 +43,29 @@ describe("ExternalVideoController", () => {
     expect(source.clone).not.toHaveBeenCalled();
   });
 
-  it("validates format and model dimensions before acquiring a clone", () => {
+  it.each([
+    [1280, 720, 1280, 720],
+    [1920, 800, 1920, 800],
+    [3840, 2160, 1920, 1080],
+    [1282, 722, 1280, 720],
+    [1281, 721, 732, 412],
+  ])("resolves %s × %s as %s × %s without modifying the source track", (width, height, resolvedWidth, resolvedHeight) => {
     const source = new VideoTrack();
     const controller = new ExternalVideoController(vi.fn());
-    for (const format of [new RealtimeVideoFormat({ ...videoFormat, fps: 0 }), new RealtimeVideoFormat({ ...videoFormat, width: 640 })]) {
+    const format = new RealtimeVideoFormat({ width, height, fps: 24, maximumBitrate: 4000 });
+    const stream = controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat: format }, media);
+    expect(stream.videoTrack?.videoFormat).toMatchObject({ width: resolvedWidth, height: resolvedHeight, fps: 24, maximumBitrate: 4000 });
+    expect(format).toMatchObject({ width, height });
+    expect(source.clone).toHaveBeenCalledOnce();
+    expect(source.stop).not.toHaveBeenCalled();
+    controller.stop();
+  });
+
+  it("validates media dimensions and frame rate before acquiring a clone", () => {
+    const source = new VideoTrack();
+    const controller = new ExternalVideoController(vi.fn());
+    for (const format of [new RealtimeVideoFormat({ ...videoFormat, fps: 0 }), new RealtimeVideoFormat({ ...videoFormat, width: 1 }),
+      new RealtimeVideoFormat({ ...videoFormat, width: 0 }), new RealtimeVideoFormat({ ...videoFormat, width: Infinity })]) {
       expect(() => controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat: format }, media)).toThrow();
     }
     expect(source.clone).not.toHaveBeenCalled();

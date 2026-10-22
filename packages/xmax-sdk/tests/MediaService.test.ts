@@ -7,7 +7,7 @@ import { MediaService } from "../src/Service/Media/MediaService";
 describe("MediaService media, generation and target sizes", () => {
   const service = new MediaService();
 
-  it.each(["image", "video"] as const)("resolves %s metadata without forcing a model bucket or enlarging it", source => {
+  it.each(["image", "video", "external"] as const)("resolves %s metadata without forcing a model bucket or enlarging it", source => {
     expect(service.resolveMediaSize({ width: 1280, height: 720 }, source)).toEqual({ width: 1280, height: 720 });
     expect(service.resolveMediaSize({ width: 600, height: 600 }, source)).toEqual({ width: 600, height: 600 });
     expect(service.resolveMediaSize({ width: 3840, height: 2160 }, source)).toEqual({ width: 1920, height: 1080 });

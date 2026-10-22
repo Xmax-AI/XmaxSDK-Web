@@ -262,7 +262,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(events.onRenderAttached).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
-    expect(binding.renderWarmupMs).toBe(1000);
+    expect(binding.renderWarmupMs).toBe(500);
     binding.renderWarmupCompletedHandler?.();
     expect(events.onRenderWarmupCompleted).toHaveBeenCalledOnce();
     await manager.disconnect();

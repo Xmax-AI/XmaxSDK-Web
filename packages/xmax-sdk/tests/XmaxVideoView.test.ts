@@ -49,7 +49,19 @@ class VideoStub extends ElementStub {
   }
 }
 
-function makeView(useFrameCallback = true, renderWarmupMs?: number) {
+/**
+ * 创建带可控首帧和预热回调的单轨视图。
+ *
+ * @param useFrameCallback 是否使用视频帧回调而非 playing 事件。
+ * @param renderWarmupMs 轨道绑定声明的预热时长。
+ * @param fadeInDurationMs 视图的可选渐入时长。
+ * @returns 视图、视频元素及各阶段的回调记录。
+ */
+function makeView(
+  useFrameCallback = true,
+  renderWarmupMs?: number,
+  fadeInDurationMs?: number
+) {
   const video = new VideoStub();
   if (!useFrameCallback) {
     Object.defineProperty(video, "requestVideoFrameCallback", { value: undefined });
@@ -57,7 +69,7 @@ function makeView(useFrameCallback = true, renderWarmupMs?: number) {
   vi.stubGlobal("document", {
     createElement: (tag: string) => tag === "video" ? video : new ElementStub(),
   });
-  const view = new XmaxVideoView();
+  const view = new XmaxVideoView({ fadeInDurationMs });
   const track = new RealtimeVideoTrack({ id: "remote" });
   const onBindingFrame = vi.fn();
   const onViewFrame = vi.fn();
@@ -138,6 +150,37 @@ describe("remote render warmup", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it.each([true, false])("shows immediately after warmup when fadeInDurationMs is zero (frame callback: %s)", async useFrameCallback => {
+    const { view, video, onWarmup } = makeView(useFrameCallback, 500, 0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mediaLayer(view).style.opacity).toBe("0");
+    expect(onWarmup).not.toHaveBeenCalled();
+    if (useFrameCallback) video.nextFrame();
+    else video.dispatchEvent(new Event("playing"));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(mediaLayer(view).style.opacity).toBe("0");
+    expect(onWarmup).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mediaLayer(view).style.opacity).toBe("1");
+    expect(mediaLayer(view).style.transition).toBe("none");
+    expect(onWarmup).toHaveBeenCalledOnce();
+    view.detach();
+  });
+
+  it("uses a custom fade duration without delaying the warmup callback", async () => {
+    const { view, video, onWarmup } = makeView(true, 500, 175);
+    video.nextFrame();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mediaLayer(view).style.transition).toBe("opacity 175ms ease-in-out");
+    expect(mediaLayer(view).style.opacity).toBe("1");
+    expect(onWarmup).toHaveBeenCalledOnce();
+    view.detach();
+  });
+
+  it.each([-1, NaN, Infinity])("rejects invalid fade duration %s", duration => {
+    expect(() => makeView(true, 500, duration)).toThrow("fadeInDurationMs must be a finite non-negative number");
   });
 
   it("rearms first-frame and warmup for a new generation without replacing the stream", async () => {

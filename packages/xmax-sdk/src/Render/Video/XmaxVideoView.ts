@@ -34,7 +34,7 @@ const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
  *
  * 通过 `attach(to:)` 挂载到任意容器元素；设置 `track` 后自动渲染。
  * 轨道注册了渲染绑定时走绑定管线，否则按 `mediaStreamTrack` 直接渲染。
- * SDK 远端轨道在首帧后预热 1000 ms，再用 300 ms 渐入；本地预览不延迟。
+ * SDK 远端轨道在首帧后按绑定配置预热，再按视图配置渐入；本地预览不延迟。
  */
 export class XmaxVideoView {
 
@@ -152,11 +152,18 @@ export class XmaxVideoView {
    * 创建单轨视频视图。
    *
    * @param options.videoContentMode 视频内容显示模式，默认 fill。
+   * @param options.isInteractionEnabled 是否允许远端轨迹交互，默认 true。
+   * @param options.fadeInDurationMs 远端画面预热完成后的渐入时长，单位为毫秒，默认 300；0 表示直接显示，不跳过预热。
+   * @throws 渐入时长为负数或非有限数值时抛出 invalidConfiguration。
    */
   constructor(
     options?: {
       videoContentMode?: VideoContentMode;
-      isInteractionEnabled?: boolean
+      isInteractionEnabled?: boolean;
+      /**
+       * 远端画面的渐入时长，单位为毫秒，默认 300；0 表示预热完成后直接显示。
+       */
+      fadeInDurationMs?: number;
     }
   ) {
     this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
@@ -176,7 +183,7 @@ export class XmaxVideoView {
     this.warmupLayer = document.createElement("div");
     Object.assign(this.warmupLayer.style, { position: "absolute", inset: "0" });
     this.videoLayer.appendChild(this.warmupLayer);
-    this.warmupController = new RenderWarmupController(this.warmupLayer);
+    this.warmupController = new RenderWarmupController(this.warmupLayer, options?.fadeInDurationMs);
 
     this.videoElement = document.createElement("video");
     this.statisticsController = new RenderStatisticsController(this.videoElement);

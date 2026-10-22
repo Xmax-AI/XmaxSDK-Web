@@ -220,6 +220,7 @@ export interface XmaxRealtimeManaging {
   /**
    * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
    * Canvas 保留完整内容并按媒体尺寸规则缩放，文件音频独立上行，本地预览始终静音。
+   * SDK 单独选择模型生成画布，仅在媒体与画布比例不一致时启用服务端 contain 补边。
    * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
    * @param options.file 包含可解码视频的本地 File 或 Blob。
    * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从文件读取。
@@ -239,6 +240,7 @@ export interface XmaxRealtimeManaging {
   /**
    * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
    * 保留完整内容并按媒体尺寸规则缩放，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
+   * SDK 单独选择模型生成画布，仅在媒体与画布比例不一致时启用服务端 contain 补边。
    * 创建后可直接预览，仍需调用 startGeneration 开始生成；disconnect 保留图片源，close 释放全部资源。
    * @param options.file 包含浏览器可解码图片的本地 File 或 Blob；动图仅取解码时的静止快照。
    * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从图片读取。
@@ -254,11 +256,13 @@ export interface XmaxRealtimeManaging {
   /**
    * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
    * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
+   * 原始尺寸按统一媒体规则限制面积并按 4 对齐，不放大；RTC 编码器应用解析后的上行规格。
+   * 生成画布由 SDK 单独选择，比例不一致时自动由服务端 contain 补边，不在客户端补帧。
    * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
    * 副本共享底层媒体源；调用方仍负责停止原始采集。设备源结束时 SDK 上报错误并关闭。
    * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
-   * @param options.videoFormat 期望的上传及生成规格，须符合模型规则；不代表修改输入像素。
-   * @throws 非 live 视频轨、不支持的格式、已有活动媒体源或 RTC 初始化失败时抛错。
+   * @param options.videoFormat 原始视频轨的尺寸、帧率及编码配置；SDK 解析后作为固定媒体和初始调档基准。
+   * @throws 非 live 视频轨、无效媒体规格、已有活动媒体源或 RTC 初始化失败时抛错。
    */
   createExternalVideoStream(
     options: {

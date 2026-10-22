@@ -43,16 +43,6 @@ export interface MediaControlling extends InteractionControlling {
   readonly isFrameValidationEnabled: boolean;
 
   /**
-   * 本地文件媒体由服务端按包含模式适配生成画布。
-   */
-  readonly usesContainPadding: boolean;
-
-  /**
-   * 摄像头和本地文件使用分离的媒体、生成及回传尺寸规则。
-   */
-  readonly usesResolvedMediaSize: boolean;
-
-  /**
    * 验证没有活动或正在准备的本地媒体。
    */
   ensureNoLocalSource(): void;

@@ -1201,6 +1201,53 @@ describe("XmaxRealtimeManager external video", () => {
     return { ...s, source, clone, options };
   }
 
+  it.each([
+    [1280, 720, 1280, 720, 1920, 1080, false],
+    [1920, 800, 1920, 800, 1920, 1080, true],
+    [600, 600, 600, 600, 1408, 1408, false],
+    [3840, 2160, 1920, 1080, 1920, 1080, false],
+  ] as const)("keeps %s × %s media separate from the generation canvas through quality changes and reconnects", async (width, height, mediaWidth, mediaHeight, generationWidth, generationHeight, paddingContain) => {
+    const s = setup(RealtimeModel.x2_1, new RealtimeVideoFormat({ width, height, fps: 30 }));
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
+    vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+      id: "external-media", connection: { provider: RtcProvider.agora, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+    }));
+    const local = await s.manager.createExternalVideoStream(s.options);
+    expect(local.videoTrack?.videoFormat).toMatchObject({ width: mediaWidth, height: mediaHeight });
+    const generation = { videoFormat: { width: generationWidth, height: generationHeight }, paddingContain };
+    const start = async (restart = false) => {
+      const index = s.stream.beginCalls.length;
+      const pending = s.manager.startGeneration({ localStream: local, context: testContext, restart });
+      await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(index + 1));
+      expect(s.stream.beginCalls[index]).toMatchObject(generation);
+      s.stream.confirmationDeferreds[index]!.resolve();
+      completeRenderWarmup(await pending);
+    };
+    try {
+      await start();
+      const initialEncoding = s.stream.encoderConfigFormats[0]!;
+      expect(initialEncoding.width).toBeLessThanOrEqual(mediaWidth);
+      expect(initialEncoding.height).toBeLessThanOrEqual(mediaHeight);
+      expect(initialEncoding.width * mediaHeight).toBe(initialEncoding.height * mediaWidth);
+      await s.manager.adjustUplinkQuality("downgrade");
+      await s.manager.adjustDownlinkQuality("downgrade");
+      await s.manager.startGeneration({ localStream: local, context: new RealtimeContext({ prompt: "updated" }) });
+      expect(s.stream.updateCalls.at(-1)).toMatchObject(generation);
+      const target = s.stream.updateCalls.at(-1)!.targetSize!;
+      expect(target.width * mediaHeight).toBe(target.height * mediaWidth);
+      expect(target.width).toBeLessThanOrEqual(mediaWidth);
+      expect(target.height).toBeLessThanOrEqual(mediaHeight);
+      await s.manager.updateUplinkVideoFormat(new RealtimeVideoFormat({ width: 640, height: 480, fps: 20 }));
+      await start(true);
+      await s.manager.disconnect();
+      await start();
+      expect(s.source.clone).toHaveBeenCalledOnce();
+      expect(s.clone.stop).not.toHaveBeenCalled();
+    } finally { await s.manager.close(); }
+    expect(s.clone.stop).toHaveBeenCalledOnce();
+    expect(s.source.stop).not.toHaveBeenCalled();
+  });
+
   it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("publishes video only without preview and preserves caller ownership for %s", async model => {
     const s = setup(model);
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
@@ -1388,6 +1435,22 @@ describe("XmaxRealtimeManager local video", () => {
     return { ...s, video, audio, track, create, start, pause, stop };
   }
 
+  it("adds contain for a file whose media ratio differs from its generation canvas", async () => {
+    const s = setupFile(false);
+    s.track.updateVideoFormat(options.videoFormat.resized(1920, 800));
+    const local = await s.manager.createLocalVideoStream(options);
+    const starting = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    expect(s.stream.beginCalls[0]).toMatchObject({
+      videoFormat: { width: 1920, height: 1080 }, paddingContain: true,
+      targetSize: { width: 1536, height: 640 },
+    });
+    expect(s.stream.encoderConfigFormats[0]).toMatchObject({ width: 1536, height: 640 });
+    s.stream.confirmationDeferreds[0]!.resolve();
+    completeRenderWarmup(await starting);
+    await s.manager.close();
+  });
+
   it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])(
     "keeps media, generation and target sizes separate across updates and restarts with %s",
     async provider => {
@@ -1410,7 +1473,7 @@ describe("XmaxRealtimeManager local video", () => {
       };
       const remote = await start();
       expect(s.stream.beginCalls[0]).toMatchObject({
-        videoFormat: options.videoFormat, paddingContain: true, targetSize,
+        videoFormat: options.videoFormat, paddingContain: false, targetSize,
       });
       expect(s.stream.encoderConfigFormats[0]).toMatchObject(provider === RtcProvider.agora
         ? { width: 1024, height: 576 } : { width: 1280, height: 720 });
@@ -1431,7 +1494,7 @@ describe("XmaxRealtimeManager local video", () => {
       }
       await s.manager.startGeneration({ localStream: local, context: new RealtimeContext({ prompt: "changed" }) });
       expect(s.stream.updateCalls[0]).toMatchObject({
-        videoFormat: options.videoFormat, paddingContain: true,
+        videoFormat: options.videoFormat, paddingContain: false,
         targetSize: provider === RtcProvider.vertc ? targetSize : { width: 832, height: 468 },
       });
       binding.submit(sample);
@@ -1440,7 +1503,7 @@ describe("XmaxRealtimeManager local video", () => {
 
       await start(true);
       expect(s.stream.beginCalls[1]).toMatchObject({
-        videoFormat: options.videoFormat, paddingContain: true, targetSize,
+        videoFormat: options.videoFormat, paddingContain: false, targetSize,
       });
       expect(s.create).toHaveBeenCalledOnce();
       await s.manager.close();
@@ -1540,6 +1603,22 @@ describe("XmaxRealtimeManager local image", () => {
     return { ...s, video, track, create, stop };
   }
 
+  it("adds contain for an image whose media ratio differs from its generation canvas", async () => {
+    const s = setupImage(RtcProvider.agora);
+    s.track.updateVideoFormat(options.videoFormat.resized(1920, 800));
+    const local = await s.manager.createLocalImageStream(options);
+    const starting = s.manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
+    expect(s.stream.beginCalls[0]).toMatchObject({
+      videoFormat: { width: 1920, height: 1080 }, paddingContain: true,
+      targetSize: { width: 1536, height: 640 },
+    });
+    expect(s.stream.encoderConfigFormats[0]).toMatchObject({ width: 1536, height: 640 });
+    s.stream.confirmationDeferreds[0]!.resolve();
+    completeRenderWarmup(await starting);
+    await s.manager.close();
+  });
+
   it("uses an independent canvas for a square image without padding its local track", async () => {
     const s = setupImage(RtcProvider.vertc);
     const mediaFormat = options.videoFormat.resized(600, 600);
@@ -1550,7 +1629,7 @@ describe("XmaxRealtimeManager local image", () => {
     expect(s.stream.encoderConfigFormats[0]).toBe(mediaFormat);
     expect(s.stream.beginCalls[0]).toMatchObject({
       videoFormat: { width: 1408, height: 1408 },
-      paddingContain: true,
+      paddingContain: false,
       targetSize: { width: 600, height: 600 },
     });
     expect(s.track.videoFormat).toBe(mediaFormat);

@@ -43,11 +43,15 @@ export class MediaService implements MediaServicing {
 
   /**
    * 解析固定媒体基准：保留完整内容、不放大、限制面积并按 4 对齐。
-   * 摄像头请求尺寸须先匹配模型桶；文件媒体不受模型桶比例限制。
+   * 摄像头请求尺寸须先匹配模型桶；文件媒体和外部轨道不受模型桶比例限制。
+   *
+   * @param sourceMediaSize 原始媒体尺寸。
+   * @param source 媒体来源，仅摄像头需要校验采集分辨率桶。
+   * @returns 用于固定媒体基准和初始上行编码的尺寸。
    */
   resolveMediaSize(
     sourceMediaSize: ModelSize,
-    source: "camera" | "image" | "video"
+    source: "camera" | "image" | "video" | "external"
   ): ModelSize {
     this.validateIntegralSize(sourceMediaSize);
     const buckets = resolutionBuckets(this.model);
