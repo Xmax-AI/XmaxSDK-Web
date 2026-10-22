@@ -85,8 +85,8 @@ export class RenderController implements RenderControlling {
     }
 
     VideoRenderRegistry.register(track, {
-      // 首帧后继续播放 1000 ms 完成渲染预热，再开始渐入。
-      renderWarmupMs: 1000,
+      // 首帧后继续播放 500 ms 完成渲染预热，再开始渐入。
+      renderWarmupMs: 500,
       renderWarmupCompletedHandler: () => {
         if (this.track === track) {
           this.ready = true;
