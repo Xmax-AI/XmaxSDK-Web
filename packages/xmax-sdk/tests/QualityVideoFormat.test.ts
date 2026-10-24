@@ -9,11 +9,16 @@ import { RealtimeVideoFormat, RealtimeVideoEncoderPreference } from "../src/Serv
 describe("qualityVideoFormat", () => {
   it("provides direction-neutral named tiers in quality order", () => {
     expect(Object.keys(QUALITY_TIERS)).toEqual(["L1", "L2", "L3", "L4", "L5"]);
-    expect(QUALITY_TIERS.L1).toEqual({ scale: 1, frameRate: 30 });
-    expect(QUALITY_TIERS.L5).toEqual({ scale: 0.4, frameRate: 16 });
+    expect(Object.values(QUALITY_TIERS)).toEqual([
+      { scale: 1, frameRate: 30 },
+      { scale: 0.9, frameRate: 24 },
+      { scale: 0.75, frameRate: 24 },
+      { scale: 0.6, frameRate: 20 },
+      { scale: 0.5, frameRate: 16 },
+    ]);
   });
   const portraitTiers = [
-    [1024, 1920, 30], [816, 1530, 24], [656, 1230, 24], [512, 960, 20], [400, 750, 16],
+    [1024, 1920, 30], [912, 1710, 24], [768, 1440, 24], [608, 1140, 20], [512, 960, 16],
   ];
 
   it.each([false, true])("matches all five tiers with landscape=%s", landscape => {
@@ -29,8 +34,8 @@ describe("qualityVideoFormat", () => {
 
   it("scales custom sources proportionally, rounds to even dimensions, and respects the source FPS ceiling", () => {
     const baseline = new RealtimeVideoFormat({ width: 1280, height: 720, fps: 20 });
-    expect(qualityVideoFormat(baseline, 2)).toMatchObject({ width: 1024, height: 576, fps: 20 });
-    expect(qualityVideoFormat(baseline, 5)).toMatchObject({ width: 512, height: 288, fps: 16 });
+    expect(qualityVideoFormat(baseline, 2)).toMatchObject({ width: 1152, height: 648, fps: 20 });
+    expect(qualityVideoFormat(baseline, 5)).toMatchObject({ width: 640, height: 360, fps: 16 });
     const small = new RealtimeVideoFormat({ width: 642, height: 362, fps: 15 });
     for (let level = 1; level <= 5; level++) {
       const format = qualityVideoFormat(small, level);
@@ -60,7 +65,7 @@ describe("qualityVideoFormat", () => {
   it("retains explicit bitrate constraints and encoder preference", () => {
     const baseline = new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30,
       minimumBitrate: 0, maximumBitrate: 6000, encoderPreference: RealtimeVideoEncoderPreference.maintainQuality });
-    expect(qualityVideoFormat(baseline, 5)).toMatchObject({ width: 750, height: 400, fps: 16,
+    expect(qualityVideoFormat(baseline, 5)).toMatchObject({ width: 960, height: 512, fps: 16,
       minimumBitrate: 0, maximumBitrate: 6000, encoderPreference: RealtimeVideoEncoderPreference.maintainQuality });
   });
 
@@ -73,9 +78,9 @@ describe("qualityVideoFormat", () => {
 
   it("keeps fractional bounds separate and supports legacy independent rounding", () => {
     const baseline = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
-    expect(qualityVideoMaximumSize(baseline, 2)).toEqual({ width: 819.2, height: 1536 });
-    expect(qualityVideoSize(baseline, 2, false)).toEqual({ width: 818, height: 1536 });
-    expect(qualityVideoFormat(baseline, 3, false)).toMatchObject({ width: 664, height: 1248, fps: 24 });
+    expect(qualityVideoMaximumSize(baseline, 2)).toEqual({ width: 921.6, height: 1728 });
+    expect(qualityVideoSize(baseline, 2, false)).toEqual({ width: 920, height: 1728 });
+    expect(qualityVideoFormat(baseline, 3, false)).toMatchObject({ width: 768, height: 1440, fps: 24 });
   });
 
   it("detects explicit bitrate constraints incompatible with a lower tier", () => {

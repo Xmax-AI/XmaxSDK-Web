@@ -24,8 +24,8 @@ export const MINIMUM_QUALITY_SHORT_SIDE = 240;
  */
 export const QUALITY_TIERS = {
   L1: { scale: 1, frameRate: 30 },
-  L2: { scale: 0.8, frameRate: 24 },
-  L3: { scale: 0.65, frameRate: 24 },
-  L4: { scale: 0.5, frameRate: 20 },
-  L5: { scale: 0.4, frameRate: 16 },
+  L2: { scale: 0.9, frameRate: 24 },
+  L3: { scale: 0.75, frameRate: 24 },
+  L4: { scale: 0.6, frameRate: 20 },
+  L5: { scale: 0.5, frameRate: 16 },
 } as const;

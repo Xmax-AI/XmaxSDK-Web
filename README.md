@@ -294,7 +294,7 @@ console.log(realtime.uplinkQualityLevel, realtime.downlinkQualityLevel);
 ```
 
 Automatic adaptation continues after a manual change on supported RTC providers;
-VeRTC applies manual levels only. L5 scales width and height to 40% of the media
+VeRTC applies manual levels only. L5 scales width and height to 50% of the media
 baseline. The default uplink minimum bitrate is 500 kbps, capped at the selected
 maximum bitrate; explicit bitrate settings take precedence.
 
