@@ -803,7 +803,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const s = setup();
     const baseline = new RealtimeVideoFormat({ width: portrait ? 1024 : 1920, height: portrait ? 1920 : 1024, fps: 30 });
     s.localStream.videoTrack!.updateVideoFormat(baseline);
-    const size = { width: portrait ? 912 : 1710, height: portrait ? 1710 : 912 };
+    const size = { width: portrait ? 896 : 1680, height: portrait ? 1680 : 896 };
     const targetSize = { width: portrait ? 896 : 1680, height: portrait ? 1680 : 896 };
     const connect = s.stream.connect.bind(s.stream);
     vi.spyOn(s.stream, "connect").mockImplementation((...args) => {
@@ -835,7 +835,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.beginCalls).toHaveLength(0);
     s.stream.failEncoderConfig = undefined;
     await s.start();
-    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1710, height: 912, fps: 24 });
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 24 });
     expect(s.stream.beginCalls[0]!.videoFormat).toBe(baseline);
     expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1680, height: 896 });
     await s.samples(1, 5);
@@ -878,7 +878,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.stream.updateCalls).toHaveLength(0);
     await s.sample(1); // 稳定期
     await s.samples(1, 5);
-    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1710, height: 912, fps: 24 }));
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1680, height: 896, fps: 24 }));
     await s.samples(1, 6);
     expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1920, height: 1024, fps: 30 }));
     await s.manager.close();
@@ -899,7 +899,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const originalRemoteFormat = remote.videoTrack!.videoFormat;
     const tiers = [
       { width: 1920, height: 1024, fps: 30 },
-      { width: 1710, height: 912, fps: 24 },
+      { width: 1680, height: 896, fps: 24 },
       { width: 1440, height: 768, fps: 24 },
       { width: 1140, height: 608, fps: 20 },
       { width: 960, height: 512, fps: 16 },
@@ -980,7 +980,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const s = setup(); await s.start();
     s.stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "weak-network update failed");
     await s.samples(5, 3);
-    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1710, height: 912, fps: 24 });
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 24 });
     expect(s.stream.disconnectCalls).toBe(0);
     s.stream.failEncoderConfig = undefined;
     await s.samples(5, 4);
@@ -996,7 +996,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const closing = s.manager.close();
     gate.resolve();
     await closing;
-    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1710, height: 912, fps: 24 });
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 24 });
     await s.samples(5, 5);
     expect(s.stream.updateUplinkVideoFormat).toHaveBeenCalledTimes(1);
   });
@@ -1006,7 +1006,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.samples(1, 12);
     expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(24);
     await s.samples(5, 3);
-    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1710, height: 912, fps: 24 });
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 24 });
     await s.samples(1, 12);
     expect(s.localStream.videoTrack!.videoFormat!.fps).toBe(24);
     await s.manager.updateUplinkFrameRate(16);
@@ -1046,7 +1046,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await downSamples(1, 12);
     expect(s.stream.updateDownlinkVideoResolution).toHaveBeenCalledTimes(7);
     expect(apply).not.toHaveBeenCalled();
-    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1710, height: 912, fps: 24 });
+    expect(s.localStream.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 24 });
     expect(s.stream.beginCalls).toHaveLength(1);
     expect(s.stream.updateCalls).toHaveLength(0);
     await s.manager.close();

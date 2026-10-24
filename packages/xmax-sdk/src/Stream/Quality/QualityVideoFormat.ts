@@ -12,6 +12,7 @@ import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat"
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { MINIMUM_QUALITY_SHORT_SIDE, QUALITY_TIERS } from "./QualityTiers";
 import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
+import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
  * 计算档位的浮点尺寸上限；最终对齐由媒体或编码尺寸规则完成。
@@ -35,7 +36,7 @@ export function qualityVideoMaximumSize(
 }
 
 /**
- * 计算上行偶数对齐尺寸；优先保持精确比例，外部轨道可按宽高分别取整。
+ * 计算上行 4 对齐尺寸；优先保持精确比例，兼容按宽高分别向下取整。
  */
 export function qualityVideoSize(
   baseline: RealtimeVideoFormat,
@@ -47,11 +48,15 @@ export function qualityVideoSize(
 } {
   const maximum = qualityVideoMaximumSize(baseline, level);
   if (preserveAspectRatio) {
-    return alignedVideoSize(baseline, Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height), 2);
+    return alignedVideoSize(baseline, Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height), 4);
   }
 
-  const even = (value: number) => Math.max(2, Math.floor(value / 2 + 1e-9) * 2);
-  return { width: even(maximum.width), height: even(maximum.height) };
+  const width = Math.floor(maximum.width / 4 + 1e-9) * 4;
+  const height = Math.floor(maximum.height / 4 + 1e-9) * 4;
+  if (width < 4 || height < 4) {
+    throw new XmaxError(XmaxErrorCode.invalidConfiguration, "No aligned video size is available within the size limits");
+  }
+  return { width, height };
 }
 
 /**

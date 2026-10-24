@@ -18,7 +18,7 @@ describe("qualityVideoFormat", () => {
     ]);
   });
   const portraitTiers = [
-    [1024, 1920, 30], [912, 1710, 24], [768, 1440, 24], [608, 1140, 20], [512, 960, 16],
+    [1024, 1920, 30], [896, 1680, 24], [768, 1440, 24], [608, 1140, 20], [512, 960, 16],
   ];
 
   it.each([false, true])("matches all five tiers with landscape=%s", landscape => {
@@ -32,7 +32,7 @@ describe("qualityVideoFormat", () => {
     expect(baseline.fps).toBe(30);
   });
 
-  it("scales custom sources proportionally, rounds to even dimensions, and respects the source FPS ceiling", () => {
+  it("scales custom sources proportionally, aligns dimensions to four, and respects the source FPS ceiling", () => {
     const baseline = new RealtimeVideoFormat({ width: 1280, height: 720, fps: 20 });
     expect(qualityVideoFormat(baseline, 2)).toMatchObject({ width: 1152, height: 648, fps: 20 });
     expect(qualityVideoFormat(baseline, 5)).toMatchObject({ width: 640, height: 360, fps: 16 });
@@ -40,8 +40,8 @@ describe("qualityVideoFormat", () => {
     for (let level = 1; level <= 5; level++) {
       const format = qualityVideoFormat(small, level);
       format.validate();
-      expect(format.width % 2).toBe(0);
-      expect(format.height % 2).toBe(0);
+      expect(format.width % 4).toBe(0);
+      expect(format.height % 4).toBe(0);
       expect(format.width).toBeLessThanOrEqual(small.width);
       expect(format.height).toBeLessThanOrEqual(small.height);
       expect(format.fps).toBe(15);
@@ -71,7 +71,7 @@ describe("qualityVideoFormat", () => {
 
   it("applies the short-side floor before aspect-preserving alignment without enlarging smaller sources", () => {
     expect(qualityVideoFormat(new RealtimeVideoFormat({ width: 640, height: 360, fps: 30 }), 5))
-      .toMatchObject({ width: 416, height: 234, fps: 16 });
+      .toMatchObject({ width: 384, height: 216, fps: 16 });
     expect(qualityVideoFormat(new RealtimeVideoFormat({ width: 320, height: 180, fps: 30 }), 5))
       .toMatchObject({ width: 320, height: 180, fps: 16 });
   });
@@ -89,6 +89,29 @@ describe("qualityVideoFormat", () => {
     expect(supportsQualityEncoding(qualityVideoFormat(baseline, 2))).toBe(false);
     expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: undefined, maximumBitrate: 99 }))).toBe(true);
     expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: 0, maximumBitrate: 99 }))).toBe(true);
+  });
+
+  it.each([true, false])("aligns every tier without upscaling; preserveAspectRatio=%s", preserveAspectRatio => {
+    for (const [width, height] of [[1920, 1024], [1080, 1920], [642, 362], [1000, 750]] as const) {
+      const baseline = new RealtimeVideoFormat({ width, height, fps: 30 });
+      for (let level = 1; level <= 5; level++) {
+        const maximum = qualityVideoMaximumSize(baseline, level);
+        const size = qualityVideoSize(baseline, level, preserveAspectRatio);
+        expect(size.width % 4).toBe(0);
+        expect(size.height % 4).toBe(0);
+        expect(size.width).toBeGreaterThanOrEqual(4);
+        expect(size.height).toBeGreaterThanOrEqual(4);
+        expect(size.width).toBeLessThanOrEqual(maximum.width);
+        expect(size.height).toBeLessThanOrEqual(maximum.height);
+      }
+    }
+  });
+
+  it.each([true, false])("rejects sources too small for four-pixel alignment; preserveAspectRatio=%s", preserveAspectRatio => {
+    for (const [width, height] of [[2, 2], [2, 4], [4, 2]] as const) {
+      const baseline = new RealtimeVideoFormat({ width, height, fps: 30 });
+      expect(() => qualityVideoSize(baseline, 5, preserveAspectRatio)).toThrow("No aligned video size");
+    }
   });
 
   it.each([0, 6, 1.5, NaN])("rejects invalid level %s", level => {
