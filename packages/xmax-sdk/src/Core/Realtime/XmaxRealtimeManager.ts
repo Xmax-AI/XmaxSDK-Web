@@ -11,6 +11,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPermissionWatch";
 import { createRtcManager } from "../../Foundation/RTC/RtcFactory";
 import { XmaxEnvironment } from "../../Foundation/Runtime/XmaxEnvironment";
@@ -1104,6 +1105,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /**
    * 应用完整的上行视频格式，成功后更新本地轨道元数据，不改变生成格式或生命周期。
+   * 尺寸向下做 4 对齐，优先保持精确比例；对齐后的格式作为新的上行 L1 基准。
    * 复用配置操作准入，避免与建连、切换摄像头或其他配置更新并发。
    *
    * @throws 无本地相机、外部或文件视频流、参数无效、操作冲突或底层编码更新失败时抛错。
@@ -1118,15 +1120,18 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local camera, external or file video stream is not started");
       }
       videoFormat.validate();
+      const size = alignedVideoSize(videoFormat, 1, 4);
+      const resolvedFormat = size.width === videoFormat.width && size.height === videoFormat.height
+        ? videoFormat : videoFormat.resized(size.width, size.height);
       this.qualityController?.stop();
 
       // 上行尺寸不按模型分辨率桶吸附，也不发送生成条件或回传尺寸信令。
-      await this.streamController.updateUplinkVideoFormat(videoFormat);
+      await this.streamController.updateUplinkVideoFormat(resolvedFormat);
       token.ensureCurrent();
 
       this.resolvedMediaVideoFormat ??= previousFormat;
-      track.updateVideoFormat(videoFormat);
-      this.qualityStates.set(track, { baseline: videoFormat, level: 1 });
+      track.updateVideoFormat(resolvedFormat);
+      this.qualityStates.set(track, { baseline: resolvedFormat, level: 1 });
       this.qualityHistory?.write("uplink", 1);
     });
   }

@@ -25,7 +25,7 @@ import type {
   RealtimeSessionServicing,
 } from "../src/Service/Realtime/RealtimeSessionServicing";
 import { RealtimeConnectionState } from "../src/Service/Realtime/RealtimeState";
-import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { RealtimeVideoEncoderPreference, RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../src/Service/Realtime/StreamID";
 import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
@@ -1711,6 +1711,100 @@ describe("XmaxRealtimeManager local image", () => {
 describe("XmaxRealtimeManager video format updates", () => {
   const updatedFormat = new RealtimeVideoFormat({
     width: 640, height: 360, fps: 20, minimumBitrate: 300, maximumBitrate: 1200,
+  });
+
+  it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("aligns explicit uplink dimensions without changing other options for %s", async model => {
+    const { manager, camera, stream } = makeManager(undefined, false, model);
+    const local = makeLocalStream(camera);
+    const requested = new RealtimeVideoFormat({
+      width: 1710, height: 912, fps: 23,
+      minimumBitrate: 0, maximumBitrate: 4321,
+      encoderPreference: RealtimeVideoEncoderPreference.maintainQuality,
+    });
+    await manager.updateUplinkVideoFormat(requested);
+    const applied = stream.encoderConfigFormats.at(-1)!;
+    expect(applied).toEqual(requested.resized(1680, 896));
+    expect(local.videoTrack!.videoFormat).toBe(applied);
+    expect(requested).toMatchObject({ width: 1710, height: 912 });
+    expect(stream.connectCalls).toHaveLength(0);
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await manager.close();
+  });
+
+  it("rounds independently when exact aspect ratio cannot fit four-pixel alignment", async () => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    const requested = updatedFormat.resized(642, 362);
+    await manager.updateUplinkVideoFormat(requested);
+    expect(stream.encoderConfigFormats.at(-1)).toEqual(requested.resized(640, 360));
+    expect(local.videoTrack!.videoFormat).toBe(stream.encoderConfigFormats.at(-1));
+    await manager.close();
+  });
+
+  it("retains aligned dimensions through FPS updates and reconnects without changing the media baseline", async () => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    const requested = updatedFormat.resized(1710, 912);
+    await manager.updateUplinkVideoFormat(requested);
+    const applied = local.videoTrack!.videoFormat!;
+    const remote = await manager.connect(local);
+    expect(stream.encoderConfigFormats.at(-1)).toBe(applied);
+    expect(remote.videoTrack!.videoFormat).toBe(testVideoFormat);
+    await manager.updateUplinkFrameRate(16);
+    expect(local.videoTrack!.videoFormat).toMatchObject({ width: 1680, height: 896, fps: 16 });
+    await manager.disconnect();
+    await manager.connect(local);
+    expect(stream.encoderConfigFormats.at(-1)).toMatchObject({ width: 1680, height: 896, fps: 16 });
+    await manager.close();
+  });
+
+  it("uses the aligned format as the new adaptive baseline and restores it at L1", async () => {
+    const { manager, camera, stream, session } = makeManager(undefined, false, RealtimeModel.x2_1);
+    vi.spyOn(session, "createSession").mockResolvedValue(new RealtimeSession({
+      id: "aligned-session",
+      connection: { provider: RtcProvider.agora, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+    }));
+    const local = makeLocalStream(camera);
+    await manager.updateUplinkVideoFormat(new RealtimeVideoFormat({ width: 1710, height: 912, fps: 30 }));
+    const starting = manager.startGeneration({ localStream: local, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    completeRenderWarmup(await starting);
+
+    await manager.setUplinkQualityLevel(RealtimeQualityLevel.l3);
+    expect(stream.encoderConfigFormats.at(-1)).toMatchObject({ width: 1260, height: 672, fps: 24 });
+    await manager.setUplinkQualityLevel(RealtimeQualityLevel.l1);
+    expect(stream.encoderConfigFormats.at(-1)).toMatchObject({ width: 1680, height: 896, fps: 30 });
+    expect(stream.beginCalls[0]!.videoFormat).toBe(testVideoFormat);
+    expect(stream.updateCalls).toHaveLength(0);
+    expect(stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    await manager.close();
+  });
+
+  it.each([[2, 2], [2, 4], [4, 2]] as const)("rejects %s×%s before touching RTC or metadata", async (width, height) => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    await expect(manager.updateUplinkVideoFormat(updatedFormat.resized(width, height)))
+      .rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(stream.encoderConfigFormats).toHaveLength(0);
+    expect(local.videoTrack!.videoFormat).toBe(testVideoFormat);
+    await manager.close();
+  });
+
+  it("does not commit aligned metadata on encoder failure", async () => {
+    const { manager, camera, stream } = makeManager();
+    const local = makeLocalStream(camera);
+    const requested = updatedFormat.resized(1710, 912);
+    const apply = vi.spyOn(stream, "updateUplinkVideoFormat");
+    stream.failEncoderConfig = new XmaxError(XmaxErrorCode.rtcError, "encoder failed");
+    await expect(manager.updateUplinkVideoFormat(requested)).rejects.toBe(stream.failEncoderConfig);
+    expect(apply).toHaveBeenCalledWith(requested.resized(1680, 896));
+    expect(local.videoTrack!.videoFormat).toBe(testVideoFormat);
+    stream.failEncoderConfig = undefined;
+    await manager.updateUplinkVideoFormat(requested);
+    expect(local.videoTrack!.videoFormat).toEqual(requested.resized(1680, 896));
+    await manager.close();
   });
 
   it("requires a local camera stream", async () => {

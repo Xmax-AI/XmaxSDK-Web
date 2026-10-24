@@ -299,7 +299,10 @@ baseline. The default uplink minimum bitrate is 500 kbps, capped at the selected
 maximum bitrate; explicit bitrate settings take precedence.
 
 Use `updateUplinkVideoFormat` after creating the local camera stream, including during
-generation, to change upstream encoding without reconnecting or restarting the task:
+generation, to change upstream encoding without reconnecting or restarting the task.
+
+Dimensions are rounded down to multiples of four, preserving the exact aspect ratio
+when possible. The local track's `videoFormat` reflects the aligned dimensions.
 
 ```javascript
 await realtime.updateUplinkVideoFormat(new RealtimeVideoFormat({
