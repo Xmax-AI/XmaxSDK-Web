@@ -224,7 +224,7 @@ import {
   VideoContentMode,
   XmaxClient,
   XmaxConfiguration,
-  XmaxRealtimeVideoView,
+  XmaxRealtimeDualVideoView,
 } from "@xmaxai/web-sdk";
 
 const client = new XmaxClient(
@@ -242,7 +242,7 @@ const localStream = await realtime.createLocalCameraStream({
   enableFrameValidation: true, // Optional; waits a fixed 200ms camera warmup before publishing; false skips it.
 });
 
-const videoView = new XmaxRealtimeVideoView({
+const videoView = new XmaxRealtimeDualVideoView({
   localTrack: localStream.videoTrack,
   videoContentMode: VideoContentMode.fill,
 });
@@ -414,14 +414,21 @@ await realtime.startGeneration({
 
 ### Using React
 
-Use `XmaxRealtimeVideo` as your primary React view. Store the local and remote
+`XmaxRealtimeVideoView` displays a single local or remote track;
+`XmaxRealtimeDualVideoView` overlays local and remote tracks and switches between them.
+Their React counterparts are `XmaxRealtimeVideo` and `XmaxRealtimeDualVideo`.
+The dual view exposes `remoteVideoFadeInDuration` in seconds (default `0.3`),
+also available as a React prop. Zero, negative, or nonfinite values disable the
+fade-in animation without skipping rendering warmup. Changes apply to the next fade-in.
+
+Use `XmaxRealtimeDualVideo` as your primary React view. Store the local and remote
 tracks in component state, updating them dynamically as streams become available:
 
 ```jsx
-import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
+import { XmaxRealtimeDualVideo } from "@xmaxai/web-sdk/react";
 import { VideoContentMode } from "@xmaxai/web-sdk";
 
-<XmaxRealtimeVideo
+<XmaxRealtimeDualVideo
   localTrack={localTrack}
   remoteTrack={remoteTrack}
   videoContentMode={VideoContentMode.fill}
@@ -429,12 +436,12 @@ import { VideoContentMode } from "@xmaxai/web-sdk";
 />
 ```
 
-See the [React component](./packages/xmax-sdk/src/react/XmaxRealtimeVideo.tsx) for state binding and the
+See the [React component](./packages/xmax-sdk/src/react/XmaxRealtimeDualVideo.tsx) for state binding and the
 [example project](#example-project) for a complete implementation.
 
 ### Interact with the generated video
 
-`XmaxVideo` and `XmaxRealtimeVideo` support dragging on the remote output with a
+`XmaxRealtimeVideo` and `XmaxRealtimeDualVideo` support dragging on the remote output with a
 mouse, pen, or multiple touch points. Interaction becomes available after generation
 starts. The SDK maps the displayed coordinates to the model input and sends the
 trajectory automatically; local previews do not send interaction events.
@@ -465,8 +472,23 @@ input stream or starting generation.
 | --- | --- |
 | `setStateListener` | Observe pipeline states and termination reasons during real-time generation. |
 | `setLaunchTimingListener` | Monitor camera, connection, first-frame, and total launch timings. |
-| `setLocalVideoStatisticsListener` | Monitor uplink video resolution, frame rate, and bitrate. |
-| `setRemoteVideoStatisticsListener` | Monitor downlink video statistics, packet loss, playback buffer delay, RTT, and estimated RTC end-to-end delay. |
+| `setNetworkQualityListener` | Monitor `uplink` and `downlink` quality using `RealtimeNetworkQualityLevel`. |
+| `setUplinkVideoStatisticsListener` | Monitor resolution, capture/encode/send frame rates, bitrate, and packet loss. |
+| `setDownlinkVideoStatisticsListener` | Monitor resolution, decode/RTC-render frame rates, bitrate, packet loss, and estimated RTC end-to-end delay. |
+
+Unavailable video metrics are `undefined`, not inferred from another stage's frame
+rate. Both video statistics types use `packetLossPercent` (0–100) and `bitrateKbps`;
+downlink `renderFrameRate` excludes SDK interpolation. Network quality ranges from
+`unknown` to `excellent`, `good`, `poor`, `bad`, `veryBad`, and `down`.
+RTT and playback-buffer diagnostics remain in RTC performance logs rather than
+these public statistics structures. Listeners receive `undefined` when their
+current snapshot is cleared.
+
+Automatic uplink/downlink quality adaptation is enabled by default on supported RTC
+providers. Set `isAdaptiveQualityEnabled: false` in `RealtimeConfiguration` to start
+each connection at L1 without reading or writing quality history. Manual changes
+through `setUplinkQualityLevel` and `setDownlinkQualityLevel` remain available,
+and statistics listeners continue to receive updates.
 
 For example, monitor state changes and errors:
 

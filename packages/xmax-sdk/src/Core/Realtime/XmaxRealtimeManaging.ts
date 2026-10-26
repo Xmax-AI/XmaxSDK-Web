@@ -10,7 +10,7 @@
 
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
-import type { NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
@@ -22,7 +22,7 @@ import type {
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
-import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
+import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
 import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
 
@@ -142,11 +142,11 @@ export interface XmaxRealtimeManaging {
   ): Promise<void>;
 
   /**
-   * 监听 TRTC 上下行网络质量和 RTT；立即回放最新快照，断开后回调 undefined。
+   * 监听上下行网络质量；立即回放最新快照，尚无采样或断开后回调 undefined。
    * 独立于日志和远端生成流；传入 undefined 取消监听，监听器异常不影响主流程。
    */
-  setNetworkStatisticsListener(
-    listener?: NetworkStatisticsListener
+  setNetworkQualityListener(
+    listener?: RealtimeNetworkQualityListener
   ): Promise<void>;
 
   /**
@@ -160,21 +160,21 @@ export interface XmaxRealtimeManaging {
   ): Promise<void>;
 
   /**
-   * 监听本地主视频流实际分辨率、帧率及码率（kbps），独立于日志开关。
+   * 监听上行分辨率、采集/编码/发送帧率、码率和丢包率，独立于日志开关。
    * 设置后立即回放最新快照；未取得数据或停止/断开时回调 undefined。
    * 传入 undefined 取消监听；监听器异常不影响生成流程。
    */
-  setLocalVideoStatisticsListener(
-    listener?: VideoStatisticsListener
+  setUplinkVideoStatisticsListener(
+    listener?: UplinkVideoStatisticsListener
   ): Promise<void>;
 
   /**
-   * 监听当前生成结果流的分辨率、帧率、码率、云端 RTT 和媒体 E2E 估算值。
+   * 监听下行分辨率、解码/RTC 渲染帧率、码率、丢包率和媒体 E2E 估算值。
    * 独立于日志开关；立即回放最新快照，流消失或断开时回调 undefined。
    * 传入 undefined 取消监听；监听器异常不影响生成流程。
    */
-  setRemoteVideoStatisticsListener(
-    listener?: RemoteVideoStatisticsListener
+  setDownlinkVideoStatisticsListener(
+    listener?: DownlinkVideoStatisticsListener
   ): Promise<void>;
 
   /**

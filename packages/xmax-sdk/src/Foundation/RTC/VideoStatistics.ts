@@ -9,14 +9,9 @@
 //
 
 /**
- * 视频流实际运行统计；缺失或无效指标为 undefined。
+ * 上下行视频统计共用的媒体指标；缺失或无效指标为 undefined。
  */
-export interface VideoStatistics {
-
-  /**
-   * 本端到 RTC 云端的视频上行丢包率，单位为 %。
-   */
-  readonly uplinkLossPercent?: number;
+interface VideoStatistics {
 
   /**
    * 视频实际宽度，单位为像素；本地为发送尺寸，远端为接收尺寸。
@@ -29,33 +24,48 @@ export interface VideoStatistics {
   readonly height?: number;
 
   /**
-   * 实际帧率，单位 fps。
-   */
-  readonly frameRate?: number;
-
-  /**
    * 实际码率，单位 kbps。
    */
   readonly bitrateKbps?: number;
+}
+
+/**
+ * 本地视频流的上行运行统计。
+ */
+export interface UplinkVideoStatistics extends VideoStatistics {
 
   /**
-   * 本端到 RTC 云端的往返延迟，单位 ms；本地统计对应发送链路，远端统计对应接收链路。
-   * 仅保留厂商提供的测量值，未提供时为空。
+   * 实际采集帧率，单位 fps。
    */
-  readonly rttMs?: number;
+  readonly captureFrameRate?: number;
+
+  /**
+   * 实际编码帧率，单位 fps；厂商未提供时为空，不以发送帧率替代。
+   */
+  readonly encodeFrameRate?: number;
+
+  /**
+   * 实际发送帧率，单位 fps。
+   */
+  readonly sendFrameRate?: number;
+
+  /**
+   * 本端到 RTC 云端的视频上行丢包率，范围为 0～100，单位 %。
+   */
+  readonly packetLossPercent?: number;
 }
 
 /**
  * undefined 表示当前没有可用统计（尚未发布、断开或停止）。
  */
-export type VideoStatisticsListener = (
-  statistics: VideoStatistics | undefined
+export type UplinkVideoStatisticsListener = (
+  statistics: UplinkVideoStatistics | undefined
 ) => void;
 
 /**
  * 一路远端主视频流的接收统计。
  */
-export interface RemoteVideoStatistics extends VideoStatistics {
+export interface DownlinkVideoStatistics extends VideoStatistics {
 
   /**
    * RTC 用户标识。
@@ -63,24 +73,19 @@ export interface RemoteVideoStatistics extends VideoStatistics {
   readonly userID: string;
 
   /**
-   * 本端 SDK 到 RTC 云端的往返延迟，单位 ms；不是与远端用户之间的 RTT。
+   * 实际解码帧率，单位 fps。
    */
-  readonly rttMs?: number;
+  readonly decodeFrameRate?: number;
 
   /**
-   * 本端 SDK 到 RTC 云端的上行丢包率，单位 %，不是结果流的发送端丢包率。
+   * RTC 渲染帧率，单位 fps，不包含 SDK 插帧。
    */
-  readonly uplinkLossPercent?: number;
+  readonly renderFrameRate?: number;
 
   /**
-   * RTC 云端到本端 SDK 的下行丢包率，单位 %。
+   * RTC 云端到本端 SDK 的视频下行丢包率，范围为 0～100，单位 %。
    */
-  readonly downlinkLossPercent?: number;
-
-  /**
-   * 当前远端视频流的播放缓冲延迟，单位 ms；Agora 未提供时为空。
-   */
-  readonly jitterBufferDelayMs?: number;
+  readonly packetLossPercent?: number;
 
   /**
    * RTC 媒体端到端延迟估算值，单位 ms；不代表完整 AI 处理链路耗时。
@@ -92,6 +97,6 @@ export interface RemoteVideoStatistics extends VideoStatistics {
 /**
  * undefined 表示当前结果流没有统计或已被清理。
  */
-export type RemoteVideoStatisticsListener = (
-  statistics: RemoteVideoStatistics | undefined
+export type DownlinkVideoStatisticsListener = (
+  statistics: DownlinkVideoStatistics | undefined
 ) => void;

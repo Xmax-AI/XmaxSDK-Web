@@ -18,8 +18,9 @@ import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, VeRtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
-import type { RemoteVideoStatistics } from "../VideoStatistics";
+import type { DownlinkVideoStatistics } from "../VideoStatistics";
 import { VeRtcStatistics } from "./VeRtcStatistics";
+import { networkQualityLevel } from "../NetworkStatistics";
 
 /**
  * 动态加载的 VeRTC Web SDK。
@@ -194,12 +195,7 @@ export class VeRtcManager implements RtcManaging {
   /**
    * 按远端用户缓存的最新视频统计。
    */
-  private readonly remoteStatistics = new Map<string, RemoteVideoStatistics>();
-
-  /**
-   * 本端到 RTC 云端的上行丢包率，单位为 %。
-   */
-  private uplinkLossPercent?: number;
+  private readonly remoteStatistics = new Map<string, DownlinkVideoStatistics>();
 
   /**
    * 设置 VeRTC 模块加载方式，初始化时再创建引擎。
@@ -921,21 +917,21 @@ export class VeRtcManager implements RtcManaging {
     engine.on(events.onNetworkQuality, (up, down) => {
       if (mediaActive())
         this.listener?.onNetworkStatistics?.(Object.freeze({
-          uplinkQuality: VeRtcStatistics.quality(up), downlinkQuality: VeRtcStatistics.quality(down),
+          uplink: networkQualityLevel(up), downlink: networkQualityLevel(down),
         }));
     });
     engine.on(events.onLocalStreamStats, stats => {
       if (!mediaActive() || stats.isScreen || !this.videoRequested)
         return;
       const result = VeRtcStatistics.local(stats.videoStats);
-      this.uplinkLossPercent = result.uplinkLossPercent;
       this.listener?.onLocalVideoStatistics?.(result);
-      XmaxLogger.rtc.info(() => `VeRTC local video statistics: ${JSON.stringify(result)}`, XmaxLoggerOption.performance);
+      XmaxLogger.rtc.info(() => `VeRTC local video statistics: ${JSON.stringify(stats.videoStats)}`, XmaxLoggerOption.performance);
     });
     engine.on(events.onRemoteStreamStats, stats => {
       if (!mediaActive() || stats.isScreen || !this.requestedVideo.has(stats.userId))
         return;
-      this.remoteStatistics.set(stats.userId, VeRtcStatistics.remote(stats.userId, stats.videoStats, this.uplinkLossPercent));
+      this.remoteStatistics.set(stats.userId, VeRtcStatistics.remote(stats.userId, stats.videoStats));
+      XmaxLogger.rtc.info(() => `VeRTC remote video statistics: ${JSON.stringify(stats.videoStats)}`, XmaxLoggerOption.performance);
       this.emitRemoteStatistics();
     });
   }
@@ -972,7 +968,6 @@ export class VeRtcManager implements RtcManaging {
    */
   private clearStatistics(): void {
     this.remoteStatistics.clear();
-    this.uplinkLossPercent = undefined;
     this.listener?.onLocalVideoStatistics?.(undefined);
     this.emitRemoteStatistics();
   }

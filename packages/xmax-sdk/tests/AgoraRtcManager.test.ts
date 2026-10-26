@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IAgoraRTC, IAgoraRTCRemoteUser, LastmileProbeResult } from "agora-rtc-sdk-ng";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
@@ -52,8 +53,8 @@ function setup(environment = XmaxEnvironment.china) {
     sendStreamMessage: vi.fn(async (_message: string, _retry: boolean) => {}),
     remoteUsers: [user], localTracks: [{ trackMediaType: "video" }],
     getRTCStats: vi.fn(() => ({ RTT: 12, SendBytes: 100, RecvBytes: 200, OutgoingAvailableBandwidth: undefined as number | undefined })),
-    getLocalVideoStats: vi.fn(() => ({ sendResolutionWidth: 1920, sendResolutionHeight: 1024, sendFrameRate: 30, sendBitrate: 6000000, currentPacketLossRate: 0.02 })),
-    getRemoteVideoStats: vi.fn(() => ({ bot: { receiveResolutionWidth: 1920, receiveResolutionHeight: 1024, receiveFrameRate: 25, receiveBitrate: 5000000, currentPacketLossRate: 0.03, end2EndDelay: 90, receiveDelay: 120, transportDelay: 80 } })),
+    getLocalVideoStats: vi.fn(() => ({ sendResolutionWidth: 1920, sendResolutionHeight: 1024, captureFrameRate: 29, sendFrameRate: 30, sendBitrate: 6000000, currentPacketLossRate: 0.02 })),
+    getRemoteVideoStats: vi.fn(() => ({ bot: { receiveResolutionWidth: 1920, receiveResolutionHeight: 1024, receiveFrameRate: 25, decodeFrameRate: 24, renderFrameRate: 23, receiveBitrate: 5000000, currentPacketLossRate: 0.03, end2EndDelay: 90, receiveDelay: 120, transportDelay: 80 } })),
     getLocalAudioStats: vi.fn(() => ({})), getRemoteAudioStats: vi.fn(() => ({})),
   };
   const sdk = { setArea: vi.fn(), setLogLevel: vi.fn(), createClient: vi.fn(() => client),
@@ -236,7 +237,7 @@ describe("AgoraRtcManager", () => {
     const onNetworkStatistics = vi.fn();
     s.manager.setEventListener({ onNetworkStatistics } as any);
     s.emit("network-quality", { uplinkNetworkQuality: 4, downlinkNetworkQuality: 1 });
-    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplinkQuality: 4, downlinkQuality: 1 });
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplink: RealtimeNetworkQualityLevel.bad, downlink: RealtimeNetworkQualityLevel.excellent });
     s.emit("connection-state-change", "RECONNECTING", "CONNECTED");
     expect(onNetworkStatistics).toHaveBeenLastCalledWith(undefined);
     s.emit("network-quality", { uplinkNetworkQuality: 4, downlinkNetworkQuality: 1 });
@@ -244,7 +245,7 @@ describe("AgoraRtcManager", () => {
     s.emit("connection-state-change", "CONNECTED", "RECONNECTING");
     expect(onNetworkStatistics).toHaveBeenCalledTimes(2);
     s.emit("network-quality", { uplinkNetworkQuality: 2, downlinkNetworkQuality: 1 });
-    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplinkQuality: 2, downlinkQuality: 1 });
+    expect(onNetworkStatistics).toHaveBeenLastCalledWith({ uplink: RealtimeNetworkQualityLevel.good, downlink: RealtimeNetworkQualityLevel.excellent });
     s.emit("token-privilege-did-expire");
     expect(onNetworkStatistics).toHaveBeenLastCalledWith(undefined);
   });
@@ -828,12 +829,13 @@ describe("AgoraRtcManager", () => {
     await s.manager.initialize();
     await s.manager.joinRoom(credentials);
     await vi.advanceTimersByTimeAsync(2000);
-    expect(s.listener.onLocalVideoStatistics).toHaveBeenCalledWith(expect.objectContaining({ bitrateKbps: 6000, uplinkLossPercent: 2 }));
+    const local = s.listener.onLocalVideoStatistics.mock.calls[0]![0];
+    expect(local).toEqual({ width: 1920, height: 1024, captureFrameRate: 29, sendFrameRate: 30, bitrateKbps: 6000, packetLossPercent: 2 });
+    expect(local.encodeFrameRate).toBeUndefined();
     const remote = s.listener.onRemoteVideoStatistics.mock.calls[0]![0][0];
-    expect(remote).toMatchObject({ userID: "bot", bitrateKbps: 5000, downlinkLossPercent: 3, rttMs: 12, endToEndDelayMs: 90 });
-    expect(remote.jitterBufferDelayMs).toBeUndefined();
+    expect(remote).toEqual({ userID: "bot", width: 1920, height: 1024, decodeFrameRate: 24, renderFrameRate: 23, bitrateKbps: 5000, packetLossPercent: 3, endToEndDelayMs: 90 });
     s.emit("network-quality", { uplinkNetworkQuality: 1, downlinkNetworkQuality: 2 });
-    expect(s.listener.onNetworkStatistics).toHaveBeenCalledWith({ uplinkQuality: 1, downlinkQuality: 2 });
+    expect(s.listener.onNetworkStatistics).toHaveBeenCalledWith({ uplink: RealtimeNetworkQualityLevel.excellent, downlink: RealtimeNetworkQualityLevel.good });
     await s.manager.leaveRoom();
     await vi.advanceTimersByTimeAsync(4000);
     expect(s.listener.onLocalVideoStatistics).toHaveBeenCalledOnce();

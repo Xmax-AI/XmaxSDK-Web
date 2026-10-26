@@ -8,8 +8,8 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { RemoteVideoStatistics, VideoStatisticsListener } from "./VideoStatistics";
-import type { NetworkStatisticsListener } from "./NetworkStatistics";
+import type { DownlinkVideoStatistics, UplinkVideoStatisticsListener } from "./VideoStatistics";
+import type { RealtimeNetworkQualityListener } from "./NetworkStatistics";
 
 /**
  * 接收 RTC 媒体和数据信令事件。
@@ -43,18 +43,18 @@ export interface RtcEventListener {
   /**
    * 本端上下行网络质量和 RTT，独立于性能日志开关。
    */
-  onNetworkStatistics?: NetworkStatisticsListener;
+  onNetworkStatistics?: RealtimeNetworkQualityListener;
 
   /**
    * 本地主视频流运行统计；独立于性能日志开关。
    */
-  onLocalVideoStatistics?: VideoStatisticsListener;
+  onLocalVideoStatistics?: UplinkVideoStatisticsListener;
 
   /**
    * 本次采样所有远端主视频流的完整列表，空列表表示当前无可用统计。
    */
   onRemoteVideoStatistics?: (
-    statistics: readonly RemoteVideoStatistics[]
+    statistics: readonly DownlinkVideoStatistics[]
   ) => void;
 
   /**

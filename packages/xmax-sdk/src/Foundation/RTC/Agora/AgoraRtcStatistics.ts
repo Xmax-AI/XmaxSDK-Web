@@ -11,7 +11,7 @@
 import type { IAgoraRTCClient, NetworkQuality } from "agora-rtc-sdk-ng";
 import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
 import type { RtcEventListener } from "../RtcEventListener";
-import type { NetworkQualityLevel } from "../NetworkStatistics";
+import { networkQualityLevel } from "../NetworkStatistics";
 
 /**
  * 将声网统计转换为 SDK 公共单位，保留厂商缺失指标，不推算播放缓冲延迟。
@@ -31,14 +31,14 @@ export class AgoraRtcStatistics {
     const loss = AgoraRtcStatistics.loss;
     const localVideo = client.localTracks.some(track => track.trackMediaType === "video") ? {
       width: valid(local.sendResolutionWidth, 1), height: valid(local.sendResolutionHeight, 1),
-      frameRate: valid(local.sendFrameRate), bitrateKbps: valid(local.sendBitrate / 1000),
-      uplinkLossPercent: loss(local.currentPacketLossRate),
+      captureFrameRate: valid(local.captureFrameRate), sendFrameRate: valid(local.sendFrameRate),
+      bitrateKbps: valid(local.sendBitrate / 1000), packetLossPercent: loss(local.currentPacketLossRate),
     } : undefined;
     const remote = Object.entries(client.getRemoteVideoStats()).map(([userID, stats]) => ({
       userID, width: valid(stats.receiveResolutionWidth, 1), height: valid(stats.receiveResolutionHeight, 1),
-      frameRate: valid(stats.receiveFrameRate), bitrateKbps: valid(stats.receiveBitrate / 1000),
-      rttMs: valid(rtc.RTT), uplinkLossPercent: localVideo?.uplinkLossPercent,
-      downlinkLossPercent: loss(stats.currentPacketLossRate), endToEndDelayMs: valid(stats.end2EndDelay),
+      decodeFrameRate: valid(stats.decodeFrameRate), renderFrameRate: valid(stats.renderFrameRate),
+      bitrateKbps: valid(stats.receiveBitrate / 1000),
+      packetLossPercent: loss(stats.currentPacketLossRate), endToEndDelayMs: valid(stats.end2EndDelay),
     }));
     listener?.onLocalVideoStatistics?.(localVideo && Object.freeze(localVideo));
     listener?.onRemoteVideoStatistics?.(Object.freeze(remote.map(item => Object.freeze(item))));
@@ -60,9 +60,10 @@ export class AgoraRtcStatistics {
     stats: NetworkQuality,
     listener?: RtcEventListener
   ): void {
-    const quality = (value: number): NetworkQualityLevel | undefined =>
-      Number.isInteger(value) && value >= 0 && value <= 6 ? value as NetworkQualityLevel : undefined;
-    const result = Object.freeze({ uplinkQuality: quality(stats.uplinkNetworkQuality), downlinkQuality: quality(stats.downlinkNetworkQuality) });
+    const result = Object.freeze({
+      uplink: networkQualityLevel(stats.uplinkNetworkQuality),
+      downlink: networkQualityLevel(stats.downlinkNetworkQuality),
+    });
     listener?.onNetworkStatistics?.(result);
     XmaxLogger.rtc.info(() => `Agora 网络质量 (Agora Network Quality)\n${JSON.stringify(result, null, 2)}`, XmaxLoggerOption.performance);
   }

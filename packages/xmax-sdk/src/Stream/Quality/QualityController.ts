@@ -10,6 +10,7 @@
 
 import { QUALITY_TIERS } from "./QualityTiers";
 import { DEFAULT_POLICY, type QualityPolicy } from "./QualityPolicy";
+import { RealtimeNetworkQualityLevel } from "../../Foundation/RTC/NetworkStatistics";
 
 /**
  * 按 L1～L5 顺序供状态机逐级切换，规格只在共享定义中维护。
@@ -181,7 +182,7 @@ export class QualityController {
    * 只接收质量事件，不得用定时器重复提交同一份缓存统计。异常由调用方记录。
    */
   async observe(
-    quality: number | undefined,
+    quality: RealtimeNetworkQualityLevel | undefined,
     sampleAt = this.now()
   ): Promise<QualityChange | undefined> {
     if (!this.active || this.switching || !Number.isFinite(sampleAt))
@@ -200,13 +201,13 @@ export class QualityController {
       this.resetCounts();
       return;
     }
-    if (quality === 4 || quality === 5) {
+    if (quality === RealtimeNetworkQualityLevel.bad || quality === RealtimeNetworkQualityLevel.veryBad) {
       this.good = 0;
       this.poor++;
       if (this.poor >= this.policy.poorSamples && this.index < ORDERED_QUALITY_TIERS.length - 1) {
         return this.change(this.index + 1, now < this.probeUntil ? "failedProbe" : "poorNetwork");
       }
-    } else if (quality === 1 || quality === 2) {
+    } else if (quality === RealtimeNetworkQualityLevel.excellent || quality === RealtimeNetworkQualityLevel.good) {
       this.poor = 0;
       if (sampleAt < this.upgradeAfter) {
         this.good = 0;

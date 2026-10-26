@@ -7,7 +7,8 @@ import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
 import { LocalImageController } from "../src/Media/Image/LocalImageController";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { NetworkStatisticsListener } from "../src/Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../src/Foundation/RTC/NetworkStatistics";
+import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
@@ -29,7 +30,7 @@ import { RealtimeVideoEncoderPreference, RealtimeVideoFormat } from "../src/Serv
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../src/Service/Realtime/StreamID";
 import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
-import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
+import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import type { RemoteFrameInterpolationOptions } from "../src/Render/Video/RemoteVideoFramePipeline";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
@@ -140,21 +141,21 @@ class CameraControllingStub implements CameraControlling {
 class StreamControllingStub implements StreamControlling {
   getRemoteRecordingTracks = vi.fn(() => undefined);
   async updateCredentials(): Promise<void> {}
-  networkStatisticsListener?: NetworkStatisticsListener;
+  networkStatisticsListener?: RealtimeNetworkQualityListener;
 
-  setNetworkStatisticsListener(listener?: NetworkStatisticsListener): void {
+  setNetworkQualityListener(listener?: RealtimeNetworkQualityListener): void {
     this.networkStatisticsListener = listener;
   }
 
-  remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
+  remoteVideoStatisticsListener?: DownlinkVideoStatisticsListener;
 
-  setRemoteVideoStatisticsListener(listener?: RemoteVideoStatisticsListener): void {
+  setDownlinkVideoStatisticsListener(listener?: DownlinkVideoStatisticsListener): void {
     this.remoteVideoStatisticsListener = listener;
   }
 
-  localVideoStatisticsListener?: VideoStatisticsListener;
+  localVideoStatisticsListener?: UplinkVideoStatisticsListener;
 
-  setLocalVideoStatisticsListener(listener?: VideoStatisticsListener): void {
+  setUplinkVideoStatisticsListener(listener?: UplinkVideoStatisticsListener): void {
     this.localVideoStatisticsListener = listener;
   }
 
@@ -296,7 +297,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
 }
 
 /** 组装 Manager 与各层桩。 */
-function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false, model = "test-trtc") {
+function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false, model = "test-trtc", adaptiveQualityEnabled = true) {
   const camera = new CameraControllingStub();
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
@@ -309,6 +310,7 @@ function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interp
       model,
       provider: model === "test-trtc" ? RtcProvider.trtc : model === "test-vertc" ? RtcProvider.vertc : undefined,
       isFrameInterpolationEnabled: interpolationEnabled,
+      isAdaptiveQualityEnabled: adaptiveQualityEnabled,
     }),
     {
       cameraController: camera,
@@ -465,8 +467,8 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return storage;
   }
 
-  function setup(fps = 30, model: string = adaptiveModel, interpolation = false) {
-    const s = makeManager(async () => true, interpolation, model);
+  function setup(fps = 30, model: string = adaptiveModel, interpolation = false, adaptiveQualityEnabled = true) {
+    const s = makeManager(async () => true, interpolation, model, adaptiveQualityEnabled);
     if (s.manager.options.provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
         id: "adaptive-session", connection: { provider: s.manager.options.provider, roomID: "room", appID: "app",
@@ -477,9 +479,9 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     localStream.videoTrack!.updateVideoFormat(new RealtimeVideoFormat({ ...testVideoFormat, width: 1920, height: 1024, fps }));
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
-    const sample = async (uplinkQuality: 0 | 1 | 2 | 3 | 4 | 5 | 6, downlinkQuality: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1) => {
+    const sample = async (uplink: 0 | 1 | 2 | 3 | 4 | 5 | 6, downlink: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1) => {
       now += 2000;
-      s.stream.networkStatisticsListener?.({ uplinkQuality, downlinkQuality });
+      s.stream.networkStatisticsListener?.({ uplink: networkQualityLevel(uplink), downlink: networkQualityLevel(downlink) });
       // 自动调档跨控制器/协调器多个 Promise 边界，等待本次事件的微任务结束。
       await new Promise(resolve => setTimeout(resolve, 0));
     };
@@ -518,6 +520,63 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     expect(s.manager.uplinkQualityLevel).toBeUndefined();
     expect(s.manager.downlinkQualityLevel).toBeUndefined();
     await s.manager.close();
+  });
+
+  it.each([adaptiveModel, "test-trtc"])("disables automatic adaptation and history but retains statistics and manual levels on %s", async model => {
+    const storage = historyStorage();
+    const provider = model === "test-trtc" ? RtcProvider.trtc : RtcProvider.agora;
+    const history = new QualityHistory(model, provider);
+    history.write("uplink", 4);
+    history.write("downlink", 5);
+    storage.getItem.mockClear();
+    storage.setItem.mockClear();
+
+    const s = setup(30, model, false, false);
+    const network = vi.fn();
+    const uplink = vi.fn();
+    const downlink = vi.fn();
+    await s.manager.setNetworkQualityListener(network);
+    await s.manager.setUplinkVideoStatisticsListener(uplink);
+    await s.manager.setDownlinkVideoStatisticsListener(downlink);
+    await s.start();
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l1);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l1);
+    expect(s.stream.encoderConfigFormats[0]).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    expect(s.stream.beginCalls[0]?.targetSize).toEqual({ width: 1920, height: 1024 });
+
+    const updateVideo = vi.spyOn(s.stream, "updateUplinkVideoFormat");
+    const updateFps = vi.spyOn(s.stream, "updateUplinkFrameRate");
+    for (let i = 0; i < 6; i++) await s.sample(5, 5);
+    expect(updateVideo).not.toHaveBeenCalled();
+    expect(updateFps).not.toHaveBeenCalled();
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+    expect(network).toHaveBeenLastCalledWith({ uplink: RealtimeNetworkQualityLevel.veryBad, downlink: RealtimeNetworkQualityLevel.veryBad });
+    s.stream.localVideoStatisticsListener?.({ width: 1920, height: 1024, sendFrameRate: 30 });
+    s.stream.remoteVideoStatisticsListener?.({ userID: "bot", decodeFrameRate: 24 });
+    expect(uplink).toHaveBeenLastCalledWith({ width: 1920, height: 1024, sendFrameRate: 30 });
+    expect(downlink).toHaveBeenLastCalledWith({ userID: "bot", decodeFrameRate: 24 });
+
+    await s.manager.setUplinkQualityLevel(RealtimeQualityLevel.l4);
+    await s.manager.setDownlinkQualityLevel(RealtimeQualityLevel.l5);
+    updateVideo.mockClear();
+    updateFps.mockClear();
+    s.stream.updateDownlinkVideoResolution.mockClear();
+    for (let i = 0; i < 8; i++) await s.sample(1, 1);
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l4);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l5);
+    expect(updateVideo).not.toHaveBeenCalled();
+    expect(updateFps).not.toHaveBeenCalled();
+    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
+
+    await s.manager.disconnect();
+    await s.start();
+    expect(s.manager.uplinkQualityLevel).toBe(RealtimeQualityLevel.l1);
+    expect(s.manager.downlinkQualityLevel).toBe(RealtimeQualityLevel.l1);
+    expect(s.stream.encoderConfigFormats.at(-1)).toMatchObject({ width: 1920, height: 1024, fps: 30 });
+    expect(s.stream.beginCalls.at(-1)?.targetSize).toEqual({ width: 1920, height: 1024 });
+    await s.manager.close();
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 
   it("keeps the previous typed levels after failures and rejects invalid levels", async () => {
@@ -938,7 +997,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     const s = setup(); await s.start();
     const apply = vi.spyOn(s.stream, "updateUplinkVideoFormat");
     await s.samples(5, 2);
-    for (let i = 0; i < 5; i++) await s.manager.setNetworkStatisticsListener(() => {});
+    for (let i = 0; i < 5; i++) await s.manager.setNetworkQualityListener(() => {});
     expect(apply).not.toHaveBeenCalled();
     s.stream.networkStatisticsListener?.(undefined);
     await s.samples(5, 2);
@@ -1084,7 +1143,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     for (let i = 0; i < 3; i++) await s.sample(1, 5);
     await s.sample(1, 5); await s.sample(1, 5);
     s.stream.networkStatisticsListener?.(undefined);
-    for (let i = 0; i < 8; i++) await s.manager.setNetworkStatisticsListener(() => {});
+    for (let i = 0; i < 8; i++) await s.manager.setNetworkQualityListener(() => {});
     await s.sample(1, 5); await s.sample(1, 5);
     expect(s.stream.updateDownlinkVideoResolution).toHaveBeenCalledTimes(1);
     await s.sample(1, 5);
@@ -2157,8 +2216,8 @@ describe("XmaxRealtimeManager network statistics", () => {
   it("replays immutable snapshots and clears on disconnect without accepting late updates", async () => {
     const { manager, camera, stream } = makeManager();
     const listener = vi.fn();
-    const stats = { uplinkQuality: 1 as const, downlinkQuality: 2 as const, uplinkRttMs: 20, downlinkRttMs: 40 };
-    await manager.setNetworkStatisticsListener(listener);
+    const stats = { uplink: RealtimeNetworkQualityLevel.excellent, downlink: RealtimeNetworkQualityLevel.good };
+    await manager.setNetworkQualityListener(listener);
     expect(listener).toHaveBeenLastCalledWith(undefined);
     stream.networkStatisticsListener?.(stats);
     expect(listener).toHaveBeenCalledOnce();
@@ -2169,7 +2228,7 @@ describe("XmaxRealtimeManager network statistics", () => {
     expect(listener.mock.calls.at(-1)![0]).not.toBe(stats);
     expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
     const replay = vi.fn();
-    await manager.setNetworkStatisticsListener(replay);
+    await manager.setNetworkQualityListener(replay);
     expect(replay).toHaveBeenLastCalledWith(stats);
     stream.networkStatisticsListener?.(undefined);
     expect(replay).toHaveBeenLastCalledWith(undefined);
@@ -2180,7 +2239,7 @@ describe("XmaxRealtimeManager network statistics", () => {
     expect(replay).toHaveBeenLastCalledWith(undefined);
     expect(replay).toHaveBeenCalledTimes(4);
     await manager.connect(localStream);
-    await manager.setNetworkStatisticsListener(replay);
+    await manager.setNetworkQualityListener(replay);
     expect(replay).toHaveBeenLastCalledWith(undefined);
     stream.networkStatisticsListener?.(stats);
     expect(replay).toHaveBeenLastCalledWith(stats);
@@ -2191,12 +2250,12 @@ describe("XmaxRealtimeManager network statistics", () => {
   it.each([false, true])("isolates network observer failures and supports unsubscribe (async: %s)", async (asyncListener) => {
     const { manager, camera, stream } = makeManager();
     const fail = vi.fn(() => { throw new Error("observer failed"); });
-    await manager.setNetworkStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.setNetworkQualityListener(asyncListener ? async () => fail() : fail);
     await manager.connect(makeLocalStream(camera));
-    expect(() => stream.networkStatisticsListener?.({ uplinkQuality: 1 })).not.toThrow();
+    expect(() => stream.networkStatisticsListener?.({ uplink: RealtimeNetworkQualityLevel.excellent, downlink: RealtimeNetworkQualityLevel.unknown })).not.toThrow();
     expect(fail).toHaveBeenCalledTimes(2);
-    await manager.setNetworkStatisticsListener();
-    stream.networkStatisticsListener?.({ uplinkQuality: 2 });
+    await manager.setNetworkQualityListener();
+    stream.networkStatisticsListener?.({ uplink: RealtimeNetworkQualityLevel.good, downlink: RealtimeNetworkQualityLevel.unknown });
     await manager.close();
     expect(fail).toHaveBeenCalledTimes(2);
   });
@@ -2206,8 +2265,8 @@ describe("XmaxRealtimeManager remote video statistics", () => {
   it("replays snapshots and clears missing or stopped result metrics without accepting late updates", async () => {
     const { manager, camera, stream } = makeManager();
     const listener = vi.fn();
-    const stats = { userID: "bot-1", width: 1920, height: 1024, frameRate: 26, bitrateKbps: 6400, rttMs: 20, endToEndDelayMs: 87 };
-    await manager.setRemoteVideoStatisticsListener(listener);
+    const stats = { userID: "bot-1", width: 1920, height: 1024, decodeFrameRate: 26, renderFrameRate: 24, bitrateKbps: 6400, packetLossPercent: 2, endToEndDelayMs: 87 };
+    await manager.setDownlinkVideoStatisticsListener(listener);
     expect(listener).toHaveBeenLastCalledWith(undefined);
     stream.remoteVideoStatisticsListener?.(stats);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -2217,7 +2276,7 @@ describe("XmaxRealtimeManager remote video statistics", () => {
     expect(listener).toHaveBeenLastCalledWith(stats);
     expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
     const replay = vi.fn();
-    await manager.setRemoteVideoStatisticsListener(replay);
+    await manager.setDownlinkVideoStatisticsListener(replay);
     expect(replay).toHaveBeenLastCalledWith(stats);
     stream.remoteVideoStatisticsListener?.(undefined);
     expect(replay).toHaveBeenLastCalledWith(undefined);
@@ -2241,12 +2300,12 @@ describe("XmaxRealtimeManager remote video statistics", () => {
   it.each([false, true])("isolates remote metric observer failures and supports unsubscribe (async: %s)", async (asyncListener) => {
     const { manager, camera, stream } = makeManager();
     const fail = vi.fn(() => { throw new Error("observer failed"); });
-    await manager.setRemoteVideoStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.setDownlinkVideoStatisticsListener(asyncListener ? async () => fail() : fail);
     await manager.connect(makeLocalStream(camera));
-    expect(() => stream.remoteVideoStatisticsListener?.({ userID: "bot-1", rttMs: 0, endToEndDelayMs: 0 })).not.toThrow();
+    expect(() => stream.remoteVideoStatisticsListener?.({ userID: "bot-1", packetLossPercent: 0, endToEndDelayMs: 0 })).not.toThrow();
     expect(fail).toHaveBeenCalledTimes(2);
-    await manager.setRemoteVideoStatisticsListener();
-    stream.remoteVideoStatisticsListener?.({ userID: "bot-1", frameRate: 30 });
+    await manager.setDownlinkVideoStatisticsListener();
+    stream.remoteVideoStatisticsListener?.({ userID: "bot-1", decodeFrameRate: 30 });
     expect(fail).toHaveBeenCalledTimes(2);
     await manager.close();
   });
@@ -2255,9 +2314,9 @@ describe("XmaxRealtimeManager remote video statistics", () => {
 describe("XmaxRealtimeManager local video statistics", () => {
   it("replays immutable snapshots, clears on disconnect, and ignores late callbacks", async () => {
     const { manager, camera, stream } = makeManager();
-    const stats = { width: 1920, height: 1024, frameRate: 30, bitrateKbps: 6006.51 };
+    const stats = { width: 1920, height: 1024, captureFrameRate: 30, encodeFrameRate: 29, sendFrameRate: 28, bitrateKbps: 6006.51, packetLossPercent: 0 };
     const listener = vi.fn();
-    await manager.setLocalVideoStatisticsListener(listener);
+    await manager.setUplinkVideoStatisticsListener(listener);
     expect(listener).toHaveBeenLastCalledWith(undefined);
     stream.localVideoStatisticsListener?.(stats);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -2267,7 +2326,7 @@ describe("XmaxRealtimeManager local video statistics", () => {
     expect(listener).toHaveBeenLastCalledWith(stats);
     expect(Object.isFrozen(listener.mock.calls.at(-1)![0])).toBe(true);
     const replay = vi.fn();
-    await manager.setLocalVideoStatisticsListener(replay);
+    await manager.setUplinkVideoStatisticsListener(replay);
     expect(replay).toHaveBeenLastCalledWith(stats);
 
     const disconnecting = manager.disconnect();
@@ -2277,8 +2336,8 @@ describe("XmaxRealtimeManager local video statistics", () => {
     expect(replay).toHaveBeenCalledTimes(2);
 
     await manager.connect(localStream);
-    stream.localVideoStatisticsListener?.({ ...stats, frameRate: 25 });
-    expect(replay).toHaveBeenLastCalledWith({ ...stats, frameRate: 25 });
+    stream.localVideoStatisticsListener?.({ ...stats, sendFrameRate: 25 });
+    expect(replay).toHaveBeenLastCalledWith({ ...stats, sendFrameRate: 25 });
     const closing = manager.close();
     stream.localVideoStatisticsListener?.(stats);
     await closing;
@@ -2289,12 +2348,12 @@ describe("XmaxRealtimeManager local video statistics", () => {
   it.each([false, true])("isolates throwing observers and supports unsubscribe (async: %s)", async (asyncListener) => {
     const { manager, camera, stream } = makeManager();
     const fail = vi.fn(() => { throw new Error("observer failed"); });
-    await manager.setLocalVideoStatisticsListener(asyncListener ? async () => fail() : fail);
+    await manager.setUplinkVideoStatisticsListener(asyncListener ? async () => fail() : fail);
     await manager.connect(makeLocalStream(camera));
-    expect(() => stream.localVideoStatisticsListener?.({ frameRate: 0, bitrateKbps: 0 })).not.toThrow();
+    expect(() => stream.localVideoStatisticsListener?.({ sendFrameRate: 0, bitrateKbps: 0 })).not.toThrow();
     expect(fail).toHaveBeenCalledTimes(2);
-    await manager.setLocalVideoStatisticsListener();
-    stream.localVideoStatisticsListener?.({ frameRate: 30 });
+    await manager.setUplinkVideoStatisticsListener();
+    stream.localVideoStatisticsListener?.({ sendFrameRate: 30 });
     expect(fail).toHaveBeenCalledTimes(2);
     await manager.close();
   });

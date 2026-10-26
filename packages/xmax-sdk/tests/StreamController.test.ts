@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
@@ -323,17 +324,17 @@ describe("StreamController", () => {
   it("forwards network statistics after publishing without a generated stream and supports unsubscribe", async () => {
     const { controller, rtc } = makeStream();
     const listener = vi.fn();
-    const stats = { uplinkQuality: 1 as const, downlinkQuality: 0 as const, uplinkRttMs: 20 };
-    controller.setNetworkStatisticsListener(listener);
+    const stats = { uplink: RealtimeNetworkQualityLevel.excellent, downlink: RealtimeNetworkQualityLevel.unknown };
+    controller.setNetworkQualityListener(listener);
     rtc.eventListener?.onNetworkStatistics?.(stats);
     expect(listener).not.toHaveBeenCalled();
     await controller.connect(connection, false, noopEnsureActive);
     rtc.eventListener?.onNetworkStatistics?.(stats);
     expect(listener).toHaveBeenLastCalledWith(stats);
-    controller.setNetworkStatisticsListener();
+    controller.setNetworkQualityListener();
     rtc.eventListener?.onNetworkStatistics?.(stats);
     expect(listener).toHaveBeenCalledOnce();
-    controller.setNetworkStatisticsListener(listener);
+    controller.setNetworkQualityListener(listener);
     await controller.disconnect();
     rtc.eventListener?.onNetworkStatistics?.(stats);
     expect(listener).toHaveBeenCalledOnce();
@@ -342,9 +343,9 @@ describe("StreamController", () => {
   it("selects the actual generated stream's metrics, not the first remote user or configured bot", async () => {
     const { controller, rtc } = makeStream();
     const listener = vi.fn();
-    controller.setRemoteVideoStatisticsListener(listener);
+    controller.setDownlinkVideoStatisticsListener(listener);
     await controller.connect(connection, false, noopEnsureActive);
-    const actual = { userID: "bot-actual", width: 1920, height: 1024, frameRate: 26, bitrateKbps: 6400, rttMs: 20, endToEndDelayMs: 87 };
+    const actual = { userID: "bot-actual", width: 1920, height: 1024, decodeFrameRate: 26, renderFrameRate: 24, bitrateKbps: 6400, endToEndDelayMs: 87 };
     const other = { ...actual, userID: "bot001", width: 320 };
     rtc.eventListener?.onRemoteVideoStatistics?.([other, actual]);
     expect(listener).toHaveBeenLastCalledWith(undefined);
@@ -363,7 +364,7 @@ describe("StreamController", () => {
     await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(undefined));
     rtc.eventListener?.onRemoteVideoStatistics?.([actual]);
     expect(listener).toHaveBeenLastCalledWith(undefined);
-    const next = { ...actual, userID: "bot-next", frameRate: 24 };
+    const next = { ...actual, userID: "bot-next", decodeFrameRate: 24 };
     emitRemoteVideo(rtc, next.userID, true);
     await vi.waitFor(() => expect(rtc.subscribeRemoteVideoCalls).toContainEqual([next.userID, true]));
     // 等待订阅完成、实际结果流身份更新。
@@ -373,7 +374,7 @@ describe("StreamController", () => {
     });
     await controller.disconnect();
     expect(listener).toHaveBeenLastCalledWith(undefined);
-    controller.setRemoteVideoStatisticsListener();
+    controller.setDownlinkVideoStatisticsListener();
     listener.mockClear();
     rtc.eventListener?.onRemoteVideoStatistics?.([next]);
     expect(listener).not.toHaveBeenCalled();
@@ -382,17 +383,17 @@ describe("StreamController", () => {
   it("forwards local metrics only after publishing and supports listener removal", async () => {
     const { controller, rtc } = makeStream();
     const received: unknown[] = [];
-    const stats = { width: 1920, height: 1024, frameRate: 30, bitrateKbps: 6000 };
-    controller.setLocalVideoStatisticsListener((value) => received.push(value));
+    const stats = { width: 1920, height: 1024, captureFrameRate: 30, encodeFrameRate: 29, sendFrameRate: 28, bitrateKbps: 6000 };
+    controller.setUplinkVideoStatisticsListener((value) => received.push(value));
     rtc.eventListener?.onLocalVideoStatistics?.(stats);
     expect(received).toEqual([]);
     await controller.connect(connection, false, noopEnsureActive);
     rtc.eventListener?.onLocalVideoStatistics?.(stats);
     expect(received).toEqual([stats]);
-    controller.setLocalVideoStatisticsListener();
+    controller.setUplinkVideoStatisticsListener();
     rtc.eventListener?.onLocalVideoStatistics?.(stats);
     expect(received).toEqual([stats]);
-    controller.setLocalVideoStatisticsListener((value) => received.push(value));
+    controller.setUplinkVideoStatisticsListener((value) => received.push(value));
     await controller.disconnect();
     rtc.eventListener?.onLocalVideoStatistics?.(stats);
     expect(received).toEqual([stats]);

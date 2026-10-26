@@ -281,7 +281,7 @@ export class RecordingController {
     video.playsInline = true;
     video.srcObject = new MediaStream([session.videoTrack]);
 
-    // 独立探测首帧，不要求接入方挂载 XmaxVideoView，也不读取 UI 插帧输出。
+    // 独立探测首帧，不要求接入方挂载 XmaxRealtimeVideoView，也不读取 UI 插帧输出。
     const ready = () => {
       if (!session.stopping && !session.finished && video.readyState >= 2) {
         this.beginRecording(session);

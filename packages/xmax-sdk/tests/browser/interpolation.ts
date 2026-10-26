@@ -1,4 +1,4 @@
-import { RealtimeVideoTrack, XmaxLogger, XmaxLoggerOption, XmaxVideoView } from "../../src/index";
+import { RealtimeVideoTrack, XmaxLogger, XmaxLoggerOption, XmaxRealtimeVideoView } from "../../src/index";
 
 // 测试页开启 SDK 日志并捕获到全局数组，便于自动化读取遥测输出。
 XmaxLogger.configure(XmaxLoggerOption.all);
@@ -52,7 +52,7 @@ source.muted = true;
 source.playsInline = true;
 source.srcObject = stream;
 document.getElementById("source")!.appendChild(source);
-const view = new XmaxVideoView();
+const view = new XmaxRealtimeVideoView();
 view.element.style.width = "100%";
 view.element.style.height = "100%";
 view.attach(document.getElementById("result")!);

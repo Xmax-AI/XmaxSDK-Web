@@ -13,8 +13,8 @@ import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
 import { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import { toRoomJoinConfiguration } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
-import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
-import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
+import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
+import type { RealtimeNetworkQualityListener } from "../Foundation/RTC/NetworkStatistics";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -224,17 +224,17 @@ export class StreamController implements StreamControlling {
   /**
    * 本地视频统计的业务监听器。
    */
-  private localVideoStatisticsListener?: VideoStatisticsListener;
+  private localVideoStatisticsListener?: UplinkVideoStatisticsListener;
 
   /**
    * 网络质量统计的业务监听器。
    */
-  private networkStatisticsListener?: NetworkStatisticsListener;
+  private networkStatisticsListener?: RealtimeNetworkQualityListener;
 
   /**
    * 远端视频统计的业务监听器。
    */
-  private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
+  private remoteVideoStatisticsListener?: DownlinkVideoStatisticsListener;
 
   /**
    * 生成配置
@@ -340,8 +340,8 @@ export class StreamController implements StreamControlling {
   /**
    * 设置本地主视频流统计监听器，不改变 RTC 事件监听权。
    */
-  setLocalVideoStatisticsListener(
-    listener?: VideoStatisticsListener
+  setUplinkVideoStatisticsListener(
+    listener?: UplinkVideoStatisticsListener
   ): void {
     this.localVideoStatisticsListener = listener;
   }
@@ -349,8 +349,8 @@ export class StreamController implements StreamControlling {
   /**
    * 网络统计不按远端用户过滤，连接发布完成后即可回调。
    */
-  setNetworkStatisticsListener(
-    listener?: NetworkStatisticsListener
+  setNetworkQualityListener(
+    listener?: RealtimeNetworkQualityListener
   ): void {
     this.networkStatisticsListener = listener;
   }
@@ -358,8 +358,8 @@ export class StreamController implements StreamControlling {
   /**
    * 监听当前实际生成结果流的统计，不按会话下发的 botID 猜测结果流身份。
    */
-  setRemoteVideoStatisticsListener(
-    listener?: RemoteVideoStatisticsListener
+  setDownlinkVideoStatisticsListener(
+    listener?: DownlinkVideoStatisticsListener
   ): void {
     this.remoteVideoStatisticsListener = listener;
   }

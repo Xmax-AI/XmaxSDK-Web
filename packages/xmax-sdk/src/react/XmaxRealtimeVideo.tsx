@@ -13,6 +13,7 @@ import {
   XmaxRealtimeVideoView,
   type RealtimeVideoTrack,
   type TrajectoryEffectRendering,
+  type VideoRenderStatistics,
 } from "../index";
 import {
   useEffect,
@@ -21,24 +22,31 @@ import {
 } from "react";
 
 /**
- * 实时视频 React 组件的本地、远端轨道及显示选项。
+ * 单轨实时视频 React 组件的轨道、显示和交互选项。
  */
 export interface XmaxRealtimeVideoProps {
 
   /**
-   * 当前显示的本地视频轨道。
+   * 当前显示的视频轨道；置空时清空画面。
    */
-  localTrack?: RealtimeVideoTrack;
-
-  /**
-   * 当前显示的远端生成视频轨道；首帧提交后自动渐入。
-   */
-  remoteTrack?: RealtimeVideoTrack;
+  track?: RealtimeVideoTrack;
 
   /**
    * 视频内容在容器中的显示模式，默认 fill。
    */
   videoContentMode?: VideoContentMode;
+
+  /**
+   * 是否镜像显示（仅影响显示，不影响发布流）。
+   */
+  mirrored?: boolean;
+
+  /**
+   * 当前视图的呈现帧率统计；换流或卸载时清空，不受统计面板显示开关影响。
+   */
+  onRenderStatistics?: (
+    statistics?: VideoRenderStatistics
+  ) => void;
 
   /**
    * 容器类名。
@@ -62,7 +70,8 @@ export interface XmaxRealtimeVideoProps {
 }
 
 /**
- * 本地预览和远端生成画面自动切换的 React 组件。
+ * 单轨视频 React 组件：把一路视频轨渲染到容器。
+ * SDK 远端轨道自动预热 1000 ms 后渐入，本地预览直接显示。
  */
 export function XmaxRealtimeVideo(
   props: XmaxRealtimeVideoProps
@@ -83,25 +92,22 @@ export function XmaxRealtimeVideo(
     viewRef.current = view;
     return () => {
       viewRef.current = undefined;
-      view.localTrack = undefined;
-      view.remoteTrack = undefined;
+      view.track = undefined;
       view.detach();
     };
   }, []);
 
   useEffect(() => {
-    const view = viewRef.current;
-    if (view) {
-      view.localTrack = props.localTrack;
-    }
-  }, [props.localTrack]);
+    if (viewRef.current)
+      viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
+  }, [props.onRenderStatistics]);
 
   useEffect(() => {
     const view = viewRef.current;
     if (view) {
-      view.remoteTrack = props.remoteTrack;
+      view.track = props.track;
     }
-  }, [props.remoteTrack]);
+  }, [props.track]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -109,6 +115,13 @@ export function XmaxRealtimeVideo(
       view.videoContentMode = props.videoContentMode;
     }
   }, [props.videoContentMode]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && props.mirrored !== undefined) {
+      view.isMirrored = props.mirrored;
+    }
+  }, [props.mirrored]);
 
   useEffect(() => {
     if (viewRef.current) {

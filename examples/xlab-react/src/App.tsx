@@ -7,21 +7,19 @@ import {
   RealtimeModel,
   RealtimeRecordingEventType,
   modelDisplayName,
-  RtcProvider,
-  supportedRtcProviders,
   XmaxClient,
   XmaxConfiguration,
   XmaxEnvironment,
   XmaxLoggerOption,
   type RealtimeMediaStream,
   type RealtimeLaunchTiming,
-  type VideoStatistics,
-  type NetworkStatistics,
-  type RemoteVideoStatistics,
+  type UplinkVideoStatistics,
+  type RealtimeNetworkQuality,
+  type DownlinkVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
 } from "@xmaxai/web-sdk";
-import { XmaxVideo } from "@xmaxai/web-sdk/react";
+import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
 import { createRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { EXAMPLE_MODES, faceRestorationForMode, type ExampleModeKey } from "./presets";
@@ -53,7 +51,7 @@ function formatVideoMetric(value: number | undefined, unit: string): string {
   return value === undefined ? "—" : `${Number(value.toFixed(1))} ${unit}`;
 }
 
-function formatVideoResolution(statistics?: VideoStatistics): string {
+function formatVideoResolution(statistics?: UplinkVideoStatistics): string {
   return statistics?.width !== undefined && statistics.height !== undefined
     ? `${statistics.width} × ${statistics.height}`
     : "—";
@@ -81,9 +79,9 @@ export function App() {
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
-  const [localVideoStatistics, setLocalVideoStatistics] = useState<VideoStatistics>();
-  const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<RemoteVideoStatistics>();
-  const [networkStatistics, setNetworkStatistics] = useState<NetworkStatistics>();
+  const [localVideoStatistics, setLocalVideoStatistics] = useState<UplinkVideoStatistics>();
+  const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<DownlinkVideoStatistics>();
+  const [networkStatistics, setNetworkStatistics] = useState<RealtimeNetworkQuality>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
   const [interpolationRequested, setInterpolationRequested] = useState(false);
@@ -348,17 +346,17 @@ export function App() {
           setLaunchTiming(timing);
         }
       });
-      await realtime.setLocalVideoStatisticsListener((statistics) => {
+      await realtime.setUplinkVideoStatisticsListener((statistics) => {
         if (realtimeRef.current === realtime) {
           setLocalVideoStatistics(statistics);
         }
       });
-      await realtime.setRemoteVideoStatisticsListener((statistics) => {
+      await realtime.setDownlinkVideoStatisticsListener((statistics) => {
         if (realtimeRef.current === realtime) {
           setRemoteVideoStatistics(statistics);
         }
       });
-      await realtime.setNetworkStatisticsListener((statistics) => {
+      await realtime.setNetworkQualityListener((statistics) => {
         if (realtimeRef.current === realtime) {
           setNetworkStatistics(statistics);
         }
@@ -624,13 +622,12 @@ export function App() {
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
         { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
-        { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.frameRate, "fps") },
+        { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.sendFrameRate, "fps") },
         { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
       ]} />
-      <StatisticsPanel label="上行网络与延迟统计" rows={[
-        { label: "上行丢包率", value: formatVideoMetric(localVideoStatistics?.uplinkLossPercent ?? remoteVideoStatistics?.uplinkLossPercent, "%"), title: "本端 SDK → RTC 云端的上行丢包率，不是本地预览丢包率" },
-        { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplinkQuality) },
-        { label: "上行 RTT", value: formatVideoMetric(networkStatistics?.uplinkRttMs, "ms"), title: "本端上行连接到 RTC 云端的往返延迟；未提供时显示 —" },
+      <StatisticsPanel label="上行网络统计" rows={[
+        { label: "上行丢包率", value: formatVideoMetric(localVideoStatistics?.packetLossPercent, "%"), title: "本端 SDK → RTC 云端的上行丢包率，不是本地预览丢包率" },
+        { label: "上行网络质量", value: formatNetworkQuality(networkStatistics?.uplink) },
       ]} />
     </>
   );
@@ -832,7 +829,7 @@ export function App() {
         <div className="stageRow">
           <div className="stageSlot">
             <div className="stage">
-              <XmaxVideo
+              <XmaxRealtimeVideo
                 track={localStream?.videoTrack}
                 style={{ width: "100%", height: "100%" }}
               />
@@ -848,7 +845,7 @@ export function App() {
             <div className="stage">
               {remoteStream && (
                 <div className="remoteVideo" key={remoteStream.id}>
-                  <XmaxVideo
+                  <XmaxRealtimeVideo
                     track={remoteStream.videoTrack}
                     isInteractionEnabled
                     style={{ width: "100%", height: "100%" }}
@@ -860,16 +857,12 @@ export function App() {
                 {isMobileLayout && localStatisticsPanels}
                 <StatisticsPanel label="下行视频统计" rows={[
                   { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
-                  { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.frameRate, "fps") },
+                  { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.decodeFrameRate, "fps") },
                   { label: "下行码率", value: formatVideoMetric(remoteVideoStatistics?.bitrateKbps, "kbps") },
                 ]} />
                 <StatisticsPanel label="下行网络与延迟统计" rows={[
-                  { label: "播放缓冲延迟", value: formatVideoMetric(remoteVideoStatistics?.jitterBufferDelayMs, "ms") },
-                  { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.downlinkLossPercent, "%") },
-                  { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlinkQuality), title: "本端所有下行连接的平均网络质量" },
-                  supportedRtcProviders(model)[0] !== RtcProvider.trtc
-                    ? { label: "RTT（云端）", value: formatVideoMetric(remoteVideoStatistics?.rttMs, "ms"), title: "本端 SDK 到 RTC 云端的往返延迟" }
-                    : { label: "下行 RTT", value: formatVideoMetric(networkStatistics?.downlinkRttMs, "ms"), title: "本端所有下行连接到 RTC 云端的平均往返延迟，不是单程耗时" },
+                  { label: "下行丢包率", value: formatVideoMetric(remoteVideoStatistics?.packetLossPercent, "%") },
+                  { label: "下行网络质量", value: formatNetworkQuality(networkStatistics?.downlink), title: "本端所有下行连接的平均网络质量" },
                   { label: "E2E（RTC 估算）", value: formatVideoMetric(remoteVideoStatistics?.endToEndDelayMs, "ms") },
                 ]} />
               </div>

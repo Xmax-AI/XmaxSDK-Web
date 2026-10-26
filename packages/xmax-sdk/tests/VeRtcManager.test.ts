@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VeRtcManager, VERTC_APP_ID } from "../src/Foundation/RTC/VeRTC/VeRtcManager";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
@@ -390,22 +391,25 @@ describe("VeRTC token recovery", () => {
 describe("VeRTC statistics", () => {
   it("normalizes units, excludes screen streams and clears departed statistics", async () => {
     const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo(); await s.manager.subscribeRemoteVideo("bot", true);
-    s.emit("onLocalStreamStats", { isScreen: false, videoStats: { encodedFrameWidth: 1920, encodedFrameHeight: 1024, sentFrameRate: 30, sentKBitrate: 4500, videoLossRate: 0.02, rtt: 24.5 } });
-    expect(s.listener.onLocalVideoStatistics).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 30, bitrateKbps: 4500, uplinkLossPercent: 2, rttMs: 24.5 });
-    s.emit("onRemoteStreamStats", { userId: "bot", isScreen: false, videoStats: { width: 1920, height: 1024, receivedKBitrate: 4000, decoderOutputFrameRate: 25, videoLossRate: 0.03, rtt: 10, totalRtt: 50, e2eDelay: 90 } });
-    expect(s.listener.onRemoteVideoStatistics).toHaveBeenLastCalledWith([{ userID: "bot", width: 1920, height: 1024, frameRate: 25, bitrateKbps: 4000, uplinkLossPercent: 2, downlinkLossPercent: 3, rttMs: 10, endToEndDelayMs: 90 }]);
+    s.emit("onLocalStreamStats", { isScreen: false, videoStats: { encodedFrameWidth: 1920, encodedFrameHeight: 1024, inputFrameRate: 30, encoderOutputFrameRate: 28, sentFrameRate: 27, sentKBitrate: 4500, videoLossRate: 0.02, rtt: 24.5 } });
+    expect(s.listener.onLocalVideoStatistics).toHaveBeenLastCalledWith({ width: 1920, height: 1024, captureFrameRate: 30, encodeFrameRate: 28, sendFrameRate: 27, bitrateKbps: 4500, packetLossPercent: 2 });
+    s.emit("onRemoteStreamStats", { userId: "bot", isScreen: false, videoStats: { width: 1920, height: 1024, receivedKBitrate: 4000, decoderOutputFrameRate: 25, rendererOutputFrameRate: 23, videoLossRate: 0.03, rtt: 10, totalRtt: 50, e2eDelay: 90 } });
+    expect(s.listener.onRemoteVideoStatistics).toHaveBeenLastCalledWith([{ userID: "bot", width: 1920, height: 1024, decodeFrameRate: 25, renderFrameRate: 23, bitrateKbps: 4000, packetLossPercent: 3, endToEndDelayMs: 90 }]);
     const count = s.listener.onRemoteVideoStatistics.mock.calls.length;
     s.emit("onRemoteStreamStats", { userId: "screen", isScreen: true, videoStats: {} });
     expect(s.listener.onRemoteVideoStatistics).toHaveBeenCalledTimes(count);
-    s.emit("onNetworkQuality", 2, 3); expect(s.listener.onNetworkStatistics).toHaveBeenCalledWith({ uplinkQuality: 2, downlinkQuality: 3 });
+    s.emit("onNetworkQuality", 2, 3); expect(s.listener.onNetworkStatistics).toHaveBeenCalledWith({ uplink: RealtimeNetworkQualityLevel.good, downlink: RealtimeNetworkQualityLevel.poor });
     s.emit("onUserLeave", { userInfo: { userId: "bot" } }); expect(s.listener.onRemoteVideoStatistics).toHaveBeenLastCalledWith([]);
   });
 
-  it.each([0, undefined, -1, NaN, Infinity])("preserves zero and excludes unavailable uplink RTT (%s)", async (rtt) => {
+  it.each([0, undefined, -1, NaN, Infinity])("preserves zero and excludes unavailable frame rates (%s)", async (fps) => {
     const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo();
-    s.emit("onLocalStreamStats", { isScreen: false, videoStats: { videoLossRate: 0, rtt } });
+    s.emit("onLocalStreamStats", { isScreen: false, videoStats: { videoLossRate: 0, inputFrameRate: fps, encoderOutputFrameRate: fps, sentFrameRate: fps } });
     expect(s.listener.onLocalVideoStatistics).toHaveBeenLastCalledWith(expect.objectContaining({
-      rttMs: rtt === 0 ? 0 : undefined,
+      captureFrameRate: fps === 0 ? 0 : undefined,
+      encodeFrameRate: fps === 0 ? 0 : undefined,
+      sendFrameRate: fps === 0 ? 0 : undefined,
+      packetLossPercent: 0,
     }));
   });
 });

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrameInterpolationManager } from "../src/Foundation/Media/Video/FrameInterpolationManager";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
-import { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
 import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
+import { XmaxRealtimeDualVideoView } from "../src/Render/Video/XmaxRealtimeDualVideoView";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
@@ -69,7 +69,7 @@ function makeView(
   vi.stubGlobal("document", {
     createElement: (tag: string) => tag === "video" ? video : new ElementStub(),
   });
-  const view = new XmaxVideoView({ fadeInDurationMs });
+  const view = new XmaxRealtimeVideoView({ fadeInDurationMs });
   const track = new RealtimeVideoTrack({ id: "remote" });
   const onBindingFrame = vi.fn();
   const onViewFrame = vi.fn();
@@ -86,9 +86,126 @@ function makeView(
   return { view, video, onBindingFrame, onViewFrame, onWarmup };
 }
 
-function mediaLayer(view: XmaxVideoView): ElementStub {
+function mediaLayer(view: XmaxRealtimeVideoView): ElementStub {
   return (view.element as unknown as ElementStub).children[0]!.children[0]!;
 }
+
+describe("dual-view fade configuration", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * 准备独立的双轨视图，保留首帧、预热和动画帧的控制权。
+   */
+  function makeDualView(duration?: number, warmupMs?: number) {
+    const videos: VideoStub[] = [];
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("document", {
+      createElement: (tag: string) => {
+        if (tag !== "video") return new ElementStub();
+        const video = new VideoStub();
+        videos.push(video);
+        return video;
+      },
+    });
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }));
+    const remoteTrack = new RealtimeVideoTrack({ id: "remote" });
+    const onWarmup = vi.fn();
+    let remoteView!: XmaxRealtimeVideoView;
+    VideoRenderRegistry.register(remoteTrack, {
+      renderWarmupMs: warmupMs,
+      renderWarmupCompletedHandler: onWarmup,
+      attachHandler: target => {
+        remoteView = target as XmaxRealtimeVideoView;
+        target.setMediaStream({} as MediaStream);
+      },
+      detachHandler: target => target.setMediaStream(null),
+    });
+    const view = new XmaxRealtimeDualVideoView({ remoteTrack, remoteVideoFadeInDuration: duration });
+    return { view, remoteView, remoteTrack, video: videos[1]!, frames, onWarmup };
+  }
+
+  it("defaults to a 0.3-second fade after the first frame", () => {
+    const s = makeDualView();
+    expect(s.view.remoteVideoFadeInDuration).toBe(0.3);
+    expect(s.remoteView.element.style.opacity).toBe("0");
+    s.video.nextFrame();
+    expect(s.remoteView.element.style.transition).toBe("opacity 300ms ease-in-out");
+    expect(s.frames).toHaveLength(1);
+    s.frames.shift()!(0);
+    expect(s.remoteView.element.style.opacity).toBe("1");
+    s.view.detach();
+  });
+
+  it("applies constructor and later property values to the next fade only", () => {
+    const s = makeDualView(0.8);
+    expect(s.view.remoteVideoFadeInDuration).toBe(0.8);
+    expect(s.remoteView.fadeInDurationMs).toBe(800);
+    s.view.remoteVideoFadeInDuration = 0.15;
+    s.video.nextFrame();
+    expect(s.remoteView.element.style.transition).toBe("opacity 150ms ease-in-out");
+    s.frames.shift()!(0);
+    s.view.remoteVideoFadeInDuration = 0;
+    expect(s.remoteView.element.style.transition).toBe("opacity 150ms ease-in-out");
+    s.view.remoteTrack = undefined;
+    s.view.remoteTrack = s.remoteTrack;
+    s.video.nextFrame();
+    expect(s.remoteView.element.style.transition).toBe("none");
+    expect(s.remoteView.element.style.opacity).toBe("1");
+    expect(s.frames).toHaveLength(0);
+    s.view.detach();
+  });
+
+  it("updates the SDK warmup fade without restarting or extending warmup", async () => {
+    const s = makeDualView(0.8, 1000);
+    s.video.nextFrame();
+    await vi.advanceTimersByTimeAsync(500);
+    s.view.remoteVideoFadeInDuration = 0.4;
+    await vi.advanceTimersByTimeAsync(499);
+    expect(mediaLayer(s.remoteView).style.opacity).toBe("0");
+    expect(s.onWarmup).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mediaLayer(s.remoteView).style.transition).toBe("opacity 400ms ease-in-out");
+    expect(s.onWarmup).toHaveBeenCalledOnce();
+    expect(s.frames).toHaveLength(0);
+    s.view.detach();
+  });
+
+  for (const warmupMs of [undefined, 1000]) {
+    it.each([0, -1, NaN, Infinity, -Infinity])(`disables animation without skipping warmup=${warmupMs} (%s)`, async duration => {
+      const s = makeDualView(duration, warmupMs);
+      s.video.nextFrame();
+      const element = warmupMs === undefined ? s.remoteView.element : mediaLayer(s.remoteView);
+      if (warmupMs !== undefined) {
+        expect(element.style.opacity).toBe("0");
+        await vi.advanceTimersByTimeAsync(warmupMs - 1);
+        expect(s.onWarmup).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(s.onWarmup).toHaveBeenCalledOnce();
+      }
+      expect(element.style.transition).toBe("none");
+      expect(element.style.opacity).toBe("1");
+      expect(s.frames).toHaveLength(0);
+      s.view.detach();
+    });
+  }
+
+  it("respects reduced-motion preferences", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const s = makeDualView(0.8);
+    s.video.nextFrame();
+    expect(s.remoteView.element.style.transition).toBe("none");
+    expect(s.remoteView.element.style.opacity).toBe("1");
+    expect(s.frames).toHaveLength(0);
+    s.view.detach();
+  });
+});
 
 describe("video visibility", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -278,17 +395,17 @@ describe("remote render warmup", () => {
     vi.stubGlobal("requestAnimationFrame", animate);
     const remoteTrack = new RealtimeVideoTrack({ id: "remote" });
     const onWarmup = vi.fn();
-    let target: XmaxVideoView | undefined;
+    let target: XmaxRealtimeVideoView | undefined;
     VideoRenderRegistry.register(remoteTrack, {
       renderWarmupMs: 1000,
       renderWarmupCompletedHandler: onWarmup,
       attachHandler: view => {
-        target = view as XmaxVideoView;
+        target = view as XmaxRealtimeVideoView;
         view.setMediaStream({} as MediaStream);
       },
       detachHandler: view => view.setMediaStream(null),
     });
-    const view = new XmaxRealtimeVideoView({ remoteTrack });
+    const view = new XmaxRealtimeDualVideoView({ remoteTrack });
     expect(target!.element.style.visibility).toBe("visible");
     expect(target!.element.style.opacity).toBe("1");
     expect(target!.element.style.backgroundColor).toBe("transparent");
@@ -434,7 +551,7 @@ describe("video render statistics", () => {
   });
 });
 
-describe("XmaxVideoView first frame", () => {
+describe("XmaxRealtimeVideoView first frame", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("支持帧回调时不把 playing 当成首帧，并同时保留视图与绑定回调", () => {
@@ -521,7 +638,7 @@ describe("XmaxVideoView first frame", () => {
         frameDisplayHandler: onFrame,
       });
     }
-    const view = new XmaxRealtimeVideoView({ localTrack, remoteTrack });
+    const view = new XmaxRealtimeDualVideoView({ localTrack, remoteTrack });
     const queued = videos.flatMap((video) => [...video.callbacks.values()]);
     view.detach();
     expect(videos.every((video) => video.callbacks.size === 0)).toBe(true);

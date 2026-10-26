@@ -4,7 +4,7 @@ import { TrajectoryBinding } from "../src/Render/Trajectory/TrajectoryBinding";
 import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
 import { DefaultTrajectoryEffectRenderer } from "../src/Render/Trajectory/DefaultTrajectoryEffectRenderer";
 import { RenderController } from "../src/Render/RenderController";
-import { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
+import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
@@ -181,7 +181,7 @@ describe("Trajectory bindings and video views", () => {
   });
 
   it("does not allocate an overlay for local tracks and lazily attaches one for remote tracks", () => {
-    const view = new XmaxVideoView();
+    const view = new XmaxRealtimeVideoView();
     const local = new RealtimeVideoTrack({ id: "local" });
     local.mediaStreamTrack = {} as MediaStreamTrack;
     view.track = local;
@@ -246,7 +246,7 @@ describe("Trajectory bindings and video views", () => {
     const send = vi.fn();
     render.registerRemoteTrack(track, send);
     render.setInteractionEnabled(true);
-    const view = new XmaxVideoView();
+    const view = new XmaxRealtimeVideoView();
     const first = makeRenderer(), second = makeRenderer();
     view.trajectoryRenderer = first;
     view.track = track;

@@ -1,0 +1,306 @@
+//
+//  XmaxRealtimeDualVideoView.ts
+//  XmaxSDK
+//
+//  Author: 翁跃庭 (Yueting Weng)
+//  GitHub: https://github.com/Xmax-AI/XmaxSDK-Web
+//
+//  Copyright (c) 2026 XMAX.AI PTE. LTD.
+//
+
+import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
+import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
+import { XmaxRealtimeVideoView } from "./XmaxRealtimeVideoView";
+import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
+import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
+
+/**
+ * 双轨视频容器：在本地预览和远端生成画面之间自动切换（框架无关）。
+ *
+ * 设置 SDK 远端轨道后，等待首帧及渲染预热结束再渐入远端画面；
+ * 远端轨道置空时立即恢复本地预览。
+ */
+export class XmaxRealtimeDualVideoView {
+
+  /**
+   * 视图根元素。
+   */
+  readonly element: HTMLDivElement;
+
+  /**
+   * 视频视图
+   */
+  private readonly localVideoView: XmaxRealtimeVideoView;
+
+  /**
+   * 展示生成结果流的远端视频视图。
+   */
+  private readonly remoteVideoView: XmaxRealtimeVideoView;
+
+  /**
+   * 公共配置
+   */
+  private currentLocalTrack?: RealtimeVideoTrack;
+
+  /**
+   * 当前绑定的远端视频轨。
+   */
+  private currentRemoteTrack?: RealtimeVideoTrack;
+
+  /**
+   * 画面在视口中的缩放与裁剪方式。
+   */
+  private contentMode: VideoContentMode;
+
+  /**
+   * 远端画面渐入时长，单位为秒。
+   */
+  private fadeInDuration = 0.3;
+
+  /**
+   * 创建实时视频容器。
+   *
+   * @param options.localTrack 需要持续预览的本地视频轨道。
+   * @param options.remoteTrack 需要覆盖显示的远端生成视频轨道。
+   * @param options.videoContentMode 本地与远端视频的内容显示模式，默认 fill。
+   * @param options.remoteVideoFadeInDuration 远端渐入时长，单位为秒，默认 0.3；非正数或非有限值关闭动画。
+   */
+  constructor(
+    options?: {
+      localTrack?: RealtimeVideoTrack;
+      remoteTrack?: RealtimeVideoTrack;
+      videoContentMode?: VideoContentMode;
+      remoteVideoFadeInDuration?: number;
+      isInteractionEnabled?: boolean;
+    }
+  ) {
+    this.contentMode = options?.videoContentMode ?? VideoContentMode.fill;
+    this.currentLocalTrack = options?.localTrack;
+    this.currentRemoteTrack = options?.remoteTrack;
+
+    this.element = document.createElement("div");
+    this.element.style.position = "relative";
+    this.element.style.overflow = "hidden";
+    this.element.style.backgroundColor = "black";
+
+    this.localVideoView = new XmaxRealtimeVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: false });
+    this.remoteVideoView = new XmaxRealtimeVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: options?.isInteractionEnabled });
+    this.remoteVideoFadeInDuration = options?.remoteVideoFadeInDuration ?? 0.3;
+    for (const view of [this.localVideoView, this.remoteVideoView]) {
+      view.element.style.position = "absolute";
+      view.element.style.inset = "0";
+      this.element.appendChild(view.element);
+    }
+
+    this.localVideoView.track = this.currentLocalTrack;
+    this.updateRemoteTrack();
+  }
+
+  /**
+   * 远端画面的渐入时长，单位为秒，默认 0.3。
+   */
+  get remoteVideoFadeInDuration(): number {
+    return this.fadeInDuration;
+  }
+
+  /**
+   * 配置下一次渐入；非正数或非有限值关闭动画，不跳过首帧等待及渲染预热。
+   */
+  set remoteVideoFadeInDuration(
+    duration: number
+  ) {
+    this.fadeInDuration = duration;
+    const milliseconds = Number.isFinite(duration) && duration > 0 ? duration * 1000 : 0;
+    this.remoteVideoView.fadeInDurationMs = Number.isFinite(milliseconds) ? milliseconds : 0;
+  }
+
+  /**
+   * 当前显示的本地视频轨道。
+   */
+  get localTrack(): RealtimeVideoTrack | undefined {
+    return this.currentLocalTrack;
+  }
+
+  /**
+   * 只控制远端视图的轨迹交互，本地预览始终不接管手势。
+   */
+  get isInteractionEnabled(): boolean {
+    return this.remoteVideoView.isInteractionEnabled;
+  }
+
+  /**
+   * 转交远端交互开关。
+   */
+  set isInteractionEnabled(
+    enabled: boolean
+  ) {
+    this.remoteVideoView.isInteractionEnabled = enabled;
+  }
+
+  /**
+   * 远端视图的自定义轨迹效果。
+   */
+  get trajectoryRenderer(): TrajectoryEffectRendering | undefined {
+    return this.remoteVideoView.trajectoryRenderer;
+  }
+
+  /**
+   * undefined 恢复默认效果，不改变轨迹发送逻辑。
+   */
+  set trajectoryRenderer(
+    renderer: TrajectoryEffectRendering | undefined
+  ) {
+    this.remoteVideoView.trajectoryRenderer = renderer;
+  }
+
+  /**
+   * 替换本地预览轨道；轨道未变化时保留当前绑定。
+   */
+  set localTrack(
+    track: RealtimeVideoTrack | undefined
+  ) {
+    if (this.currentLocalTrack === track) {
+      return;
+    }
+    this.currentLocalTrack = track;
+    this.localVideoView.track = track;
+  }
+
+  /**
+   * 当前显示的远端生成视频轨道。
+   * SDK 远端轨道等待首帧及预热后渐入；置空时立即恢复本地预览。
+   */
+  get remoteTrack(): RealtimeVideoTrack | undefined {
+    return this.currentRemoteTrack;
+  }
+
+  /**
+   * 替换远端轨道并重新等待首帧渐入；清空轨道时恢复本地预览。
+   */
+  set remoteTrack(
+    track: RealtimeVideoTrack | undefined
+  ) {
+    if (this.currentRemoteTrack === track) {
+      return;
+    }
+    this.currentRemoteTrack = track;
+    this.updateRemoteTrack();
+  }
+
+  /**
+   * 视频内容在容器中的显示模式。
+   */
+  get videoContentMode(): VideoContentMode {
+    return this.contentMode;
+  }
+
+  /**
+   * 同步调整本地与远端视频在容器中的缩放和裁剪方式。
+   */
+  set videoContentMode(
+    mode: VideoContentMode
+  ) {
+    if (this.contentMode === mode) {
+      return;
+    }
+    this.contentMode = mode;
+    this.localVideoView.videoContentMode = mode;
+    this.remoteVideoView.videoContentMode = mode;
+  }
+
+  /**
+   * 本地预览是否镜像显示（前置摄像头）。
+   */
+  get isLocalMirrored(): boolean {
+    return this.localVideoView.isMirrored;
+  }
+
+  /**
+   * 更新本地预览镜像；不修改采集帧或远端画面。
+   */
+  set isLocalMirrored(
+    mirrored: boolean
+  ) {
+    this.localVideoView.isMirrored = mirrored;
+  }
+
+  /**
+   * 挂载到容器元素。
+   */
+  attach(
+    to: HTMLElement
+  ): void {
+    to.appendChild(this.element);
+    this.localVideoView.attach(this.element);
+    this.remoteVideoView.attach(this.element);
+  }
+
+  /**
+   * 从容器元素移除。
+   */
+  detach(): void {
+    this.localVideoView.detach();
+    this.remoteVideoView.detach();
+    this.element.remove();
+  }
+
+  /**
+   * 更新远端轨道绑定；SDK 轨道共用单轨视图的预热，普通轨道等待首帧后渐入。
+   */
+  private updateRemoteTrack(): void {
+    const remoteTrack = this.currentRemoteTrack;
+
+    this.remoteVideoView.frameDisplayHandler = undefined;
+    this.remoteVideoView.track = undefined;
+    this.remoteVideoView.element.style.transition = "";
+    this.remoteVideoView.element.style.opacity = "0";
+    this.remoteVideoView.element.style.visibility = "hidden";
+    this.remoteVideoView.element.style.backgroundColor = "black";
+
+    if (!remoteTrack) {
+      return;
+    }
+
+    // SDK 远端轨道由单轨视图统一预热和渐入，不再叠加容器动画。
+    if (VideoRenderRegistry.binding(remoteTrack)?.renderWarmupMs !== undefined) {
+      this.remoteVideoView.element.style.visibility = "visible";
+      this.remoteVideoView.element.style.opacity = "1";
+      this.remoteVideoView.element.style.backgroundColor = "transparent";
+      this.remoteVideoView.track = remoteTrack;
+      return;
+    }
+
+    this.remoteVideoView.frameDisplayHandler = () => {
+      if (this.currentRemoteTrack !== remoteTrack) {
+        return;
+      }
+      this.showRemoteVideo();
+    };
+    this.remoteVideoView.track = remoteTrack;
+  }
+
+  /**
+   * 远端首帧已提交：渐入远端画面。
+   */
+  private showRemoteVideo(): void {
+    const element = this.remoteVideoView.element;
+    if (element.style.visibility === "visible" && element.style.opacity === "1") {
+      return;
+    }
+
+    element.style.visibility = "visible";
+    const durationMs = this.remoteVideoView.fadeInDurationMs;
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (durationMs === 0 || reduceMotion) {
+      element.style.transition = "none";
+      element.style.opacity = "1";
+      return;
+    }
+    element.style.transition = `opacity ${durationMs}ms ease-in-out`;
+
+    // 强制一帧后再过渡，确保渐入生效。
+    requestAnimationFrame(() => {
+      element.style.opacity = "1";
+    });
+  }
+}

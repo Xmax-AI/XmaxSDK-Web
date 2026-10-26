@@ -41,7 +41,8 @@ export { NonRealtimeTaskError } from "./Service/NonRealtime/NonRealtimeTaskError
 /**
  * Foundation
  */
-export type { NetworkQualityLevel, NetworkStatistics, NetworkStatisticsListener } from "./Foundation/RTC/NetworkStatistics";
+export { RealtimeNetworkQualityLevel } from "./Foundation/RTC/NetworkStatistics";
+export type { RealtimeNetworkQuality, RealtimeNetworkQualityListener } from "./Foundation/RTC/NetworkStatistics";
 export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
@@ -50,10 +51,10 @@ export type { CameraRotation } from "./Foundation/Media/Camera/CameraRotation";
 export { RtcProvider } from "./Foundation/RTC/RtcProvider";
 export { VideoContentMode } from "./Foundation/Media/Video/VideoContentMode";
 export type {
-  VideoStatistics,
-  VideoStatisticsListener,
-  RemoteVideoStatistics,
-  RemoteVideoStatisticsListener,
+  UplinkVideoStatistics,
+  UplinkVideoStatisticsListener,
+  DownlinkVideoStatistics,
+  DownlinkVideoStatisticsListener,
 } from "./Foundation/RTC/VideoStatistics";
 export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
@@ -116,9 +117,9 @@ export { StoredFile } from "./Service/Storage/StoredFile";
 /**
  * Render
  */
-export { XmaxVideoView } from "./Render/Video/XmaxVideoView";
-export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
+export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
+export { XmaxRealtimeDualVideoView } from "./Render/Video/XmaxRealtimeDualVideoView";
 export { DefaultTrajectoryEffectRenderer } from "./Render/Trajectory/DefaultTrajectoryEffectRenderer";
 export type { TrajectoryEffectRendering } from "./Render/Trajectory/TrajectoryEffectRendering";
 export type { TrajectoryID, TrajectoryPoint } from "./Render/Trajectory/TrajectoryPoint";

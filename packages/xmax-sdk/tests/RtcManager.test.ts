@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
@@ -335,7 +336,7 @@ describe("TrtcRtcManager", () => {
       position: CameraPosition.front, rotation: 90 })).rejects.toThrow("Camera rotation currently requires Agora");
     expect(engine.startLocalVideoCalls).toHaveLength(0);
   });
-  it("maps directional network quality and RTT without requiring logs or remote video", async () => {
+  it("maps directional network quality without requiring logs or remote video", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
     XmaxLogger.configure(XmaxLoggerOption.none);
@@ -349,11 +350,11 @@ describe("TrtcRtcManager", () => {
     expect(listener).not.toHaveBeenCalled();
     await manager.joinRoom(joinConfig);
     engine.emit("network-quality", stats);
-    expect(listener).toHaveBeenLastCalledWith({ uplinkQuality: 1, downlinkQuality: 4, uplinkRttMs: 21, downlinkRttMs: 85 });
+    expect(listener).toHaveBeenLastCalledWith({ uplink: RealtimeNetworkQualityLevel.excellent, downlink: RealtimeNetworkQualityLevel.bad });
     expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
     for (const level of [0, 1, 2, 3, 4, 5, 6]) {
       engine.emit("network-quality", { ...stats, uplinkNetworkQuality: level, downlinkNetworkQuality: level });
-      expect(listener.mock.calls.at(-1)![0]).toMatchObject({ uplinkQuality: level, downlinkQuality: level });
+      expect(listener.mock.calls.at(-1)![0]).toEqual({ uplink: networkQualityLevel(level), downlink: networkQualityLevel(level) });
     }
     listener.mockClear();
     await manager.leaveRoom();
@@ -368,7 +369,7 @@ describe("TrtcRtcManager", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("normalizes missing or invalid network metrics while retaining zero RTT", async () => {
+  it("normalizes missing or invalid network quality to unknown", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
     manager.setEventListener({
@@ -383,16 +384,15 @@ describe("TrtcRtcManager", () => {
         uplinkRTT: NaN, downlinkRTT: -1,
       });
       expect(listener).toHaveBeenLastCalledWith({
-        uplinkQuality: undefined, downlinkQuality: undefined,
-        uplinkRttMs: undefined, downlinkRttMs: undefined,
+        uplink: RealtimeNetworkQualityLevel.unknown, downlink: RealtimeNetworkQualityLevel.unknown,
       });
     }
     engine.emit("network-quality", { uplinkRTT: 0, downlinkRTT: Infinity });
-    expect(listener.mock.calls.at(-1)![0]).toMatchObject({ uplinkRttMs: 0, downlinkRttMs: undefined });
+    expect(listener.mock.calls.at(-1)![0]).toEqual({ uplink: RealtimeNetworkQualityLevel.unknown, downlink: RealtimeNetworkQualityLevel.unknown });
     await manager.destroy();
   });
 
-  it("maps remote main-video statistics with cloud RTT and optional video E2E", async () => {
+  it("maps remote main-video statistics with packet loss and optional video E2E", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
     manager.setEventListener({
@@ -415,9 +415,8 @@ describe("TrtcRtcManager", () => {
       ],
     });
     expect(listener).toHaveBeenLastCalledWith([{
-      userID: "bot-1", width: 1920, height: 1024, frameRate: 26,
-      bitrateKbps: 6399.74, rttMs: 20, endToEndDelayMs: 87,
-      uplinkLossPercent: 1.5, downlinkLossPercent: 0, jitterBufferDelayMs: 42,
+      userID: "bot-1", width: 1920, height: 1024, decodeFrameRate: 26,
+      bitrateKbps: 6399.74, endToEndDelayMs: 87, packetLossPercent: 0,
     }]);
     expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
     expect(Object.isFrozen(listener.mock.calls[0]![0][0])).toBe(true);
@@ -429,9 +428,8 @@ describe("TrtcRtcManager", () => {
       ] }],
     });
     expect(listener).toHaveBeenLastCalledWith([{
-      userID: "bot-1", width: 1920, height: 1024, frameRate: 0,
-      bitrateKbps: 0, rttMs: undefined, endToEndDelayMs: undefined,
-      uplinkLossPercent: undefined, downlinkLossPercent: undefined, jitterBufferDelayMs: 87,
+      userID: "bot-1", width: 1920, height: 1024, decodeFrameRate: 0,
+      bitrateKbps: 0, endToEndDelayMs: undefined, packetLossPercent: undefined,
     }]);
     engine.emit("statistics", { rtt: 10, remoteStatistics: [] });
     expect(listener).toHaveBeenLastCalledWith([]);
@@ -442,28 +440,31 @@ describe("TrtcRtcManager", () => {
   });
 
   it.each([
-    [0, 0, 0, 0, 0, 0],
-    [100, 2.5, 254, 100, 2.5, 254],
-    [-1, 101, -1, undefined, undefined, undefined],
-    [NaN, Infinity, NaN, undefined, undefined, undefined],
-    [undefined, undefined, undefined, undefined, undefined, undefined],
-  ])("normalizes loss and buffer statistics (%s, %s, %s)", async (upLoss, downLoss, buffer, up, down, delay) => {
+    [0, 0, 0, 0],
+    [100, 2.5, 100, 2.5],
+    [-1, 101, undefined, undefined],
+    [NaN, Infinity, undefined, undefined],
+    [undefined, undefined, undefined, undefined],
+  ])("normalizes directional video packet loss (%s, %s)", async (upLoss, downLoss, up, down) => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
+    const localListener = vi.fn();
     manager.setEventListener({
       onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
       onRemoteVideoStatistics: listener,
+      onLocalVideoStatistics: localListener,
     });
     await manager.initialize();
     await manager.joinRoom(joinConfig);
     engine.emit("statistics", {
       upLoss, downLoss,
-      remoteStatistics: [{ userId: "bot", video: [{ videoType: "big", jitterBufferDelay: buffer }] }],
+      localStatistics: { video: [{ videoType: "big" }] },
+      remoteStatistics: [{ userId: "bot", video: [{ videoType: "big" }] }],
     });
     expect(listener).toHaveBeenLastCalledWith([expect.objectContaining({
-      uplinkLossPercent: up, downlinkLossPercent: down, jitterBufferDelayMs: delay,
-      endToEndDelayMs: undefined,
+      packetLossPercent: down, endToEndDelayMs: undefined,
     })]);
+    expect(localListener).toHaveBeenLastCalledWith(expect.objectContaining({ packetLossPercent: up }));
     await manager.destroy();
   });
 
@@ -489,7 +490,9 @@ describe("TrtcRtcManager", () => {
     expect(listener).not.toHaveBeenCalled();
     await manager.joinRoom(joinConfig);
     engine.emit("statistics", stats);
-    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 29, bitrateKbps: 6006.51 });
+    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, encodeFrameRate: 29, bitrateKbps: 6006.51, packetLossPercent: undefined });
+    expect(listener.mock.calls.at(-1)![0].sendFrameRate).toBeUndefined();
+    expect(listener.mock.calls.at(-1)![0].captureFrameRate).toBeUndefined();
     expect(Object.isFrozen(listener.mock.calls[0]![0])).toBe(true);
 
     engine.emit("statistics", { localStatistics: { video: [{ videoType: "small" }] } });
@@ -512,11 +515,11 @@ describe("TrtcRtcManager", () => {
     engine.emit("statistics", { localStatistics: { video: [
       { videoType: "big", width: 0, height: Infinity, frameRate: NaN, bitrate: -1 },
     ] } });
-    expect(listener).toHaveBeenLastCalledWith({ width: undefined, height: undefined, frameRate: undefined, bitrateKbps: undefined });
+    expect(listener).toHaveBeenLastCalledWith({ width: undefined, height: undefined, encodeFrameRate: undefined, bitrateKbps: undefined, packetLossPercent: undefined });
     engine.emit("statistics", { localStatistics: { video: [
       { videoType: "big", width: 1920, height: 1024, frameRate: 0, bitrate: 0 },
     ] } });
-    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 0, bitrateKbps: 0 });
+    expect(listener).toHaveBeenLastCalledWith({ width: 1920, height: 1024, encodeFrameRate: 0, bitrateKbps: 0, packetLossPercent: undefined });
     await manager.destroy();
   });
 

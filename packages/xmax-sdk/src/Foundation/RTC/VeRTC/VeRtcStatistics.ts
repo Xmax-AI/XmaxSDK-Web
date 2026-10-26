@@ -9,8 +9,7 @@
 //
 
 import type { LocalVideoStats, RemoteVideoStats } from "@volcengine/rtc";
-import type { VideoStatistics, RemoteVideoStatistics } from "../VideoStatistics";
-import type { NetworkQualityLevel } from "../NetworkStatistics";
+import type { UplinkVideoStatistics, DownlinkVideoStatistics } from "../VideoStatistics";
 
 /**
  * VeRTC 的码率已经是 kbps，丢包率为 0–1；缺失指标不推算。
@@ -22,12 +21,12 @@ export class VeRtcStatistics {
    */
   static local(
     stats: LocalVideoStats
-  ): VideoStatistics {
+  ): UplinkVideoStatistics {
     return Object.freeze({
       width: this.valid(stats.encodedFrameWidth, 1), height: this.valid(stats.encodedFrameHeight, 1),
-      frameRate: this.valid(stats.sentFrameRate), bitrateKbps: this.valid(stats.sentKBitrate),
-      rttMs: this.valid(stats.rtt),
-      uplinkLossPercent: this.loss(stats.videoLossRate),
+      captureFrameRate: this.valid(stats.inputFrameRate), encodeFrameRate: this.valid(stats.encoderOutputFrameRate),
+      sendFrameRate: this.valid(stats.sentFrameRate), bitrateKbps: this.valid(stats.sentKBitrate),
+      packetLossPercent: this.loss(stats.videoLossRate),
     });
   }
 
@@ -36,24 +35,14 @@ export class VeRtcStatistics {
    */
   static remote(
     userID: string,
-    stats: RemoteVideoStats,
-    uplinkLossPercent?: number
-  ): RemoteVideoStatistics {
+    stats: RemoteVideoStats
+  ): DownlinkVideoStatistics {
     return Object.freeze({
       userID, width: this.valid(stats.width, 1), height: this.valid(stats.height, 1),
-      frameRate: this.valid(stats.decoderOutputFrameRate), bitrateKbps: this.valid(stats.receivedKBitrate),
-      rttMs: this.valid(stats.rtt), downlinkLossPercent: this.loss(stats.videoLossRate),
-      endToEndDelayMs: this.valid(stats.e2eDelay), uplinkLossPercent,
+      decodeFrameRate: this.valid(stats.decoderOutputFrameRate), renderFrameRate: this.valid(stats.rendererOutputFrameRate),
+      bitrateKbps: this.valid(stats.receivedKBitrate), packetLossPercent: this.loss(stats.videoLossRate),
+      endToEndDelayMs: this.valid(stats.e2eDelay),
     });
-  }
-
-  /**
-   * 过滤超出公共网络质量等级范围的值。
-   */
-  static quality(
-    value: number
-  ): NetworkQualityLevel | undefined {
-    return Number.isInteger(value) && value >= 0 && value <= 6 ? value as NetworkQualityLevel : undefined;
   }
 
   /**

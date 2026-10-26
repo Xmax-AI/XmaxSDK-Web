@@ -9,8 +9,8 @@
 //
 
 import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
-import type { NetworkStatisticsListener } from "../Foundation/RTC/NetworkStatistics";
-import type { RemoteVideoStatisticsListener, VideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
+import type { RealtimeNetworkQualityListener } from "../Foundation/RTC/NetworkStatistics";
+import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../Service/Realtime/RealtimeExtraParams";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
@@ -113,8 +113,8 @@ export interface StreamControlling {
   /**
    * 监听本端上下行网络统计，传入 undefined 取消。
    */
-  setNetworkStatisticsListener(
-    listener?: NetworkStatisticsListener
+  setNetworkQualityListener(
+    listener?: RealtimeNetworkQualityListener
   ): void;
 
   /**
@@ -270,14 +270,14 @@ export interface StreamControlling {
   /**
    * 设置本地主视频流统计监听器，传入 undefined 清除。
    */
-  setLocalVideoStatisticsListener(
-    listener?: VideoStatisticsListener
+  setUplinkVideoStatisticsListener(
+    listener?: UplinkVideoStatisticsListener
   ): void;
 
   /**
    * 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。
    */
-  setRemoteVideoStatisticsListener(
-    listener?: RemoteVideoStatisticsListener
+  setDownlinkVideoStatisticsListener(
+    listener?: DownlinkVideoStatisticsListener
   ): void;
 }

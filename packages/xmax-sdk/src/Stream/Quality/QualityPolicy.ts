@@ -14,12 +14,12 @@
 export interface QualityPolicy {
 
   /**
-   * 连续差网络样本（质量等级 4～5）达到此次数时降一档，默认 3 次。
+   * 连续差网络样本（bad、veryBad）达到此次数时降一档，默认 3 次。
    */
   poorSamples: number;
 
   /**
-   * 连续好网络样本（质量等级 1～2）达到此次数时尝试升一档，默认 5 次。
+   * 连续好网络样本（excellent、good）达到此次数时尝试升一档，默认 5 次。
    */
   goodSamples: number;
 

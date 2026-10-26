@@ -9,7 +9,7 @@ import type {
 } from "../src/Foundation/RTC/RtcManaging";
 import { CameraController } from "../src/Media/Camera/CameraController";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
-import type { XmaxVideoView } from "../src/Render/Video/XmaxVideoView";
+import type { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
@@ -188,7 +188,7 @@ function attachPreview(track: { mediaStreamTrack?: MediaStreamTrack } & object) 
   const view = {
     isMirrored: false,
     setMediaStream: () => {},
-  } as unknown as XmaxVideoView;
+  } as unknown as XmaxRealtimeVideoView;
   binding?.attachHandler(view, "fill" as never);
   return view;
 }

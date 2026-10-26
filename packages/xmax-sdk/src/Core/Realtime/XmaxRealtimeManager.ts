@@ -18,8 +18,8 @@ import { XmaxEnvironment } from "../../Foundation/Runtime/XmaxEnvironment";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { snapshotExtraParams, type RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
-import type { NetworkStatistics, NetworkStatisticsListener } from "../../Foundation/RTC/NetworkStatistics";
-import type { RemoteVideoStatistics, RemoteVideoStatisticsListener, VideoStatistics, VideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
+import type { RealtimeNetworkQuality, RealtimeNetworkQualityListener } from "../../Foundation/RTC/NetworkStatistics";
+import type { DownlinkVideoStatistics, DownlinkVideoStatisticsListener, UplinkVideoStatistics, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { MediaController } from "../../Media/MediaController";
 import { RecordingController } from "../../Media/Recording/RecordingController";
 import { RealtimeRecordingFinishReason, type RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
@@ -196,22 +196,22 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 本地、远端和网络统计快照及观察者
    */
-  private localVideoStatistics?: VideoStatistics;
+  private localVideoStatistics?: UplinkVideoStatistics;
 
   /**
    * 本地视频统计的业务监听器。
    */
-  private localVideoStatisticsListener?: VideoStatisticsListener;
+  private localVideoStatisticsListener?: UplinkVideoStatisticsListener;
 
   /**
    * 当前生成结果流的视频统计。
    */
-  private remoteVideoStatistics?: RemoteVideoStatistics;
+  private remoteVideoStatistics?: DownlinkVideoStatistics;
 
   /**
    * 远端视频统计的业务监听器。
    */
-  private remoteVideoStatisticsListener?: RemoteVideoStatisticsListener;
+  private remoteVideoStatisticsListener?: DownlinkVideoStatisticsListener;
 
   /**
    * 是否已发布媒体并开始接收有效视频统计。
@@ -221,12 +221,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 最新的上下行网络质量统计。
    */
-  private networkStatistics?: NetworkStatistics;
+  private networkStatistics?: RealtimeNetworkQuality;
 
   /**
    * 网络质量统计的业务监听器。
    */
-  private networkStatisticsListener?: NetworkStatisticsListener;
+  private networkStatisticsListener?: RealtimeNetworkQualityListener;
 
   /**
    * 实时业务管理组件；状态所有权分别归连接和生成管理器。
@@ -390,7 +390,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       cleanup: (scope, taskID) => this.performCleanup(scope, taskID),
     });
 
-    if (options.provider === RtcProvider.agora || options.provider === RtcProvider.trtc) {
+    if (options.isAdaptiveQualityEnabled &&
+      (options.provider === RtcProvider.agora || options.provider === RtcProvider.trtc)) {
       this.qualityHistory = new QualityHistory(options.model, options.provider);
       this.qualityController = new QualityController(async (change, signal) => {
         await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async token => {
@@ -408,14 +409,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       });
     }
 
-    this.streamController.setLocalVideoStatisticsListener((statistics) => {
+    this.streamController.setUplinkVideoStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.localVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.notifyLocalVideoStatistics();
       }
     });
 
-    this.streamController.setNetworkStatisticsListener((statistics) => {
+    this.streamController.setNetworkQualityListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.networkStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.handleAdaptiveQuality(statistics);
@@ -423,7 +424,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       }
     });
 
-    this.streamController.setRemoteVideoStatisticsListener((statistics) => {
+    this.streamController.setDownlinkVideoStatisticsListener((statistics) => {
       if (this.acceptsVideoStatistics) {
         this.remoteVideoStatistics = statistics ? Object.freeze({ ...statistics }) : undefined;
         this.notifyRemoteVideoStatistics();
@@ -813,8 +814,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 监听本地主视频流的实际运行统计；立即回放最新快照。
    */
-  async setLocalVideoStatisticsListener(
-    listener?: VideoStatisticsListener
+  async setUplinkVideoStatisticsListener(
+    listener?: UplinkVideoStatisticsListener
   ): Promise<void> {
     this.localVideoStatisticsListener = listener;
     this.notifyLocalVideoStatistics();
@@ -823,8 +824,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 监听当前生成结果流的实际运行统计；立即回放最新快照。
    */
-  async setRemoteVideoStatisticsListener(
-    listener?: RemoteVideoStatisticsListener
+  async setDownlinkVideoStatisticsListener(
+    listener?: DownlinkVideoStatisticsListener
   ): Promise<void> {
     this.remoteVideoStatisticsListener = listener;
     this.notifyRemoteVideoStatistics();
@@ -844,8 +845,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 网络统计立即回放最新快照，无数据或断开后为 undefined。
    */
-  async setNetworkStatisticsListener(
-    listener?: NetworkStatisticsListener
+  async setNetworkQualityListener(
+    listener?: RealtimeNetworkQualityListener
   ): Promise<void> {
     this.networkStatisticsListener = listener;
     this.notifyNetworkStatistics();
@@ -1181,7 +1182,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 上下行独立判断；串行应用同一原始事件，避免同时降档争抢配置租约。
    */
   private handleAdaptiveQuality(
-    statistics?: NetworkStatistics
+    statistics?: RealtimeNetworkQuality
   ): void {
     const revision = ++this.adaptiveQualityRevision;
     const controller = this.qualityController;
@@ -1217,13 +1218,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.adaptiveQualityPending = true;
     void (async () => {
       // 失败已由协调器上报；一个方向失败不阻断另一个方向的判断。
-      await controller.observe(statistics.uplinkQuality, sampleAt).catch(() => { });
+      await controller.observe(statistics.uplink, sampleAt).catch(() => { });
       if (revision !== this.adaptiveQualityRevision || this.currentState.taskID !== taskID || state !== this.downlinkQualityState ||
         this.currentState.connectionState !== RealtimeConnectionState.generating || this.coordinator.isBusy) {
         downlink.resetSamples();
         return;
       }
-      await downlink.observe(statistics.downlinkQuality, sampleAt).catch(() => { });
+      await downlink.observe(statistics.downlink, sampleAt).catch(() => { });
     })().finally(() => {
       this.adaptiveQualityPending = false;
     });
@@ -1483,15 +1484,16 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 仅为尚无档位记录的本地上行选择初始档位；不应用配置或覆盖重连状态。
+   * 选择本地上行初始档位；关闭自动调档时，每次连接均从原媒体基准的 L1 启动。
    */
   private resolveInitialUplinkQuality(
     track: RealtimeVideoTrack
   ): QualityState | undefined {
-    if (this.qualityStates.has(track))
+    const previous = this.qualityStates.get(track);
+    if (previous && this.options.isAdaptiveQualityEnabled)
       return undefined;
 
-    const baseline = track.videoFormat;
+    const baseline = previous?.baseline ?? track.videoFormat;
     if (!baseline)
       return undefined;
 

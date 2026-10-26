@@ -19,7 +19,7 @@ import {
   type RtcEngineLease,
 } from "./RtcEngineManager";
 import type { RtcEventListener } from "../RtcEventListener";
-import type { NetworkQualityLevel } from "../NetworkStatistics";
+import { networkQualityLevel } from "../NetworkStatistics";
 import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "../RtcManaging";
 import { RtcStatsLogger } from "../RtcStatsLogger";
@@ -781,11 +781,13 @@ export class TrtcRtcManager implements RtcManaging {
         const video = stats.localStatistics?.video?.find((item) => item.videoType === "big");
         const valid = (value: number | undefined, minimum: number) =>
           typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : undefined;
+        // TRTC 的上行 frameRate 来自编码帧率，不作为采集或发送帧率重复输出。
         this.eventListener?.onLocalVideoStatistics?.(video ? Object.freeze({
           width: valid(video.width, 1),
           height: valid(video.height, 1),
-          frameRate: valid(video.frameRate, 0),
+          encodeFrameRate: valid(video.frameRate, 0),
           bitrateKbps: valid(video.bitrate, 0),
+          packetLossPercent: stats.upLoss <= 100 ? valid(stats.upLoss, 0) : undefined,
         }) : undefined);
         this.eventListener?.onRemoteVideoStatistics?.(Object.freeze(
           (stats.remoteStatistics ?? []).flatMap((remote) => {
@@ -796,18 +798,14 @@ export class TrtcRtcManager implements RtcManaging {
             // 当前 TRTC 类型声明漏了这个可选运行时字段，缺失时不以缓冲延迟替代。
             const playback = video as typeof video & {
               point2pointDelay?: number;
-              jitterBufferDelay?: number
             };
             return [Object.freeze({
               userID: remote.userId,
               width: valid(video.width, 1),
               height: valid(video.height, 1),
-              frameRate: valid(video.frameRate, 0),
+              decodeFrameRate: valid(video.frameRate, 0),
               bitrateKbps: valid(video.bitrate, 0),
-              rttMs: valid(stats.rtt, 0),
-              uplinkLossPercent: stats.upLoss <= 100 ? valid(stats.upLoss, 0) : undefined,
-              downlinkLossPercent: stats.downLoss <= 100 ? valid(stats.downLoss, 0) : undefined,
-              jitterBufferDelayMs: valid(playback.jitterBufferDelay, 0),
+              packetLossPercent: stats.downLoss <= 100 ? valid(stats.downLoss, 0) : undefined,
               endToEndDelayMs: valid(playback.point2pointDelay, 0),
             })];
           }),
@@ -818,16 +816,9 @@ export class TrtcRtcManager implements RtcManaging {
     const onNetworkQuality = (stats: NetworkQuality) => {
       if (this.isInRoom && this.lease?.engine === engine) {
         RtcStatsLogger.logNetworkQuality(stats);
-        const quality = (value: number) =>
-          Number.isInteger(value) && value >= 0 && value <= 6
-            ? value as NetworkQualityLevel : undefined;
-        const rtt = (value: number) =>
-          Number.isFinite(value) && value >= 0 ? value : undefined;
         this.eventListener?.onNetworkStatistics?.(Object.freeze({
-          uplinkQuality: quality(stats.uplinkNetworkQuality),
-          downlinkQuality: quality(stats.downlinkNetworkQuality),
-          uplinkRttMs: rtt(stats.uplinkRTT),
-          downlinkRttMs: rtt(stats.downlinkRTT),
+          uplink: networkQualityLevel(stats.uplinkNetworkQuality),
+          downlink: networkQualityLevel(stats.downlinkNetworkQuality),
         }));
       }
     };

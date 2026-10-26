@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as sdk from "../src/index";
+import * as react from "../src/react/index";
+import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
+import { XmaxRealtimeDualVideoView } from "../src/Render/Video/XmaxRealtimeDualVideoView";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "../src/Core/Realtime/XmaxRealtimeManaging";
 import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContext";
@@ -7,6 +10,18 @@ import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContex
 type MediaCreationMethod = Extract<keyof XmaxRealtimeManaging, `create${string}Stream`>;
 
 describe("realtime media API", () => {
+  it("exports distinct single-track and dual-track views", () => {
+    expect(sdk.XmaxRealtimeVideoView).toBe(XmaxRealtimeVideoView);
+    expect(sdk.XmaxRealtimeDualVideoView).toBe(XmaxRealtimeDualVideoView);
+    expect(sdk).not.toHaveProperty("XmaxVideoView");
+  });
+
+  it("exports matching React component names", () => {
+    expect(react.XmaxRealtimeVideo).toBeTypeOf("function");
+    expect(react.XmaxRealtimeDualVideo).toBeTypeOf("function");
+    expect(react).not.toHaveProperty("XmaxVideo");
+  });
+
   it("exposes the four locally published media sources", () => {
     const methods: Record<MediaCreationMethod, true> = {
       createLocalCameraStream: true,
@@ -19,7 +34,7 @@ describe("realtime media API", () => {
     }
     expect(XmaxRealtimeManager.prototype).not.toHaveProperty("createNetworkVideoStream");
     expect(sdk).not.toHaveProperty("RealtimeVideoSampleMethod");
-    expect(sdk.XmaxVideoView.prototype).not.toHaveProperty("setVideoURL");
+    expect(sdk.XmaxRealtimeVideoView.prototype).not.toHaveProperty("setVideoURL");
   });
 
   it("keeps the generation context limited to prompt and reference image", () => {

@@ -36,6 +36,11 @@ export class RenderWarmupController {
   private completed = false;
 
   /**
+   * 下一次渐入动画的时长，单位为毫秒。
+   */
+  private currentFadeInDurationMs = 300;
+
+  /**
    * 创建视图预热控制器，渐入配置不改变首帧或预热完成的时机。
    *
    * @param element 需要控制预热显隐和渐入的媒体显示层。
@@ -44,11 +49,28 @@ export class RenderWarmupController {
    */
   constructor(
     private readonly element: HTMLElement,
-    private readonly fadeInDurationMs = 300
+    fadeInDurationMs = 300
+  ) {
+    this.fadeInDurationMs = fadeInDurationMs;
+  }
+
+  /**
+   * 当前配置的渐入时长，单位为毫秒。
+   */
+  get fadeInDurationMs(): number {
+    return this.currentFadeInDurationMs;
+  }
+
+  /**
+   * 更新下一次渐入时长，不修改正在播放的动画或首帧预热。
+   */
+  set fadeInDurationMs(
+    fadeInDurationMs: number
   ) {
     if (!Number.isFinite(fadeInDurationMs) || fadeInDurationMs < 0) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "fadeInDurationMs must be a finite non-negative number");
     }
+    this.currentFadeInDurationMs = fadeInDurationMs;
   }
 
   /**

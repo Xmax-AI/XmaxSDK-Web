@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { QualityController, type QualityChange } from "../src/Stream/Quality/QualityController";
+import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 
 function setup() {
   let now = 0;
@@ -7,7 +8,7 @@ function setup() {
   const controller = new QualityController(apply, () => now);
   const sample = (quality: number | undefined, delta = 2000) => {
     now += delta;
-    return controller.observe(quality, now);
+    return controller.observe(quality === undefined ? undefined : networkQualityLevel(quality), now);
   };
   const samples = async (quality: number, count: number) => {
     for (let i = 0; i < count; i++) await sample(quality);
@@ -24,7 +25,7 @@ describe("QualityController", () => {
     controller.start(2);
     for (let index = 0; index < 6; index++) {
       now += 2000;
-      await controller.observe(5);
+      await controller.observe(RealtimeNetworkQualityLevel.veryBad);
     }
     expect(canApply).toHaveBeenCalledTimes(2);
     expect(canApply).toHaveBeenLastCalledWith(3);
@@ -34,7 +35,7 @@ describe("QualityController", () => {
     canApply.mockReturnValue(true);
     for (let index = 0; index < 3; index++) {
       now += 2000;
-      await controller.observe(5);
+      await controller.observe(RealtimeNetworkQualityLevel.veryBad);
     }
     expect(controller.snapshot.level).toBe(3);
   });
@@ -132,9 +133,9 @@ describe("QualityController", () => {
 
   it("ignores future/stale samples without blocking subsequent fresh samples", async () => {
     const s = setup(); s.controller.start();
-    await s.controller.observe(5, 100000);
+    await s.controller.observe(RealtimeNetworkQualityLevel.veryBad, 100000);
     s.advance(10000);
-    await s.controller.observe(5, 0);
+    await s.controller.observe(RealtimeNetworkQualityLevel.veryBad, 0);
     await s.samples(5, 2);
     expect(s.apply).not.toHaveBeenCalled();
     await s.sample(5);
