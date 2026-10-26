@@ -19,6 +19,11 @@ import type { RealtimeNetworkQualityListener } from "./NetworkStatistics";
 export interface RtcEventListener {
 
   /**
+   * 指定用户的原始音轨已安装、替换或移除，供媒体观察者刷新绑定。
+   */
+  onRemoteAudioTrackChanged?: (userID: string) => void;
+
+  /**
    * RTC 凭据即将过期，请求新凭据进行在线续期。
    */
   onTokenWillExpire?: () => void;

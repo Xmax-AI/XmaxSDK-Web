@@ -742,6 +742,7 @@ export class VeRtcManager implements RtcManaging {
     player.srcObject = new MediaStream([track]);
     this.audioPlayers.set(userID, player);
     this.applyAudioVolume(userID);
+    this.listener?.onRemoteAudioTrackChanged?.(userID);
   }
 
   /**
@@ -750,6 +751,7 @@ export class VeRtcManager implements RtcManaging {
   getRemoteAudioTrack(
     userID: string
   ): MediaStreamTrack | undefined {
+    if (!this.publishedAudio.has(userID)) return undefined;
     return this.requireEngine().getRemoteStreamTrack(userID, this.sdk!.StreamIndex.STREAM_INDEX_MAIN, "audio");
   }
 
@@ -854,6 +856,7 @@ export class VeRtcManager implements RtcManaging {
       if (audio(mediaType)) {
         this.publishedAudio.delete(userId);
         this.clearPlayer(userId);
+        this.listener?.onRemoteAudioTrackChanged?.(userId);
       }
     });
     engine.on(events.onUserLeave, ({ userInfo }) => {

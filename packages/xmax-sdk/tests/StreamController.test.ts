@@ -452,9 +452,11 @@ describe("StreamController", () => {
     ).toThrowError(expect.objectContaining({ code: XmaxErrorCode.rtcError }));
   });
 
-  it("only exposes the active generation bot's recording tracks", async () => {
+  it("observes only the active result user's media and refreshes late audio without rebinding video", async () => {
     const { controller, rtc } = makeStream();
-    expect(controller.getRemoteRecordingTracks()).toBeUndefined();
+    const media = vi.fn();
+    controller.setRemoteMediaListener(media);
+    expect(media).toHaveBeenLastCalledWith(undefined);
     expect(rtc.getRemoteAudioTrack).not.toHaveBeenCalled();
     await controller.connect(connection, false, noopEnsureActive);
     const ready = controller.beginGeneration({ taskID: "record", videoFormat, context });
@@ -462,10 +464,14 @@ describe("StreamController", () => {
     await ready;
     const audio = { kind: "audio" } as MediaStreamTrack;
     rtc.getRemoteAudioTrack.mockReturnValue(audio);
-    expect(controller.getRemoteRecordingTracks()).toEqual({ videoTrack: rtc.remoteVideoTrack, audioTrack: audio });
+    rtc.eventListener?.onRemoteAudioTrackChanged?.("other-user");
+    expect(media).toHaveBeenLastCalledWith(expect.objectContaining({ audioTrack: undefined }));
+    rtc.eventListener?.onRemoteAudioTrackChanged?.("bot001");
+    expect(media).toHaveBeenLastCalledWith({ bindingID: "record", userID: "bot001", videoTrack: rtc.remoteVideoTrack, audioTrack: audio });
     expect(rtc.getRemoteAudioTrack).toHaveBeenCalledWith("bot001");
     await controller.disconnect();
-    expect(controller.getRemoteRecordingTracks()).toBeUndefined();
+    expect(media).toHaveBeenLastCalledWith(undefined);
+    controller.setRemoteMediaListener(undefined);
   });
 
   it("replaces a running generation with start without stop, republishing, or rejoining", async () => {

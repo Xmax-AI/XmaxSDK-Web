@@ -5,7 +5,6 @@ import {
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
-  RealtimeRecordingEventType,
   modelDisplayName,
   XmaxClient,
   XmaxConfiguration,
@@ -30,9 +29,12 @@ import { StatisticsToggle } from "./StatisticsToggle";
 import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
-import { RecordingDownload, recordingFileName, type RecordingDownloadFile } from "./RecordingDownload";
 import { CameraPresetPicker } from "./CameraPresetPicker";
 import { resolveCameraConfiguration } from "./cameraConfiguration";
+import { RemoteRecorder } from "./recording/RemoteRecorder";
+import { RecordingControl, type RecordingStatus } from "./recording/RecordingControl";
+import { RecordingSaveDialog } from "./recording/RecordingSaveDialog";
+import type { RecordingResult } from "./recording/recordingMessages";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
 
@@ -87,7 +89,12 @@ export function App() {
   const [interpolationRequested, setInterpolationRequested] = useState(false);
   const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
-  const [recordingFile, setRecordingFile] = useState<RecordingDownloadFile>();
+  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>("idle");
+  const [recordingResult, setRecordingResult] = useState<RecordingResult>();
+  const recorderRef = useRef<RemoteRecorder>();
+  const recordingStartingRef = useRef(false);
+  const finishRecordingRef = useRef<() => void>(() => {});
+  const mountedRef = useRef(true);
   const [statisticsVisible, setStatisticsVisible] = useState(
     () => !window.matchMedia("(max-width: 720px)").matches,
   );
@@ -97,9 +104,6 @@ export function App() {
   );
 
   const realtimeRef = useRef<XmaxRealtimeManaging | undefined>(undefined);
-  // 停止会话后仍接收其收尾结果；新会话或卸载时才撤销归属。
-  const recordingOwnerRef = useRef<XmaxRealtimeManaging>();
-  const recordingURLRef = useRef<string>();
   const generationBusyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wechatRef = useRef<HTMLDivElement>(null);
@@ -224,14 +228,12 @@ export function App() {
 
   // 卸载时释放实时生命周期。
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      void recorderRef.current?.dispose();
       const realtime = realtimeRef.current;
       realtimeRef.current = undefined;
-      recordingOwnerRef.current = undefined;
-      if (recordingURLRef.current) {
-        URL.revokeObjectURL(recordingURLRef.current);
-        recordingURLRef.current = undefined;
-      }
       void realtime?.close();
     };
   }, []);
@@ -239,6 +241,7 @@ export function App() {
   // 页面刷新或关闭页签时尽力清理会话；关闭请求带 keepalive，卸载后仍能发出。
   useEffect(() => {
     const handlePageHide = () => {
+      void recorderRef.current?.dispose();
       void realtimeRef.current?.close().catch(() => {});
     };
     window.addEventListener("pagehide", handlePageHide);
@@ -284,6 +287,7 @@ export function App() {
       } else {
         // 连接释放后清空远端流，视图回到本地预览。
         setRemoteStream(undefined);
+        if (recorderRef.current && !recordingStartingRef.current) finishRecordingRef.current();
       }
       if (state.reason?.kind === "failure") {
         setErrorText(`${state.reason.error.code}: ${state.reason.error.message}`);
@@ -314,28 +318,6 @@ export function App() {
       }),
     );
     realtimeRef.current = realtime;
-    recordingOwnerRef.current = realtime;
-    if (recordingURLRef.current) {
-      URL.revokeObjectURL(recordingURLRef.current);
-      recordingURLRef.current = undefined;
-    }
-    setRecordingFile(undefined);
-    realtime.setRecordingListener(event => {
-      if (recordingOwnerRef.current !== realtime) return;
-      if (event.type === RealtimeRecordingEventType.failed) {
-        setErrorText(`录制失败：${event.error.message}`);
-        return;
-      }
-
-      const url = URL.createObjectURL(event.result.blob);
-      if (recordingURLRef.current) URL.revokeObjectURL(recordingURLRef.current);
-      recordingURLRef.current = url;
-      setRecordingFile({
-        url,
-        fileName: recordingFileName(event.taskID, event.result.blob.type),
-        interrupted: event.type === RealtimeRecordingEventType.interrupted,
-      });
-    });
     // 会话建立成功后是否已切换到生成页面。
     let switchedToSession = false;
     try {
@@ -380,7 +362,6 @@ export function App() {
             prompt: reference.prompt,
             referencePath: reference.reference_path,
           }),
-          record: true,
         });
         if (realtimeRef.current === realtime) setRemoteStream(remote);
       });
@@ -443,7 +424,6 @@ export function App() {
         localStream,
         context,
         faceRestoration: faceRestorationForMode(mode),
-        record: true,
       });
       if (realtimeRef.current === realtime) setRemoteStream(remote);
     } catch (error) {
@@ -512,8 +492,69 @@ export function App() {
     }
   }
 
-  /** 停止会话并立刻回到初始界面，连接在后台释放。 */
-  function handleStop() {
+  /** 完成应用层录制，交给保存弹窗；不改变当前生成状态。 */
+  async function finishRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    setRecordingStatus("stopping");
+    try {
+      const result = await recorder.stop();
+      if (mountedRef.current) setRecordingResult(result);
+    } catch (error) {
+      if (mountedRef.current) setErrorText(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (recorderRef.current === recorder) {
+        recorderRef.current = undefined;
+        if (mountedRef.current) setRecordingStatus("idle");
+      }
+    }
+  }
+  finishRecordingRef.current = () => { void finishRecording(); };
+
+  async function handleToggleRecording() {
+    if (recorderRef.current) {
+      if (!recordingStartingRef.current) await finishRecording();
+      return;
+    }
+    const realtime = realtimeRef.current;
+    if (!realtime || stateText !== RealtimeConnectionState.generating) return;
+    setRecordingResult(undefined);
+    setRecordingStatus("starting");
+    recordingStartingRef.current = true;
+    const recorder = new RemoteRecorder(realtime, error => {
+      if (recorderRef.current !== recorder) return;
+      recorderRef.current = undefined;
+      if (mountedRef.current) {
+        setErrorText(error.message);
+        setRecordingStatus("idle");
+      }
+    }, () => finishRecordingRef.current());
+    recorderRef.current = recorder;
+    try {
+      await recorder.start();
+      if (realtimeRef.current !== realtime || realtime.currentState.connectionState !== RealtimeConnectionState.generating) {
+        await recorder.dispose();
+        throw new Error("当前生成已结束，请重新生成后再录制");
+      }
+      if (mountedRef.current && recorderRef.current === recorder) setRecordingStatus("recording");
+    } catch (error) {
+      if (recorderRef.current === recorder) {
+        recorderRef.current = undefined;
+        if (mountedRef.current) {
+          setRecordingStatus("idle");
+          setErrorText(error instanceof Error ? error.message : String(error));
+        }
+      }
+    } finally {
+      recordingStartingRef.current = false;
+    }
+  }
+
+  /** 先保留已经录下的内容，再停止会话并回到初始界面。 */
+  async function handleStop() {
+    if (recordingStartingRef.current) return;
+    // 结束会话也保留已经录下的内容；先取消取帧，再关闭 RTC。
+    if (recorderRef.current) await finishRecording();
     references.clearSelection();
     const realtime = realtimeRef.current;
     realtimeRef.current = undefined;
@@ -644,7 +685,6 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
-            <RecordingDownload file={recordingFile} />
             <CameraPresetPicker value={cameraConfiguration.preset}
               disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
             <div className="rtcModelPicker">
@@ -808,17 +848,18 @@ export function App() {
           {!isMobileLayout && (
             <span className="sessionModel" aria-label="当前模型">{modelDisplayName(model)}</span>
           )}
-          <RecordingDownload file={recordingFile} />
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
           <FrameInterpolationToggle enabled={interpolationRequested} switching={interpolationSwitching}
             disabled={busy || !sessionActive || !realtimeRef.current} onToggle={handleToggleInterpolation} />
+          <RecordingControl status={recordingStatus} disabled={stateText !== RealtimeConnectionState.generating}
+            onToggle={() => void handleToggleRecording()} />
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
           <button
             className="stopButton"
             onClick={handleStop}
-            disabled={busy}
+            disabled={busy || recordingStatus === "starting" || recordingStatus === "stopping"}
           >
             ■ <span className="stopLabelFull">Stop Session</span><span className="stopLabelShort">Stop</span>
           </button>
@@ -990,6 +1031,8 @@ export function App() {
       </div>
     </div>
       </div>
+
+      {recordingResult && <RecordingSaveDialog result={recordingResult} onClose={() => setRecordingResult(undefined)} />}
 
       {errorText && (
         <div className="toast" role="alert" key={errorText}>

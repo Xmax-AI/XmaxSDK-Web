@@ -950,6 +950,7 @@ export class AgoraRtcManager implements RtcManaging {
       return;
     }
     this.applyAudioVolume(user);
+    this.listener?.onRemoteAudioTrackChanged?.(userID);
   }
 
   /**
@@ -992,7 +993,8 @@ export class AgoraRtcManager implements RtcManaging {
   getRemoteAudioTrack(
     userID: string
   ): MediaStreamTrack | undefined {
-    return this.client?.remoteUsers.find(user => String(user.uid) === userID)?.audioTrack?.getMediaStreamTrack();
+    const user = this.client?.remoteUsers.find(user => String(user.uid) === userID);
+    return user?.hasAudio ? user.audioTrack?.getMediaStreamTrack() : undefined;
   }
 
   /**
@@ -1114,8 +1116,10 @@ export class AgoraRtcManager implements RtcManaging {
         return;
       if (kind === "video")
         this.listener?.onRemoteVideoPublished(String(user.uid), false);
-      if (kind === "audio")
+      if (kind === "audio") {
         user.audioTrack?.stop();
+        this.listener?.onRemoteAudioTrackChanged?.(String(user.uid));
+      }
     });
     client.on("user-left", user => {
       if (mediaActive())

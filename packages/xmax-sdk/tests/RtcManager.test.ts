@@ -747,7 +747,7 @@ describe("TrtcRtcManager", () => {
 
       vi.stubGlobal("navigator", { userAgent: IPHONE_UA, maxTouchPoints: 5 });
       expect(manager.supportsRemoteAudioVolumeControl).toBe(false);
-      expect(() => manager.getRemoteAudioTrack("bot001")).toThrow("cannot preserve remote audio");
+      expect(() => manager.getRemoteAudioTrack("bot001")).toThrow("cannot provide remote audio frames");
     });
 
     it("falls back to mute control on iOS where remote volume is unsupported", async () => {

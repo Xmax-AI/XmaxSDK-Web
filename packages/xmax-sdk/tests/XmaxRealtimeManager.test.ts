@@ -1,6 +1,6 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { RecordingController } from "../src/Media/Recording/RecordingController";
-import { RealtimeRecordingEventType, RealtimeRecordingFinishReason } from "../src/Service/Realtime/RealtimeRecordingEvent";
+import { RemoteMediaFrameController } from "../src/Render/Video/RemoteMediaFrameController";
+import type { RemoteMediaTracks } from "../src/Foundation/Media/RemoteMediaTracks";
 import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
 import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
@@ -139,7 +139,8 @@ class CameraControllingStub implements CameraControlling {
 
 /** 传输层桩：记录全部调用，生成确认由测试手动控制。 */
 class StreamControllingStub implements StreamControlling {
-  getRemoteRecordingTracks = vi.fn(() => undefined);
+  remoteMediaListener?: (tracks?: RemoteMediaTracks) => void;
+  setRemoteMediaListener(listener?: (tracks?: RemoteMediaTracks) => void): void { this.remoteMediaListener = listener; }
   async updateCredentials(): Promise<void> {}
   networkStatisticsListener?: RealtimeNetworkQualityListener;
 
@@ -302,6 +303,7 @@ function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interp
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
   const rtc = {
+    supportsRemoteAudioVolumeControl: true,
     initialize: vi.fn(async () => {}), destroy: vi.fn(async () => {}),
     setExternalMediaTracks: vi.fn(async (_tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack }) => {}),
   };
@@ -2953,115 +2955,33 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await manager.close();
   });
 
-  describe("recording", () => {
-    afterEach(() => vi.restoreAllMocks());
+  it("registers frame observation independently of generation and releases it on close", async () => {
+    const capture = vi.spyOn(RemoteMediaFrameController.prototype, "setListener").mockResolvedValue();
+    const setSource = vi.spyOn(RemoteMediaFrameController.prototype, "setSource").mockImplementation(() => {});
+    const s = makeManager();
+    const listener = vi.fn();
+    await s.manager.setRemoteMediaFrameListener(listener);
+    expect(capture).toHaveBeenLastCalledWith(listener);
+    expect(s.stream.beginCalls).toHaveLength(0);
+    const tracks = { bindingID: "task", userID: "bot", videoTrack: {} as MediaStreamTrack };
+    s.stream.remoteMediaListener?.(tracks);
+    expect(setSource).toHaveBeenLastCalledWith(tracks);
+    await s.manager.close();
+    expect(capture).toHaveBeenLastCalledWith(undefined);
+    expect(s.stream.remoteMediaListener).toBeUndefined();
+    vi.restoreAllMocks();
+  });
 
-    it.each([undefined, false, true])("only enables recording when explicitly requested: %s", async record => {
-      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
-      const { manager, camera, stream } = makeManager();
-      const localStream = makeLocalStream(camera);
-      const pending = manager.startGeneration({ localStream, context: testContext, record });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-      expect(start).not.toHaveBeenCalled();
-      expect(stream.beginCalls[0]).not.toHaveProperty("record");
-      stream.confirmationDeferreds[0]!.resolve();
-      await pending;
-      expect(start).toHaveBeenCalledTimes(record ? 1 : 0);
-      if (record) {
-        expect(start.mock.calls[0]![0]).toBe(manager.currentState.taskID);
-        start.mock.calls[0]![1]();
-        expect(stream.getRemoteRecordingTracks).toHaveBeenCalledOnce();
-      }
-      await manager.close();
+  it("rejects unsupported remote audio observation without changing the session", async () => {
+    const s = makeManager();
+    Object.assign(s.rtc, { supportsRemoteAudioVolumeControl: false });
+    const manager = new XmaxRealtimeManager(new RealtimeConfiguration({ model: "test-trtc", provider: RtcProvider.trtc }), {
+      rtcManager: s.rtc as unknown as RtcManaging, streamController: s.stream, cameraController: s.camera,
     });
-
-    it("ignores record on condition updates without stopping or restarting a recording", async () => {
-      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
-      const stop = vi.spyOn(RecordingController.prototype, "stop").mockResolvedValue();
-      const { manager, camera, stream } = makeManager();
-      const localStream = makeLocalStream(camera);
-      const pending = manager.startGeneration({ localStream, context: testContext, record: true });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-      stream.confirmationDeferreds[0]!.resolve();
-      await pending;
-      for (const record of [false, true, undefined]) {
-        await manager.startGeneration({ localStream, record });
-      }
-      expect(start).toHaveBeenCalledOnce();
-      expect(stop).not.toHaveBeenCalled();
-      expect(stream.updateCalls.every(call => !("record" in call))).toBe(true);
-      await manager.close();
-    });
-
-    it("does not start recording on an update of an unrecorded task", async () => {
-      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
-      const { manager, camera, stream } = makeManager();
-      const localStream = makeLocalStream(camera);
-      const pending = manager.startGeneration({ localStream, context: testContext });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-      stream.confirmationDeferreds[0]!.resolve();
-      await pending;
-      await manager.startGeneration({ localStream, record: true });
-      expect(start).not.toHaveBeenCalled();
-      await manager.close();
-    });
-
-    it.each([true, false])("ends the old recording on restart; record=%s never records the new task", async record => {
-      const start = vi.spyOn(RecordingController.prototype, "start").mockImplementation(() => {});
-      const stop = vi.spyOn(RecordingController.prototype, "stop").mockResolvedValue();
-      const { manager, camera, stream } = makeManager();
-      const listener = vi.fn();
-      manager.setRecordingListener(listener);
-      const localStream = makeLocalStream(camera);
-      const pending = manager.startGeneration({ localStream, context: testContext, record: true });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-      stream.confirmationDeferreds[0]!.resolve();
-      await pending;
-
-      const restarted = manager.startGeneration({ localStream, restart: true, record });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
-      expect(stop).toHaveBeenCalledWith(RealtimeRecordingFinishReason.restarted);
-      stream.confirmationDeferreds[1]!.resolve();
-      completeRenderWarmup(await restarted);
-      expect(start).toHaveBeenCalledOnce();
-      expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
-      expect(listener).toHaveBeenCalledTimes(record ? 1 : 0);
-      if (record) {
-        expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: RealtimeRecordingEventType.failed, taskID: manager.currentState.taskID }));
-      }
-      await manager.close();
-    });
-
-    it("recording preparation failure is isolated from generation", async () => {
-      const { manager, camera, stream } = makeManager();
-      const listener = vi.fn();
-      manager.setRecordingListener(listener);
-      const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext, record: true });
-      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-      stream.confirmationDeferreds[0]!.resolve();
-      completeRenderWarmup(await pending);
-      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: RealtimeRecordingEventType.failed }));
-      expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
-      expect(stream.disconnectCalls).toBe(0);
-      await manager.close();
-    });
-
-    it("stops recording before disconnecting media and waits for its bounded finalization", async () => {
-      const { manager, camera, stream } = makeManager();
-      const localStream = makeLocalStream(camera);
-      await manager.connect(localStream);
-      const done = makeDeferred<void>();
-      const stop = vi.spyOn(RecordingController.prototype, "stop").mockReturnValue(done.promise);
-      const disconnect = vi.spyOn(stream, "disconnect");
-      let closed = false;
-      const closing = manager.close().then(() => { closed = true; });
-      await vi.waitFor(() => expect(disconnect).toHaveBeenCalled());
-      expect(stop.mock.invocationCallOrder[0]!).toBeLessThan(disconnect.mock.invocationCallOrder[0]!);
-      expect(closed).toBe(false);
-      done.resolve();
-      await closing;
-      expect(closed).toBe(true);
-    });
+    await expect(manager.setRemoteMediaFrameListener(vi.fn())).rejects.toThrow("independently of playback");
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await manager.close();
+    await s.manager.close();
   });
 
   it("restarts with a new task on the same connection and only uses this call's extraParams", async () => {

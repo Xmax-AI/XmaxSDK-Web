@@ -356,59 +356,59 @@ Network video retains its existing sizing and pixel-coordinate behavior.
 
 <br>
 
-### Record a generated clip
+### Observe remote audio and video frames
 
-Recording is off by default. Set `record: true` when starting a new generation
-to record approximately 20 seconds of the original remote video and audio.
-Register the listener before starting:
+The SDK does not record or package files. Your app decides when to observe media,
+encode it, and stop recording. Register from a user gesture (for example a button
+click) and await setup before expecting callbacks:
 
 ```javascript
-import { RealtimeRecordingEventType } from "@xmaxai/web-sdk";
-
-realtime.setRecordingListener(event => {
-  if (event.type === RealtimeRecordingEventType.failed) {
-    console.error("Recording failed", event.taskID, event.error);
-    return;
+await realtime.setRemoteMediaFrameListener(packet => {
+  if (packet.content.type === "video") {
+    const { frame } = packet.content.frame;
+    try {
+      // Submit synchronously to your encoder, or transfer ownership to your worker.
+      // Both tracks use packet.presentationTimeStamp in microseconds.
+      console.log(packet.streamID, packet.presentationTimeStamp, frame.displayWidth);
+    } finally {
+      frame.close(); // If retained/transferred asynchronously, release it there instead.
+    }
+  } else {
+    const { data, sampleRate, channels, samplesPerChannel } = packet.content.frame;
+    // Owned S16LE, interleaved PCM; data remains valid after this callback.
+    console.log(data, sampleRate, channels, samplesPerChannel);
   }
-
-  const { blob, hasAudio, reason } = event.result;
-  // Save, upload, or preview blob here. Use blob.type to identify its format.
-  // completed: reached the time limit; interrupted: finalized an earlier end.
-  console.log(event.taskID, blob, hasAudio, reason);
 });
 
-await realtime.startGeneration({
-  localStream,
-  context: new RealtimeContext({ prompt: "Make the scene come alive" }),
-  record: true,
-});
+// Stop observing at any time, without stopping generation or changing playback:
+await realtime.setRemoteMediaFrameListener(undefined);
 ```
 
-- The timer starts when a remote video frame is available, independently of the
-  attached view. Frame interpolation, interaction effects, and overlays are not recorded.
-- Recording errors do not stop generation. `startGeneration` does not wait for the file.
-- Before delivery, the SDK shortens unusually long video-frame intervals and cuts
-  the same intervals from audio. Cuts align to complete audio-packet boundaries;
-  neither track is re-encoded, and all video frames are preserved. The resulting
-  clip can be shorter than the recording period. Speech during removed intervals
-  is lost, and audio splices can be audible. This does not reconstruct missing
-  motion or smooth visual jumps.
-- Gap removal runs after recording and does not delay RTC cleanup. It requires
-  a supported MP4 or WebM recording; if processing fails or times out, the SDK
-  logs a warning and returns the original clip instead.
-- `record` is ignored on condition updates; it cannot stop or restart a recording.
-- Restarting ends the old recording. `restart: true` with `record: true` reports a
-  recording failure for the new task; generation still restarts normally.
-- An early end returns `interrupted` only if the recorder finalizes a nonempty file
-  without an encoding error. Empty or failed recordings return `failed`.
-- Audio arriving later is included after its arrival. `hasAudio` indicates that an
-  enabled, unmuted remote audio track was observed during recording, not audible speech.
-- Formats depend on browser support; MP4 is not guaranteed. Background scheduling
-  can delay the stop timer, so files are not cropped to exactly 20.000 seconds.
-- Audio processing must be allowed by the browser. TRTC recording on mobile Safari
-  is currently unsupported because playback muting also disables audio reception.
-- Recording buffers are limited to 64 MiB. The SDK does not upload recordings or
-  retain a copy after delivery. Clear the listener with `setRecordingListener(undefined)`.
+- Video is copied from the original remote track, excluding interpolation,
+  mirroring, cropping, interaction effects, and UI overlays.
+- Audio is taken before playback-volume processing. Muting playback does not mute
+  observed PCM on supported platforms. No synthetic silence is added when no audio
+  track exists; audio published later is observed after subscription.
+- Audio and video share a receiver presentation clock, not sender/source-file
+  timecode. Use one recording origin for both tracks; do not pair packets by
+  callback arrival time. Audio time advances by sample count between discontinuities.
+- A new result binding has a new opaque streamID. The first packet of each track,
+  format/clock changes, and dropped output are marked isDiscontinuous. Your app
+  decides whether to retain gaps, segment, or trim both tracks. The SDK neither
+  compresses timestamps nor imposes a recording-duration limit.
+- Callbacks run on the main thread in delivery order, not cross-track PTS order.
+  Keep them lightweight and move encoding to a worker. Pending SDK delivery is
+  bounded to 256 packets and 32 MiB; already-delivered video frames belong to your
+  app and must be closed. Removing/replacing the listener discards queued output.
+- Requires a secure context, VideoFrame, requestVideoFrameCallback, and AudioWorklet.
+  Registration rejects when setup is unavailable, cancelled, or blocked by audio
+  autoplay policy. TRTC on mobile Safari currently cannot provide PCM independently
+  of playback and is rejected without interrupting generation.
+- Browser frame callbacks can skip frames, especially under main-thread load or
+  in background tabs. This is not a lossless dump of every decoded frame.
+- Without a listener, no observation video, audio graph, or output queue is started.
+  Disconnect preserves the listener for a later connection; close removes it and
+  releases the audio context. Re-register before reusing a closed manager.
 
 <br>
 
@@ -562,6 +562,19 @@ position to the backend.
 A complete example application featuring React is available in
 [`examples/xlab-react`](./examples/xlab-react).
 It demonstrates real-time generation using live camera feeds and reference images.
+
+During generation, click **录制** to record the remote output and click it again to
+stop. A preview/save dialog opens when encoding finishes. The example uses
+`setRemoteMediaFrameListener` and encodes in a Worker; the recorder and its
+`mediabunny` dependency belong to XLab, not the SDK. It prefers MP4 (H.264/AAC),
+with WebM (VP8/Opus) as a fallback. Playback muting does not mute recorded audio on
+supported platforms. Recordings exclude interpolation and UI overlays, and retain
+the receiver timeline rather than trimming network stalls. Ending a session also
+finishes the current recording. To bound memory, XLab automatically finishes near
+128 MiB of encoded media; overloaded encoders report an error instead of queuing
+unbounded raw frames. Closing/reloading the page discards unsaved recordings.
+Native save-location selection depends on browser support; otherwise the save
+button starts a regular download.
 
 <br>
 

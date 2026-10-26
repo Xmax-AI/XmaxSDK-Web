@@ -13,7 +13,7 @@ import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotatio
 import type { RealtimeNetworkQualityListener } from "../../Foundation/RTC/NetworkStatistics";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
-import type { RealtimeRecordingListener } from "../../Service/Realtime/RealtimeRecordingEvent";
+import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -32,11 +32,16 @@ import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
 export interface XmaxRealtimeManaging {
 
   /**
-   * 监听录制完成、中断或失败；传入 undefined 清除监听，不停止正在进行的录制。
+   * 监听当前结果流的原始解码视频和播放音量处理前的 PCM 音频，不包含客户端插帧。
+   * 两轨共用接收端呈现时间轴，单位为微秒；按时间戳同步，不按回调到达时间配对。
+   * 视频帧交付后由接入方 close()；回调须保持轻量，队列超限或换流会标记不连续。
+   * 从用户手势调用并等待准备完成；不支持的浏览器或 RTC 平台会拒绝，不终止生成。
+   * 可在生成前或生成中设置；undefined 取消并释放资源，不改变音量、订阅和生成任务。
+   * 浏览器呈现回调可能漏帧，不保证交付全部接收或解码帧；没有音轨时不补静音包。
    */
-  setRecordingListener(
-    listener?: RealtimeRecordingListener
-  ): void;
+  setRemoteMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void>;
 
   /**
    * 实时能力配置。
@@ -351,7 +356,6 @@ export interface XmaxRealtimeManaging {
    * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
    * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
    * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
-   * @param options.record 是否录制远端原始音视频约 20 秒，默认 false；仅 start 有效，条件更新时忽略，重启录制暂不支持。
    * @returns 可挂载的远端媒体流，不等待渲染预热；展示就绪以 generating 状态为准。
    * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
    * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
@@ -364,7 +368,6 @@ export interface XmaxRealtimeManaging {
       restart?: boolean;
       faceRestoration?: boolean;
       extraParams?: RealtimeExtraParams;
-      record?: boolean;
     }
   ): Promise<RealtimeMediaStream>;
 }

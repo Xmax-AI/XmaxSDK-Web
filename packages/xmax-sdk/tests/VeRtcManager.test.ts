@@ -202,6 +202,8 @@ describe("VeRTC media and protocol", () => {
     const s = setup();
     await s.joined();
     s.manager.setRemoteAudioVolume(0, "bot");
+    expect(s.manager.getRemoteAudioTrack("bot")).toBeUndefined();
+    s.emit("onUserPublishStream", { userId: "bot", mediaType: 1 });
     expect(s.manager.getRemoteAudioTrack("bot")).toBe(s.audio);
     expect(s.engine.getRemoteStreamTrack).toHaveBeenCalledWith("bot", s.sdk.StreamIndex.STREAM_INDEX_MAIN, "audio");
   });

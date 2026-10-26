@@ -23,7 +23,7 @@ import { RoomController } from "./Room/RoomController";
 import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { EncodingControlling } from "./Encoding/EncodingControlling";
 import { EncodingController } from "./Encoding/EncodingController";
-import type { RecordingTracks } from "../Foundation/Media/Recording/RecordingTracks";
+import type { RemoteMediaTracks } from "../Foundation/Media/RemoteMediaTracks";
 import type {
   RemoteStreamListener,
   StreamControlling,
@@ -222,6 +222,11 @@ export class StreamController implements StreamControlling {
   private readonly remoteStreamListener: RemoteStreamListener;
 
   /**
+   * 原始结果流的观察者；未设置时不读取额外音轨。
+   */
+  private remoteMediaListener?: (tracks?: RemoteMediaTracks) => void;
+
+  /**
    * 本地视频统计的业务监听器。
    */
   private localVideoStatisticsListener?: UplinkVideoStatisticsListener;
@@ -315,6 +320,9 @@ export class StreamController implements StreamControlling {
       onRemoteVideoPublished: (userID, published) => {
         void this.handleRemoteVideoPublished(userID, published);
       },
+      onRemoteAudioTrackChanged: userID => {
+        if (this.state.activeRemoteStream?.userID === userID) this.notifyRemoteMedia();
+      },
     });
   }
 
@@ -326,15 +334,29 @@ export class StreamController implements StreamControlling {
   }
 
   /**
-   * 按活动结果流身份读取原始音视频，避免录制房间内其他用户的媒体。
+   * 替换原始媒体观察者并立即回放当前绑定，不改变 RTC 事件监听权。
    */
-  getRemoteRecordingTracks(): RecordingTracks | undefined {
+  setRemoteMediaListener(listener?: (tracks?: RemoteMediaTracks) => void): void {
+    this.remoteMediaListener = listener;
+    this.notifyRemoteMedia();
+  }
+
+  /**
+   * 仅向当前观察者交付实际结果用户的音视频轨，隔离取轨失败。
+   */
+  private notifyRemoteMedia(): void {
+    if (!this.remoteMediaListener) return;
     const userID = this.state.activeRemoteStream?.userID;
     const videoTrack = userID && this.state.remoteVideoTracks.get(userID);
-    if (!userID || !videoTrack) {
-      return undefined;
+    const bindingID = this.state.generationTaskID;
+    try {
+      this.remoteMediaListener(userID && videoTrack && bindingID ? {
+        userID, bindingID, videoTrack,
+        audioTrack: this.rtcManager.getRemoteAudioTrack(userID),
+      } : undefined);
+    } catch (error) {
+      XmaxLogger.stream.warning(() => `Unable to observe remote media tracks: ${XmaxError.from(error).message}`);
     }
-    return { videoTrack, audioTrack: this.rtcManager.getRemoteAudioTrack(userID) };
   }
 
   /**
@@ -882,6 +904,7 @@ export class StreamController implements StreamControlling {
         this.remoteStreamListener({ stream, videoTrack: track });
         if (this.state.generationTaskID === taskID) {
           this.state.activeRemoteStream = stream;
+          this.notifyRemoteMedia();
         }
       } catch (error) {
         this.rejectGenerationStart(taskID, XmaxError.from(error));
@@ -897,6 +920,7 @@ export class StreamController implements StreamControlling {
         this.remoteStreamListener({ stream, videoTrack: track });
         if (this.state.generationTaskID === taskID) {
           this.state.activeRemoteStream = stream;
+          this.notifyRemoteMedia();
         }
       } catch (error) {
         this.errorListener(XmaxError.from(error));
@@ -925,6 +949,7 @@ export class StreamController implements StreamControlling {
       this.rtcManager.setRemoteAudioVolume(this.remoteAudioVolumePercentage, userID);
     }
     this.state.subscribedRemoteAudioUserIDs.add(userID);
+    this.notifyRemoteMedia();
   }
 
   /**
@@ -1048,6 +1073,7 @@ export class StreamController implements StreamControlling {
    * 通知渲染层清理远端生成流；失败仅记录日志。
    */
   private clearRemoteStream(): void {
+    this.remoteMediaListener?.(undefined);
     this.remoteVideoStatisticsListener?.(undefined);
     try {
       this.remoteStreamListener(null);

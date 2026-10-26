@@ -10,6 +10,14 @@ import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContex
 type MediaCreationMethod = Extract<keyof XmaxRealtimeManaging, `create${string}Stream`>;
 
 describe("realtime media API", () => {
+  it("exposes media packets instead of SDK-managed recording", () => {
+    expect(XmaxRealtimeManager.prototype.setRemoteMediaFrameListener).toBeTypeOf("function");
+    expect(XmaxRealtimeManager.prototype).not.toHaveProperty("setRecordingListener");
+    expect(sdk).not.toHaveProperty("RealtimeRecordingEventType");
+    type StartOptions = Parameters<XmaxRealtimeManaging["startGeneration"]>[0];
+    const hasRecord: "record" extends keyof StartOptions ? true : false = false;
+    expect(hasRecord).toBe(false);
+  });
   it("exports distinct single-track and dual-track views", () => {
     expect(sdk.XmaxRealtimeVideoView).toBe(XmaxRealtimeVideoView);
     expect(sdk.XmaxRealtimeDualVideoView).toBe(XmaxRealtimeDualVideoView);

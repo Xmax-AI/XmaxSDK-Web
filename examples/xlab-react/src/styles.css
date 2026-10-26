@@ -410,8 +410,8 @@ button:disabled,
 }
 
 .remoteVolumeButton,
+.recordingButton,
 .interpolationPill,
-.recordingDownload,
 .sessionModel,
 .sessionTimer {
   border: 1px solid #e2e5ea;
@@ -457,27 +457,7 @@ button:disabled,
   background: #eef1ff;
 }
 
-.recordingDownload {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.recordingDownload:hover {
-  color: var(--text);
-}
-
 .remoteVolumeButton:focus-visible,
-.recordingDownload:focus-visible,
 .statisticsToggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -584,6 +564,124 @@ button:disabled,
   font-weight: 600;
   white-space: nowrap;
   transition: color 0.15s ease;
+}
+
+.recordingButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 5px;
+  height: 36px;
+  padding: 0 12px;
+  color: #8b919d;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recordingButton.active {
+  color: #d92d20;
+  border-color: #fda29b;
+  background: linear-gradient(180deg, #fff 0%, #fff0ee 100%);
+}
+
+.recordingButton:disabled {
+  opacity: 0.55;
+}
+
+.recordingButton[aria-busy="true"] {
+  cursor: wait;
+}
+
+.recordingButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.recordingDialog {
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid #e2e5ea;
+  border-radius: 24px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(16, 24, 40, 0.22);
+}
+
+.recordingDialog::backdrop {
+  background: rgba(16, 24, 40, 0.4);
+  backdrop-filter: blur(5px);
+}
+
+.recordingDialogHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.recordingDialogHeading h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.recordingDialogHeading button {
+  border: 0;
+  background: transparent;
+  color: #8b919d;
+  font-size: 26px;
+}
+
+.recordingDialog video {
+  display: block;
+  width: 100%;
+  max-height: 50dvh;
+  border-radius: 14px;
+  background: #101828;
+}
+
+.recordingFileInfo {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 16px 0 6px;
+}
+
+.recordingFileName {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.recordingFileSize {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: #8b919d;
+  font-size: 12px;
+}
+
+.recordingDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.recordingDialogActions button {
+  border-radius: 999px;
+  border: 1px solid #e2e5ea;
+  padding: 10px 20px;
+  background: #f9fafb;
+}
+
+.recordingDialogActions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
 }
 
 .interpolationPill.active {
@@ -1435,21 +1533,29 @@ button:disabled,
     gap: 10px;
   }
 
+  .recordingButton,
   .interpolationPill {
     height: 30px;
     padding: 0 11px 0 8px;
     font-size: 12px;
   }
 
+  .recordingButton {
+    width: 30px;
+    padding: 0;
+  }
+
+  .recordingButton span {
+    display: none;
+  }
+
   .remoteVolumeButton,
-  .recordingDownload,
   .statisticsToggle {
     width: 30px;
     height: 30px;
   }
 
   .remoteVolumeButton svg,
-  .recordingDownload svg,
   .statisticsToggle svg {
     width: 14px;
     height: 14px;
@@ -1459,14 +1565,6 @@ button:disabled,
     height: 30px;
     padding: 0 10px;
     font-size: 12px;
-  }
-
-  .recordingDownload {
-    padding: 0;
-  }
-
-  .recordingDownload span {
-    display: none;
   }
 
   .stopButton {

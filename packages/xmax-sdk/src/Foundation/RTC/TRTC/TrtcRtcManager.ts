@@ -36,6 +36,8 @@ import {
 const RTC_EVENT = {
   remoteVideoAvailable: "remote-video-available",
   remoteVideoUnavailable: "remote-video-unavailable",
+  remoteAudioAvailable: "remote-audio-available",
+  remoteAudioUnavailable: "remote-audio-unavailable",
   customMessage: "custom-message",
   statistics: "statistics",
   networkQuality: "network-quality",
@@ -680,13 +682,13 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 获取原始远端音轨；不支持独立播放音量的平台暂不开放录制。
+   * 获取原始远端音轨；不支持独立播放音量的平台暂不开放媒体观察。
    */
   getRemoteAudioTrack(
     userID: string
   ): MediaStreamTrack | undefined {
     if (!canControlTrtcRemoteAudioVolume()) {
-      throw new XmaxError(XmaxErrorCode.mediaError, "TRTC recording cannot preserve remote audio while muted on this platform");
+      throw new XmaxError(XmaxErrorCode.mediaError, "TRTC cannot provide remote audio frames independently of playback on this platform");
     }
     return this.requireEngine().getAudioTrack(userID) ?? undefined;
   }
@@ -825,9 +827,16 @@ export class TrtcRtcManager implements RtcManaging {
 
     source.on(RTC_EVENT.statistics, onStatistics);
     source.on(RTC_EVENT.networkQuality, onNetworkQuality);
+    const onAudioChanged = (event: RtcRemoteVideoEvent) => {
+      if (this.isInRoom && this.lease?.engine === engine) this.eventListener?.onRemoteAudioTrackChanged?.(event.userId);
+    };
+    source.on(RTC_EVENT.remoteAudioAvailable, onAudioChanged);
+    source.on(RTC_EVENT.remoteAudioUnavailable, onAudioChanged);
     this.removeStatsListeners = () => {
       source.off(RTC_EVENT.statistics, onStatistics);
       source.off(RTC_EVENT.networkQuality, onNetworkQuality);
+      source.off(RTC_EVENT.remoteAudioAvailable, onAudioChanged);
+      source.off(RTC_EVENT.remoteAudioUnavailable, onAudioChanged);
     };
 
     source.on(RTC_EVENT.remoteVideoAvailable, (event: RtcRemoteVideoEvent) => {

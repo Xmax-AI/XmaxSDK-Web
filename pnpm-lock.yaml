@@ -20,6 +20,9 @@ importers:
       '@xmaxai/web-sdk':
         specifier: '*'
         version: link:../../packages/xmax-sdk
+      mediabunny:
+        specifier: 1.61.4
+        version: 1.61.4
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -60,9 +63,6 @@ importers:
       framegen:
         specifier: 1.4.0
         version: 1.4.0
-      mediabunny:
-        specifier: 1.61.4
-        version: 1.61.4
       trtc-sdk-v5:
         specifier: ^5.6.0
         version: 5.20.0

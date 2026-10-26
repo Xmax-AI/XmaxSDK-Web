@@ -90,13 +90,7 @@ export {
 export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFormat";
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
 export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/RealtimeExtraParams";
-export {
-  RealtimeRecordingEventType,
-  RealtimeRecordingFinishReason,
-  type RealtimeRecordingEvent,
-  type RealtimeRecordingResult,
-  type RealtimeRecordingListener,
-} from "./Service/Realtime/RealtimeRecordingEvent";
+export type { RealtimeAudioFrame, RealtimeVideoFrame, RealtimeMediaFrame, RealtimeMediaFrameListener } from "./Service/Realtime/RealtimeMediaFrame";
 
 /**
  * Service / Media
