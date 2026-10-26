@@ -343,8 +343,11 @@ export function App() {
           setNetworkStatistics(statistics);
         }
       });
+      const cameraSource = cameraConfiguration.isPresetLocked
+        ? { videoFormat: cameraConfiguration.videoFormat }
+        : { preset: cameraConfiguration.preset };
       const stream = await realtime.createLocalCameraStream({
-        videoFormat: cameraConfiguration.videoFormat,
+        ...cameraSource,
         position: CameraPosition.front,
         useMicrophone,
         enableFrameValidation: true

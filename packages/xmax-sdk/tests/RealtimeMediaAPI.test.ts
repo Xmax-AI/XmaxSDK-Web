@@ -10,6 +10,21 @@ import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContex
 type MediaCreationMethod = Extract<keyof XmaxRealtimeManaging, `create${string}Stream`>;
 
 describe("realtime media API", () => {
+  it("accepts either a camera preset or an explicit video format", () => {
+    type CameraOptions = Parameters<XmaxRealtimeManaging["createLocalCameraStream"]>[0];
+    const common = { position: sdk.CameraPosition.front, useMicrophone: false };
+    const preset: CameraOptions = { ...common, preset: sdk.RealtimeCameraPreset.resolution1080x1920 };
+    const format: CameraOptions = { ...common, videoFormat: new sdk.RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24 }) };
+    // @ts-expect-error A preset and an explicit format cannot be combined.
+    const both: CameraOptions = { ...common, preset: sdk.RealtimeCameraPreset.resolution1080x1920, videoFormat: format.videoFormat };
+    // @ts-expect-error A format selector is required.
+    const neither: CameraOptions = common;
+    expect(preset.preset).toBe(sdk.RealtimeCameraPreset.resolution1080x1920);
+    expect(format.videoFormat.fps).toBe(24);
+    expect(both).toHaveProperty("preset");
+    expect(neither).not.toHaveProperty("videoFormat");
+  });
+
   it("exposes media packets instead of SDK-managed recording", () => {
     expect(XmaxRealtimeManager.prototype.setRemoteMediaFrameListener).toBeTypeOf("function");
     expect(XmaxRealtimeManager.prototype).not.toHaveProperty("setRecordingListener");

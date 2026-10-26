@@ -13,9 +13,9 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
-import { RealtimeCameraPreset } from "../src/Core/Realtime/RealtimeCameraPreset";
+import { RealtimeCameraPreset, cameraPresetSize } from "../src/Core/Realtime/RealtimeCameraPreset";
 import { RealtimeQualityLevel } from "../src/Core/Realtime/RealtimeQualityLevel";
-import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
+import { RealtimeModel, supportedVideoFormats } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeMediaStream } from "../src/Service/Realtime/RealtimeMediaStream";
@@ -342,6 +342,52 @@ const testContext = new RealtimeContext({ prompt: "a red cube" });
 
 describe("XmaxRealtimeManager camera formats", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.each(Object.values(RealtimeCameraPreset))("creates %s using the model preset without exposing it to the capture layer", async preset => {
+    const s = makeManager(undefined, false, RealtimeModel.x2_1);
+    const create = vi.spyOn(s.camera, "createLocalCameraStream");
+    const size = cameraPresetSize(preset);
+    const expected = supportedVideoFormats(RealtimeModel.x2_1).find(format => format.width === size.width && format.height === size.height)!;
+    const local = await s.manager.createLocalCameraStream({
+      preset, position: CameraPosition.back, useMicrophone: true, enableFrameValidation: false,
+    });
+    expect(create).toHaveBeenCalledWith({ videoFormat: expected, position: CameraPosition.back,
+      useMicrophone: true, enableFrameValidation: false });
+    expect(create.mock.calls[0]![0]).not.toHaveProperty("preset");
+    expect(local.videoTrack?.videoFormat).toEqual(expected);
+    expect(s.manager.currentCameraPreset).toBe(preset);
+    expect(s.manager.currentCameraVideoFormat?.fps).toBe(expected.fps);
+    expect(s.session.createCalls).toBe(0);
+    await s.manager.close();
+  });
+
+  it("rejects unknown or unsupported presets before starting capture", async () => {
+    for (const [model, preset] of [
+      [RealtimeModel.x2_1, "invalid-preset"],
+      [RealtimeModel.x2_0, RealtimeCameraPreset.resolution1080x1920],
+    ] as const) {
+      const s = makeManager(undefined, false, model);
+      const create = vi.spyOn(s.camera, "createLocalCameraStream");
+      await expect(s.manager.createLocalCameraStream({ preset: preset as RealtimeCameraPreset,
+        position: CameraPosition.front, useMicrophone: false })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+      expect(create).not.toHaveBeenCalled();
+      expect(s.rtc.initialize).not.toHaveBeenCalled();
+      expect(s.session.createCalls).toBe(0);
+      await s.manager.close();
+    }
+  });
+
+  it("requires JavaScript callers to supply exactly one format selector", async () => {
+    type Options = Parameters<XmaxRealtimeManager["createLocalCameraStream"]>[0];
+    const common = { position: CameraPosition.front, useMicrophone: false };
+    for (const options of [common, { ...common, videoFormat: testVideoFormat, preset: RealtimeCameraPreset.resolution1080x1920 }]) {
+      const s = makeManager();
+      const create = vi.spyOn(s.camera, "createLocalCameraStream");
+      await expect(s.manager.createLocalCameraStream(options as Options)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+      expect(create).not.toHaveBeenCalled();
+      await s.manager.close();
+    }
+  });
 
   async function preview() {
     const s = makeManager();

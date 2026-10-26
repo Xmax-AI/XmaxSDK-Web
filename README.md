@@ -217,10 +217,10 @@ after a user action such as clicking a Start button.
 ```javascript
 import {
   CameraPosition,
+  RealtimeCameraPreset,
   RealtimeConfiguration,
   RealtimeContext,
   RealtimeModel,
-  RealtimeVideoFormat,
   VideoContentMode,
   XmaxClient,
   XmaxConfiguration,
@@ -236,7 +236,7 @@ const realtime = client.createRealtimeManager(
 );
 
 const localStream = await realtime.createLocalCameraStream({
-  videoFormat: new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 }),
+  preset: RealtimeCameraPreset.resolution1080x1920,
   position: CameraPosition.front,
   useMicrophone: false,
   enableFrameValidation: true, // Optional; waits a fixed 200ms camera warmup before publishing; false skips it.
@@ -266,6 +266,11 @@ videoView.remoteTrack = remoteStream.videoTrack;
 
 Add a `video-container` element with an explicit width and height to your page.
 The view displays a local camera preview until the first generated frame arrives.
+
+Provide either `preset` or `videoFormat`, not both. A preset selects a model-supported
+resolution and the model's recommended frame rate. To specify your own frame rate
+or bitrate options, pass a `RealtimeVideoFormat` through `videoFormat` instead.
+Models without fixed presets, such as X2.0, require `videoFormat`.
 
 `RealtimeModel.x2_1` uses Agora and supports 1920×1080, 1080×1920, 1408×1408,
 1152×1536, and 1536×1152. `RealtimeModel.x2_0` uses VeRTC, defaults to 832×1472,

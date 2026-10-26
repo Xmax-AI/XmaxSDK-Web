@@ -205,6 +205,7 @@ export interface XmaxRealtimeManaging {
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
    * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.preset 替代 videoFormat，使用模型支持的摄像头预设和推荐帧率；两者必须且只能提供一个。
    * @param options.position 前置或后置摄像头。
    * @param options.useMicrophone 是否采集并发布麦克风音频。
    * @param options.rotation 输入帧顺时针旋转角度，默认 0；非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
@@ -214,12 +215,14 @@ export interface XmaxRealtimeManaging {
    */
   createLocalCameraStream(
     options: {
-      videoFormat: RealtimeVideoFormat;
       position: CameraPosition;
       useMicrophone: boolean;
       rotation?: CameraRotation;
       enableFrameValidation?: boolean;
-    }
+    } & (
+      | { videoFormat: RealtimeVideoFormat; preset?: never }
+      | { preset: RealtimeCameraPreset; videoFormat?: never }
+    )
   ): Promise<RealtimeMediaStream>;
 
   /**

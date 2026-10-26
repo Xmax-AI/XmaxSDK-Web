@@ -28,7 +28,7 @@ import { RenderController } from "../../Render/RenderController";
 import type { RenderControlling } from "../../Render/RenderControlling";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
 import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
-import { resolutionBuckets, type ModelSize } from "../../Service/Realtime/RealtimeModel";
+import { resolutionBuckets, supportedVideoFormats, type ModelSize } from "../../Service/Realtime/RealtimeModel";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
@@ -953,6 +953,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
    *
    * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
+   * @param options.preset 替代 videoFormat，使用模型支持的摄像头预设和推荐帧率；两者必须且只能提供一个。
    * @param options.position 前置或后置摄像头。
    * @param options.useMicrophone 是否采集并发布麦克风音频。
    * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待。
@@ -968,6 +969,23 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async (token) => {
         this.mediaController.ensureNoLocalSource();
+        const { preset, videoFormat, ...captureOptions } = options;
+        if ((preset === undefined) === (videoFormat === undefined)) {
+          throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Provide either a camera preset or a video format, not both");
+        }
+
+        let requestedFormat = videoFormat;
+        if (preset !== undefined) {
+          const size = cameraPresetSize(preset);
+          requestedFormat = supportedVideoFormats(this.options.model).find(format =>
+            format.width === size.width && format.height === size.height,
+          );
+        }
+        if (!requestedFormat) {
+          throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Model does not support the requested camera preset");
+        }
+        const cameraOptions = { ...captureOptions, videoFormat: requestedFormat };
+
         await this.coordinator.commit(
           new RealtimeState({
             connectionState: RealtimeConnectionState.preparing,
@@ -992,7 +1010,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         let stream: RealtimeMediaStream;
         try {
           token.ensureCurrent();
-          stream = await this.mediaController.createLocalCameraStream(options);
+          stream = await this.mediaController.createLocalCameraStream(cameraOptions);
         } catch (error) {
           this.disposePermissionWatch();
           this.launchTimer.cancel();
