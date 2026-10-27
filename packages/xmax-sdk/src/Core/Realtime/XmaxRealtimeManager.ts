@@ -1083,10 +1083,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 接入外部视频轨；不创建采集设备或预览，所有异步失败统一释放 SDK 副本。
-   * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
-   * @param options.videoFormat 原始视频轨的尺寸、帧率及编码配置；按统一媒体规则解析固定基准，不裁剪或补边。
-   * @returns 持有外部轨道副本和解析后媒体规格的本地流。
+   * 绑定外部帧源或克隆兼容视频轨；不采集设备，失败时释放本次资源。
+   * @param options 外部 source 或兼容的 videoTrack/videoFormat，不能混用。
+   * @returns 含解析后媒体规格的本地流；帧源还支持 SDK 预览及可选音频。
    */
   async createExternalVideoStream(
     options: Parameters<XmaxRealtimeManaging["createExternalVideoStream"]>[0]
@@ -1096,8 +1095,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
       this.mediaController.validateExternalMediaSupport("external");
 
-      const stream = this.mediaController.createExternalVideoStream(options);
+      const stream = await this.mediaController.createExternalVideoStream(options, token.signal);
       token.setFailureScope(RealtimeTerminationScope.all);
+      token.ensureCurrent();
       this.launchTimer.start();
       this.clearVideoStatistics();
 
@@ -1107,6 +1107,30 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.ready }), token);
 
       return stream;
+    });
+  }
+
+  /**
+   * 未连接时解绑外部源，保留接入方设备所有权，清空本地媒体状态。
+   */
+  async stopExternalVideoStream(): Promise<void> {
+    await this.coordinator.run(RealtimeOperationKind.media, undefined, async token => {
+      if (this.mediaController.source !== "externalVideo") {
+        return;
+      }
+
+      if (this.connectionManager.currentSessionID) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Disconnect before stopping the external video stream");
+      }
+
+      token.setFailureScope(RealtimeTerminationScope.all);
+      this.launchTimer.cancel();
+      this.clearVideoStatistics();
+      await this.mediaController.stopLocalStream();
+      token.ensureCurrent();
+
+      this.resolvedMediaVideoFormat = undefined;
+      await this.coordinator.commit(new RealtimeState({ connectionState: RealtimeConnectionState.idle }), token);
     });
   }
 
@@ -1598,6 +1622,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         ensureCurrent: () => token.ensureCurrent(),
         onPublished: () => {
           this.acceptsVideoStatistics = true;
+          this.mediaController.setExternalAudioPublished(true);
         },
         beforePublish,
       });
@@ -1740,6 +1765,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     taskID: string,
   ): Promise<RealtimeCleanupResult> {
     this.remoteMediaFrames.setSource(undefined);
+    this.mediaController.setExternalAudioPublished(false);
     this.mediaController.pauseLocalVideo();
     this.launchTimer.cancel();
     this.remoteFrameDisplayHandler = undefined;

@@ -10,7 +10,7 @@
 
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
 import type { LocalVideoController } from "./Video/LocalVideoController";
-import type { ExternalVideoController } from "./Video/ExternalVideoController";
+import type { RealtimeExternalVideoStreamOptions } from "./External/RealtimeExternalVideoSource";
 import type { LocalImageController } from "./Image/LocalImageController";
 import type { InteractionControlling } from "./Interaction/InteractionControlling";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
@@ -85,11 +85,17 @@ export interface MediaControlling extends InteractionControlling {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 创建外部轨道副本，RTC 初始化由 prepareSource 完成。
+   * 绑定外部帧源或克隆外部轨道，RTC 初始化由 prepareSource 完成。
    */
   createExternalVideoStream(
-    options: Parameters<ExternalVideoController["create"]>[0]
-  ): RealtimeMediaStream;
+    options: RealtimeExternalVideoStreamOptions,
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream>;
+
+  /**
+   * 外部音频仅在 RTC 发布完成后开始调度；断开立即清空待发送音频。
+   */
+  setExternalAudioPublished(published: boolean): void;
 
   /**
    * 初始化当前非相机源的 RTC 并安装外部轨道，每个异步边界检查操作有效性。

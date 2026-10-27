@@ -10,6 +10,26 @@ import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContex
 type MediaCreationMethod = Extract<keyof XmaxRealtimeManaging, `create${string}Stream`>;
 
 describe("realtime media API", () => {
+  it("accepts external source/sink input while preserving the legacy track form", () => {
+    const source: sdk.RealtimeExternalVideoSource = {
+      videoFormat: new sdk.RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),
+      hasAudio: true,
+      async start(sink) {
+        const onVideo = (frame: VideoFrame) => sink.pushVideo(frame);
+        const onAudio = (frame: sdk.RealtimeExternalAudioFrame) => sink.pushAudio(frame);
+        expect(onVideo).toBeTypeOf("function");
+        expect(onAudio).toBeTypeOf("function");
+      },
+      async stop() {},
+    };
+    const options: sdk.RealtimeExternalVideoStreamOptions = { source };
+    // @ts-expect-error A source cannot be combined with legacy track options.
+    const mixed: sdk.RealtimeExternalVideoStreamOptions = { source, videoTrack: {} as MediaStreamTrack, videoFormat: source.videoFormat };
+    expect(options.source?.hasAudio).toBe(true);
+    expect(mixed).toHaveProperty("videoTrack");
+    expect(XmaxRealtimeManager.prototype.stopExternalVideoStream).toBeTypeOf("function");
+  });
+
   it("accepts either a camera preset or an explicit video format", () => {
     type CameraOptions = Parameters<XmaxRealtimeManaging["createLocalCameraStream"]>[0];
     const common = { position: sdk.CameraPosition.front, useMicrophone: false };

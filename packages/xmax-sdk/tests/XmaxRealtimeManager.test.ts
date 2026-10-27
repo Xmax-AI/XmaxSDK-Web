@@ -6,6 +6,8 @@ import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
 import { LocalImageController } from "../src/Media/Image/LocalImageController";
+import { ExternalFrameSourceController } from "../src/Media/External/ExternalFrameSourceController";
+import type { RealtimeExternalVideoSource } from "../src/Media/External/RealtimeExternalVideoSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RealtimeNetworkQualityListener } from "../src/Foundation/RTC/NetworkStatistics";
 import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
@@ -1307,6 +1309,61 @@ describe("XmaxRealtimeManager external video", () => {
     const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat: format };
     return { ...s, source, clone, options };
   }
+
+  it.each([
+    ["test-trtc", true], [RealtimeModel.x2_1, true], ["test-vertc", true],
+    ["test-trtc", false], [RealtimeModel.x2_1, false], ["test-vertc", false],
+  ] as const)("binds a frame source for %s, audio=%s, retaining it on disconnect but not replaying queued audio", async (model, hasAudio) => {
+    const s = makeManager(undefined, false, model);
+    let active = false;
+    const track = new RealtimeVideoTrack({ id: "input-frames", videoFormat });
+    track.mediaStreamTrack = { kind: "video" } as MediaStreamTrack;
+    const audio = { kind: "audio" } as MediaStreamTrack;
+    const input: RealtimeExternalVideoSource = { videoFormat, hasAudio, start: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
+    vi.spyOn(ExternalFrameSourceController.prototype, "isActive", "get").mockImplementation(() => active);
+    vi.spyOn(ExternalFrameSourceController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(ExternalFrameSourceController.prototype, "audioTrack", "get").mockImplementation(() => active && hasAudio ? audio : undefined);
+    const create = vi.spyOn(ExternalFrameSourceController.prototype, "create").mockImplementation(async () => {
+      active = true;
+      await input.start({} as any);
+      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
+    });
+    const audioPublished = vi.spyOn(ExternalFrameSourceController.prototype, "setAudioPublished").mockImplementation(() => {});
+    vi.spyOn(ExternalFrameSourceController.prototype, "invalidate").mockImplementation(() => {});
+    vi.spyOn(ExternalFrameSourceController.prototype, "stop").mockImplementation(async () => {
+      if (active) { active = false; await input.stop(); }
+    });
+    const provider = s.manager.options.provider;
+    if (provider !== RtcProvider.trtc) {
+      vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
+        id: "frame-session", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
+      }));
+    }
+    const local = await s.manager.createExternalVideoStream({ source: input });
+    expect(s.rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: track.mediaStreamTrack, audioTrack: hasAudio ? audio : undefined });
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    expect(audioPublished).not.toHaveBeenCalledWith(true);
+    await s.manager.connect(local);
+    expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: hasAudio });
+    expect(audioPublished).toHaveBeenLastCalledWith(true);
+    await expect(s.manager.stopExternalVideoStream()).rejects.toThrow("Disconnect before");
+    expect(input.stop).not.toHaveBeenCalled();
+    await s.manager.disconnect();
+    expect(audioPublished).toHaveBeenLastCalledWith(false);
+    expect(input.stop).not.toHaveBeenCalled();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    await s.manager.connect(local);
+    expect(create).toHaveBeenCalledOnce();
+    expect(input.start).toHaveBeenCalledOnce();
+    expect(audioPublished).toHaveBeenLastCalledWith(true);
+    await s.manager.disconnect();
+    await s.manager.stopExternalVideoStream();
+    expect(input.stop).toHaveBeenCalledOnce();
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    expect(s.rtc.destroy).toHaveBeenCalledOnce();
+    await s.manager.close();
+    expect(input.stop).toHaveBeenCalledOnce();
+  });
 
   it.each([
     [1280, 720, 1280, 720, 1920, 1080, false],

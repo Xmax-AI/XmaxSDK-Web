@@ -357,7 +357,75 @@ tier. Uplink quality changes do not change the generation canvas or media baseli
 
 Camera, local-image, local-video, and external-track gestures use normalized
 coordinates in `[0, 1]` relative to their media, independent of encoding quality changes.
-Network video retains its existing sizing and pixel-coordinate behavior.
+
+### Supply externally captured video and PCM
+
+Use `createExternalVideoStream({ source })` to bind a `RealtimeExternalVideoSource`.
+The source declares its original `videoFormat` and optional `hasAudio` (default
+`false`), installs capture/decoder callbacks in `start(sink)`, and removes them in
+`stop()`. Your app continues to own its devices, decoder, and original frames.
+
+```typescript
+import type { RealtimeExternalFrameSink, RealtimeExternalVideoSource } from "@xmaxai/web-sdk";
+import { RealtimeVideoFormat } from "@xmaxai/web-sdk";
+
+let input: RealtimeExternalFrameSink | undefined;
+const source: RealtimeExternalVideoSource = {
+  videoFormat: new RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),
+  hasAudio: true,
+  async start(sink) {
+    input = sink;
+    // Install your capture/decoder callbacks here. Do not wait for generation.
+  },
+  async stop() {
+    input = undefined;
+    // Remove callbacks here. Keep this safe to call while startup is pending.
+  },
+};
+
+// Call from a user gesture when supplying audio.
+const local = await realtime.createExternalVideoStream({ source });
+// Bind local.videoTrack to an SDK video view, then connect/startGeneration as usual.
+
+function onCapturedVideo(frame: VideoFrame) {
+  try { input?.pushVideo(frame); } finally { frame.close(); }
+}
+function onDecodedAudio(frame: AudioData) {
+  try { input?.pushAudio(frame); } finally { frame.close(); }
+}
+
+// Once disconnected, detach the source and invalidate its old sink:
+await realtime.disconnect();
+await realtime.stopExternalVideoStream();
+```
+
+- Both timestamps are nonnegative microseconds on one monotonic source timeline.
+  Keep timestamps increasing across loops and seeks; pace submission in real time.
+  Repeated/backward video times and overlapping audio buffers are ignored.
+- Submit video at the declared source dimensions, with rotation/mirroring already
+  applied. The SDK scales to the resolved media size and provides local preview;
+  camera resolution buckets do not apply. `sink.videoFormat` exposes this fixed size.
+- Audio must be decoded PCM (`AudioData`), 8–192 kHz, 1–8 channels, at most one second
+  per packet. Its format must remain fixed during a binding. Samples are copied,
+  downmixed to mono and resampled through AudioWorklet (some browsers expose a
+  two-channel track containing identical mono samples). Browser audio tracks are
+  continuous, so gaps become silence; original PTS cannot be forwarded as native
+  RTC packet timestamps. There is a shared 20 ms scheduling allowance and bounded
+  queuing, not an exact replica of native RTC frame submission.
+- Audio is uploaded only after RTC publication. `disconnect()` flushes queued
+  audio but preserves the source/video preview; reconnection does not replay old
+  audio. No microphone permission is requested and no input audio is played locally.
+- `source.start()` must return when callbacks are installed, without waiting for a
+  first frame or generation. Startup is limited to 10 seconds; `stop()` is called
+  after startup failure/cancellation too. `stopExternalVideoStream()` and `close()`
+  invalidate the sink, clear preview, and release SDK-created tracks. A source error
+  reported via `sink.reportError(error)` ends the connection and local stream.
+- Video input requires `VideoFrame` and Canvas capture. Audio additionally requires
+  a secure context, AudioWorklet and an unlocked AudioContext. This path uses the
+  existing TRTC, Agora and VeRTC external-track adapters; it does not upload files.
+
+The existing `createExternalVideoStream({ videoTrack, videoFormat })` form remains
+video-only and keeps its clone/ownership behavior. Do not combine it with `source`.
 
 <br>
 

@@ -25,6 +25,7 @@ import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/Realti
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
 import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
+import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/RealtimeExternalVideoSource";
 
 /**
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
@@ -262,22 +263,26 @@ export interface XmaxRealtimeManaging {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 接收用户自行采集或处理的实时视频轨，仅视频，不采集或发送音频。
-   * 不要求绑定 SDK 预览；旋转、裁剪及本地预览由调用方负责，后端 mirror 固定 false。
-   * 原始尺寸按统一媒体规则限制面积并按 4 对齐，不放大；RTC 编码器应用解析后的上行规格。
-   * 生成画布由 SDK 单独选择，比例不一致时自动由服务端 contain 补边，不在客户端补帧。
-   * SDK 持有轨道副本：disconnect 保留输入，close 释放副本，不停止调用方原始轨道。
-   * 副本共享底层媒体源；调用方仍负责停止原始采集。设备源结束时 SDK 上报错误并关闭。
-   * @param options.videoTrack 用户自行采集或处理的 live 视频轨，原始轨道归调用方所有。
-   * @param options.videoFormat 原始视频轨的尺寸、帧率及编码配置；SDK 解析后作为固定媒体和初始调档基准。
-   * @throws 非 live 视频轨、无效媒体规格、已有活动媒体源或 RTC 初始化失败时抛错。
+   * 接收外部帧源，或兼容仅视频的原生轨入口；不申请设备权限，不播放输入音频。
+   * 传 source 时调用 start(sink)，支持可选 PCM；创建完成即 ready，不等待首帧。
+   * 外部帧按媒体规则限制面积并按 4 对齐，SDK 缩放并提供预览；方向和镜像由接入方负责。
+   * 传 videoTrack/videoFormat 时仅克隆视频轨，保持原有行为，不处理其像素或创建预览绑定。
+   * disconnect 保留源和预览，但丢弃音频；stopExternalVideoStream 或 close 使旧 sink 失效并调用 source.stop。
+   * 有音频时需从用户手势调用以解锁 AudioContext，要求安全上下文及 AudioWorklet。
+   * @param options.source 接入方拥有的外部音视频帧源，与 videoTrack/videoFormat 二选一。
+   * @param options.videoTrack 兼容入口：接入方拥有的 live 视频轨。
+   * @param options.videoFormat 兼容入口：原视频轨的尺寸、帧率及编码配置。
+   * @throws 配置无效、已有活动媒体、源启动或 RTC 准备失败时抛错并清理本次绑定。
    */
   createExternalVideoStream(
-    options: {
-      videoTrack: MediaStreamTrack;
-      videoFormat: RealtimeVideoFormat;
-    }
+    options: RealtimeExternalVideoStreamOptions
   ): Promise<RealtimeMediaStream>;
+
+  /**
+   * 未连接时解绑外部源，清空预览并释放 SDK 输出，不接管接入方采集设备。
+   * 已连接时请先 disconnect；对其他媒体源不做操作。
+   */
+  stopExternalVideoStream(): Promise<void>;
 
   /**
    * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。

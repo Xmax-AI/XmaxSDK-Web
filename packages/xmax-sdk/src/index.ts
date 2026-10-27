@@ -93,6 +93,12 @@ export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/Realtime
 export type { RealtimeAudioFrame, RealtimeVideoFrame, RealtimeMediaFrame, RealtimeMediaFrameListener } from "./Service/Realtime/RealtimeMediaFrame";
 
 /**
+ * Media / External
+ */
+export type { RealtimeExternalVideoSource, RealtimeExternalFrameSink, RealtimeExternalVideoStreamOptions } from "./Media/External/RealtimeExternalVideoSource";
+export type { RealtimeExternalAudioFrame } from "./Foundation/Media/Audio/RealtimeExternalAudioFrame";
+
+/**
  * Service / Media
  */
 export { MediaService } from "./Service/Media/MediaService";

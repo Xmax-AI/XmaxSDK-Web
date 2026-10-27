@@ -16,6 +16,7 @@ import { CameraController } from "./Camera/CameraController";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
 import { LocalVideoController } from "./Video/LocalVideoController";
 import { ExternalVideoController } from "./Video/ExternalVideoController";
+import { ExternalFrameSourceController } from "./External/ExternalFrameSourceController";
 import { LocalImageController } from "./Image/LocalImageController";
 import { InteractionController } from "./Interaction/InteractionController";
 import type { InteractionListener } from "./Interaction/InteractionControlling";
@@ -46,6 +47,11 @@ export class MediaController implements MediaControlling {
    * 外部视频轨的所有权和结束事件管理组件。
    */
   private readonly external: ExternalVideoController;
+
+  /**
+   * 外部帧源的绑定、可选音频和预览组件。
+   */
+  private readonly externalFrames: ExternalFrameSourceController;
 
   /**
    * 交互坐标转换与串行发送组件。
@@ -83,6 +89,7 @@ export class MediaController implements MediaControlling {
     this.video = new LocalVideoController(dependencies.onVideoError);
     this.image = new LocalImageController(dependencies.onImageError);
     this.external = new ExternalVideoController(dependencies.onExternalError);
+    this.externalFrames = new ExternalFrameSourceController(dependencies.onExternalError);
     this.interaction = new InteractionController(dependencies.interactionListener);
   }
 
@@ -90,14 +97,14 @@ export class MediaController implements MediaControlling {
    * 当前可发布的轨道。
    */
   get currentTrack() {
-    return this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
+    return this.externalFrames.currentTrack ?? this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
   }
 
   /**
    * 从实际资源推导来源，不维护另一份媒体状态。
    */
   get source(): MediaControlling["source"] {
-    if (this.external.currentTrack) {
+    if (this.externalFrames.isActive || this.external.currentTrack) {
       return "externalVideo";
     }
     if (this.video.isActive) {
@@ -117,6 +124,9 @@ export class MediaController implements MediaControlling {
    * 当前源需要发布的音频能力。
    */
   get hasAudio() {
+    if (this.externalFrames.isActive) {
+      return !!this.externalFrames.audioTrack;
+    }
     return this.video.isActive ? !!this.video.audioTrack : this.source === "camera" && this.camera.useMicrophone;
   }
 
@@ -131,7 +141,7 @@ export class MediaController implements MediaControlling {
    * 创建前拒绝覆盖活动源或尚未完成的文件准备。
    */
   ensureNoLocalSource(): void {
-    if (this.currentTrack || this.video.isActive || this.image.isActive) {
+    if (this.currentTrack || this.externalFrames.isActive || this.video.isActive || this.image.isActive) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local stream before creating another one");
     }
   }
@@ -192,13 +202,27 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 接管外部视频轨副本，不停止调用方原始轨道。
+   * 绑定帧源或接管兼容视频轨副本，不停止调用方原始采集。
    */
-  createExternalVideoStream(
-    options: Parameters<MediaControlling["createExternalVideoStream"]>[0]
+  async createExternalVideoStream(
+    options: Parameters<MediaControlling["createExternalVideoStream"]>[0],
+    signal: AbortSignal
   ) {
     this.ensureNoLocalSource();
+    if (options.source !== undefined) {
+      if (options.videoTrack !== undefined || options.videoFormat !== undefined) {
+        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External source and video track options cannot be combined");
+      }
+      return this.externalFrames.create(options.source, this.dependencies.mediaService, signal);
+    }
     return this.external.create(options, this.dependencies.mediaService);
+  }
+
+  /**
+   * 将连接发布状态传给外部音频，不影响相机或文件源。
+   */
+  setExternalAudioPublished(published: boolean): void {
+    this.externalFrames.setAudioPublished(published);
   }
 
   /**
@@ -211,9 +235,10 @@ export class MediaController implements MediaControlling {
     await rtc.initialize();
     ensureCurrent();
 
-    const track = this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack;
+    const track = this.externalFrames.currentTrack ?? this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack;
     if (track?.mediaStreamTrack) {
-      await rtc.setExternalMediaTracks!({ videoTrack: track.mediaStreamTrack, audioTrack: this.video.audioTrack });
+      await rtc.setExternalMediaTracks!({ videoTrack: track.mediaStreamTrack,
+        audioTrack: this.externalFrames.isActive ? this.externalFrames.audioTrack : this.video.audioTrack });
       ensureCurrent();
     }
   }
@@ -240,7 +265,7 @@ export class MediaController implements MediaControlling {
    * 切换相机；外部采集不由 SDK 控制。
    */
   switchCamera() {
-    if (this.external.currentTrack) {
+    if (this.externalFrames.isActive || this.external.currentTrack) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External video capture is managed by the caller");
     }
     return this.camera.switchCamera();
@@ -275,6 +300,7 @@ export class MediaController implements MediaControlling {
   async stopLocalStream(): Promise<void> {
     this.stopInteraction();
     const external = this.source !== undefined && this.source !== "camera";
+    this.externalFrames.invalidate();
 
     try {
       if (external) {
@@ -284,6 +310,7 @@ export class MediaController implements MediaControlling {
       }
     } finally {
       this.external.stop();
+      await this.externalFrames.stop();
       if (this.image.isActive) {
         this.image.stop();
       }
