@@ -49,10 +49,9 @@ interface PendingRoomMessage {
   version: number;
 
   /**
-   * 文本正文及 UTF-8 字节数。
+   * 文本正文。
    */
   message: string;
-  bytes: number;
 
   /**
    * 控制信令的发送结果；快照入队后即返回，不等待网关确认。
@@ -256,19 +255,6 @@ export class AgoraRtcManager implements RtcManaging {
    * 当前调度循环的身份，隔离退房后迟到的异步工作。
    */
   private messageDrain?: object;
-
-  /**
-   * 房间消息限速窗口内已发送数据包的记录。
-   */
-  private sentPackets: {
-    time: number;
-    bytes: number
-  }[] = [];
-
-  /**
-   * 取消当前房间消息限速等待。
-   */
-  private cancelSendDelay?: () => void;
 
   /**
    * 取消所有正在等待网关响应的消息；快照最多允许三十条在途。
@@ -802,7 +788,6 @@ export class AgoraRtcManager implements RtcManaging {
     version: number
   ): Promise<void> {
     this.ensureRoomCurrent(client, version);
-    this.cancelSendDelay?.();
     for (const cancel of this.activeSends) {
       cancel();
     }
@@ -845,7 +830,6 @@ export class AgoraRtcManager implements RtcManaging {
 
     this.connection = config;
     this.tokenExpired = false;
-    this.sentPackets = [];
   }
 
   /**
@@ -1051,12 +1035,9 @@ export class AgoraRtcManager implements RtcManaging {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Room message exceeds the 1000-byte limit");
     }
 
-    const pending: PendingRoomMessage = { client, version, message, bytes };
+    const pending: PendingRoomMessage = { client, version, message };
     if (delivery === "latest") {
       this.latestMessage = pending;
-      if (!this.orderedMessages.length) {
-        this.cancelSendDelay?.();
-      }
       this.scheduleRoomMessages();
       return;
     }
@@ -1068,13 +1049,12 @@ export class AgoraRtcManager implements RtcManaging {
     return new Promise<void>((resolve, reject) => {
       pending.completion = { resolve, reject };
       this.orderedMessages.push(pending);
-      this.cancelSendDelay?.();
       this.scheduleRoomMessages();
     });
   }
 
   /**
-   * 每个房间只运行一个消息调度循环，避免限速额度被并发重复使用。
+   * 每个房间只运行一个消息调度循环，保持控制顺序并合并尚未发出的快照。
    */
   private scheduleRoomMessages(): void {
     if (this.messageDrain || (!this.orderedMessages.length && !this.latestMessage)) {
@@ -1086,7 +1066,7 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * 控制消息串行确认；快照限速后重新选取最新值，并限制在途请求数。
+   * 控制消息串行确认；快照不等待上一包响应，并限制在途请求数。
    */
   private async drainRoomMessages(
     drain: object,
@@ -1100,16 +1080,10 @@ export class AgoraRtcManager implements RtcManaging {
 
         try {
           await this.rejoinOperation;
-          this.ensureRoomCurrent(pending.client, pending.version);
-          if (this.tokenExpired) {
-            throw this.cancelled();
-          }
-          await this.waitForSendBudget(pending.bytes, pending.version, () => pending === (this.orderedMessages[0] ?? this.latestMessage));
-          await this.rejoinOperation;
           if (this.messageDrain !== drain) {
             return;
           }
-          // 限流等待期间可以到达更新的快照或控制消息，不发送旧位置。
+          // 恢复等待期间可以到达更新的快照或控制消息，不发送旧位置。
           if (pending !== (this.orderedMessages[0] ?? this.latestMessage)) {
             continue;
           }
@@ -1123,7 +1097,6 @@ export class AgoraRtcManager implements RtcManaging {
           } else {
             this.latestMessage = undefined;
           }
-          this.sentPackets.push({ time: Date.now(), bytes: pending.bytes });
           const sending = this.sendWithTimeout(pending.client, pending.message);
           if (pending.completion) {
             await sending;
@@ -1192,35 +1165,6 @@ export class AgoraRtcManager implements RtcManaging {
       // run 同时接住同步异常和异步拒绝；即使取消或超时，底层结果仍有处理器。
       void this.run(() => client.sendStreamMessage(message, false)).then(() => finish(), finish);
     });
-  }
-
-  /**
-   * 按滑动时间窗限速，退房立即唤醒等待并取消，不遗留计时器。
-   */
-  private async waitForSendBudget(
-    bytes: number,
-    version: number,
-    isCurrent: () => boolean,
-  ): Promise<void> {
-    while (version === this.roomVersion) {
-      if (!isCurrent()) {
-        return;
-      }
-      const now = Date.now();
-      this.sentPackets = this.sentPackets.filter(packet => now - packet.time < 1000);
-      if (this.sentPackets.length < 30 && this.sentPackets.reduce((sum, packet) => sum + packet.bytes, bytes) <= 6000)
-        return;
-      await new Promise<void>(resolve => {
-        const finish = () => {
-          clearTimeout(timer);
-          this.cancelSendDelay = undefined;
-          resolve();
-        };
-        const timer = setTimeout(finish, Math.max(1, this.sentPackets[0]!.time + 1000 - now));
-        this.cancelSendDelay = finish;
-      });
-    }
-    throw this.cancelled();
   }
 
   /**
@@ -1320,11 +1264,9 @@ export class AgoraRtcManager implements RtcManaging {
     for (const pending of this.orderedMessages.splice(0)) {
       pending.completion?.reject(this.cancelled());
     }
-    this.cancelSendDelay?.();
     for (const cancel of this.activeSends) {
       cancel();
     }
-    this.sentPackets = [];
     this.requestedAudio.clear();
     this.audioVolumes.clear();
     for (const user of this.client?.remoteUsers ?? []) user.audioTrack?.stop();

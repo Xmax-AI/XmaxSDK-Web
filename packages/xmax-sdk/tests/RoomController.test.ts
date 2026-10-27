@@ -368,7 +368,7 @@ describe("RoomController", () => {
     expect(JSON.parse(raw)).toEqual({
       event: "tracks", tracks: [[0.5321457238712345, 0.4123293857293847]], user_id: connection.userID, uid: "task-001",
     });
-    expect(new TextEncoder().encode(raw).byteLength * 30).toBeLessThan(6000);
+    expect(new TextEncoder().encode(raw).byteLength).toBeLessThan(200);
     await controller.leave();
   });
 
