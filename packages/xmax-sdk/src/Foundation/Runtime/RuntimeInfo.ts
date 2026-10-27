@@ -11,7 +11,7 @@
 /**
  * SDK 当前版本号。
  */
-export const XMAX_SDK_VERSION = "1.0.10";
+export const XMAX_SDK_VERSION = "1.1.0";
 
 /**
  * 随业务请求上报的 SDK 与浏览器环境信息。
