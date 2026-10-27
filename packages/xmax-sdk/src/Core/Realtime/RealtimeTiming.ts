@@ -1,5 +1,5 @@
 //
-//  RealtimeLaunchTimer.ts
+//  RealtimeTiming.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -9,24 +9,26 @@
 //
 
 import type {
-  RealtimeLaunchTiming,
-  RealtimeLaunchTimingListener,
-} from "../../Service/Realtime/RealtimeLaunchTiming";
+  RealtimeTiming as RealtimeTimingSnapshot,
+  RealtimeTimingListener,
+} from "../../Service/Realtime/RealtimeTiming";
+import { XmaxLogger, XmaxLoggerOption } from "../../Foundation/Logging/XmaxLogger";
 
 /**
- * @internal 只观察首轮启动，不参与生成流程的状态提交或等待。
+ * @internal 观察媒体源首轮启动耗时，提供快照并在预热完成后输出性能日志。
+ * 不参与生成流程的状态提交或等待。
  */
-export class RealtimeLaunchTimer {
+export class RealtimeTiming {
 
   /**
    * 统计快照与观察者
    */
-  private snapshot: RealtimeLaunchTiming = Object.freeze({});
+  private snapshot: RealtimeTimingSnapshot = Object.freeze({});
 
   /**
    * 启动耗时快照的业务监听器。
    */
-  private listener?: RealtimeLaunchTimingListener;
+  private listener?: RealtimeTimingListener;
 
   /**
    * 当前启动周期与计时起点
@@ -47,7 +49,7 @@ export class RealtimeLaunchTimer {
    * 设置统计监听器并立即回放当前快照；传 undefined 取消监听。
    */
   setListener(
-    listener?: RealtimeLaunchTimingListener
+    listener?: RealtimeTimingListener
   ): void {
     this.listener = listener;
     this.notify();
@@ -62,7 +64,7 @@ export class RealtimeLaunchTimer {
   }
 
   /**
-   * 开始新的启动周期；非摄像头源不产生相机和发布耗时。
+   * 开始新的启动周期；非摄像头源不产生相机耗时。
    */
   start(): void {
     this.sequence += 1;
@@ -117,7 +119,7 @@ export class RealtimeLaunchTimer {
   }
 
   /**
-   * 冻结本轮结果，令尚未完成的回调失效；下一轮相机启动才重置。
+   * 冻结本轮结果，令尚未完成的回调失效；下一轮创建媒体源时重置。
    */
   cancel(): void {
     this.active = false;
@@ -128,7 +130,7 @@ export class RealtimeLaunchTimer {
    * 创建当前周期的一次性计时回调；周期失效或该阶段已记录时忽略调用。
    */
   private measure(
-    key: Exclude<keyof RealtimeLaunchTiming, "totalMs">,
+    key: Exclude<keyof RealtimeTimingSnapshot, "totalMs">,
     startedAt: number,
   ): () => void {
     const sequence = this.sequence;
@@ -136,14 +138,59 @@ export class RealtimeLaunchTimer {
       if (!this.active || sequence !== this.sequence || this.snapshot[key] !== undefined) {
         return;
       }
+
       const now = performance.now();
       this.snapshot = Object.freeze({
         ...this.snapshot,
         [key]: now - startedAt,
         ...(key === "renderWarmupMs" ? { totalMs: now - this.startedAt } : {}),
       });
+
+      if (key === "renderWarmupMs") {
+        const snapshot = this.snapshot;
+        XmaxLogger.realtime.info(() => this.format(snapshot), XmaxLoggerOption.performance);
+      }
+
       this.notify();
     };
+  }
+
+  /**
+   * 按快照口径格式化启动汇总，未完成或未启用的阶段显示占位符。
+   */
+  private format(
+    snapshot: RealtimeTimingSnapshot
+  ): string {
+    const stages = [
+      [XmaxLogger.localized("摄像头启动：", "Camera Startup: "), snapshot.cameraMs],
+      [XmaxLogger.localized("媒体授权：", "Media Permission: "), snapshot.permissionMs],
+      [XmaxLogger.localized("创建会话：", "Session Creation: "), snapshot.sessionMs],
+      [XmaxLogger.localized("RTC 进房：", "RTC Room Join: "), snapshot.rtcJoinMs],
+      [XmaxLogger.localized("发布本地流：", "Local Stream Publication: "), snapshot.publishMs],
+      [XmaxLogger.localized("首帧到达：", "First Frame Arrival: "), snapshot.firstFrameMs],
+      [XmaxLogger.localized("渲染预热：", "Render Warmup: "), snapshot.renderWarmupMs],
+    ] as const;
+
+    return [
+      "实时生成启动耗时 (Realtime Generation Startup Timing)",
+      `└─ ${XmaxLogger.localized("总耗时：", "Total Duration: ")}${this.duration(snapshot.totalMs)}`,
+      ...stages.map(([label, duration], index) =>
+        `   ${index === stages.length - 1 ? "└─" : "├─"} ${label}${this.duration(duration)}`,
+      ),
+    ].join("\n");
+  }
+
+  /**
+   * 毫秒值保留一位小数，缺失或无效值显示占位符。
+   */
+  private duration(
+    milliseconds?: number
+  ): string {
+    if (milliseconds === undefined || !Number.isFinite(milliseconds) || milliseconds < 0) {
+      return "—";
+    }
+
+    return `${milliseconds.toFixed(1)} ms`;
   }
 
   /**

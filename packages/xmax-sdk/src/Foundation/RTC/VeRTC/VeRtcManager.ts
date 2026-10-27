@@ -11,7 +11,7 @@
 import { RtcProvider } from "../RtcProvider";
 import type { IRTCEngine } from "@volcengine/rtc";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
-import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
+import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { CameraPosition } from "../../Media/Camera/CameraPosition";
 import type { RtcManaging, RtcCameraCaptureOptions } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
@@ -21,6 +21,7 @@ import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import type { DownlinkVideoStatistics } from "../VideoStatistics";
 import { VeRtcStatistics } from "./VeRtcStatistics";
 import { networkQualityLevel } from "../NetworkStatistics";
+import { RtcStatsLogger } from "../RtcStatsLogger";
 
 /**
  * 动态加载的 VeRTC Web SDK。
@@ -918,23 +919,27 @@ export class VeRtcManager implements RtcManaging {
       }
     });
     engine.on(events.onNetworkQuality, (up, down) => {
-      if (mediaActive())
-        this.listener?.onNetworkStatistics?.(Object.freeze({
+      if (mediaActive()) {
+        const quality = Object.freeze({
           uplink: networkQualityLevel(up), downlink: networkQualityLevel(down),
-        }));
+        });
+        this.listener?.onNetworkStatistics?.(quality);
+        RtcStatsLogger.logNetworkQuality(quality);
+      }
     });
     engine.on(events.onLocalStreamStats, stats => {
       if (!mediaActive() || stats.isScreen || !this.videoRequested)
         return;
       const result = VeRtcStatistics.local(stats.videoStats);
       this.listener?.onLocalVideoStatistics?.(result);
-      XmaxLogger.rtc.info(() => `VeRTC local video statistics: ${JSON.stringify(stats.videoStats)}`, XmaxLoggerOption.performance);
+      RtcStatsLogger.logUplinkVideoStatistics(result);
     });
     engine.on(events.onRemoteStreamStats, stats => {
       if (!mediaActive() || stats.isScreen || !this.requestedVideo.has(stats.userId))
         return;
-      this.remoteStatistics.set(stats.userId, VeRtcStatistics.remote(stats.userId, stats.videoStats));
-      XmaxLogger.rtc.info(() => `VeRTC remote video statistics: ${JSON.stringify(stats.videoStats)}`, XmaxLoggerOption.performance);
+      const result = VeRtcStatistics.remote(stats.userId, stats.videoStats);
+      this.remoteStatistics.set(stats.userId, result);
+      RtcStatsLogger.logDownlinkVideoStatistics(result);
       this.emitRemoteStatistics();
     });
   }

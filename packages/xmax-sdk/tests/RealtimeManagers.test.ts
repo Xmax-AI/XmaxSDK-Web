@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { XmaxRealtimeConnectionManager } from "../src/Core/Realtime/XmaxRealtimeConnectionManager";
 import { XmaxRealtimeGenerationManager } from "../src/Core/Realtime/XmaxRealtimeGenerationManager";
 import { RealtimeCoordinator } from "../src/Core/Realtime/RealtimeCoordinator";
-import { RealtimeLaunchTimer } from "../src/Core/Realtime/RealtimeLaunchTimer";
+import { RealtimeTiming } from "../src/Core/Realtime/RealtimeTiming";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
@@ -221,7 +221,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     });
     const manager = new XmaxRealtimeConnectionManager({
       provider,
-      sessionService: service, streamController: controller, timing: new RealtimeLaunchTimer(),
+      sessionService: service, streamController: controller, timing: new RealtimeTiming(),
       remoteAudioVolume: () => 0.25, ...events, renderController: render, onInteraction: vi.fn(),
     });
     const op = operation();

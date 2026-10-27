@@ -31,7 +31,7 @@ import { RealtimeConnectionState } from "../src/Service/Realtime/RealtimeState";
 import { RealtimeVideoEncoderPreference, RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../src/Service/Realtime/StreamID";
-import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
+import type { RealtimeTiming } from "../src/Service/Realtime/RealtimeTiming";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
@@ -2339,8 +2339,8 @@ describe("XmaxRealtimeManager launch timing", () => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { manager, camera, session, stream } = makeManager();
-    const snapshots: RealtimeLaunchTiming[] = [];
-    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    const snapshots: RealtimeTiming[] = [];
+    await manager.setTimingListener((timing) => snapshots.push(timing));
     const originalCreate = camera.createLocalCameraStream.bind(camera);
     vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async () => {
       now = 50;
@@ -2395,8 +2395,8 @@ describe("XmaxRealtimeManager launch timing", () => {
 
   it("取消后的迟到预热结果不提交发布和总耗时", async () => {
     const { manager, camera, stream } = makeManager();
-    const snapshots: RealtimeLaunchTiming[] = [];
-    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    const snapshots: RealtimeTiming[] = [];
+    await manager.setTimingListener((timing) => snapshots.push(timing));
     const ready = makeDeferred<void>();
     camera.waitForValidCameraFrame.mockReturnValue(ready.promise);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
@@ -2423,8 +2423,8 @@ describe("XmaxRealtimeManager launch timing", () => {
     });
     try {
       const { manager, camera } = makeManager();
-      const snapshots: RealtimeLaunchTiming[] = [];
-      await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+      const snapshots: RealtimeTiming[] = [];
+      await manager.setTimingListener((timing) => snapshots.push(timing));
       const originalCreate = camera.createLocalCameraStream.bind(camera);
       vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async (options) => {
         // 用户在系统弹窗上停留 800ms 后点击允许；不触发 onchange，
@@ -2451,8 +2451,8 @@ describe("XmaxRealtimeManager launch timing", () => {
     });
     try {
       const { manager } = makeManager();
-      const snapshots: RealtimeLaunchTiming[] = [];
-      await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+      const snapshots: RealtimeTiming[] = [];
+      await manager.setTimingListener((timing) => snapshots.push(timing));
       await manager.createLocalCameraStream(cameraOptions);
       expect(snapshots.at(-1)?.cameraMs).toEqual(expect.any(Number));
       expect(snapshots.at(-1)?.permissionMs).toEqual(expect.any(Number));
@@ -2466,8 +2466,8 @@ describe("XmaxRealtimeManager launch timing", () => {
     let now = 100;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { manager, camera, session, stream } = makeManager();
-    const snapshots: RealtimeLaunchTiming[] = [];
-    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    const snapshots: RealtimeTiming[] = [];
+    await manager.setTimingListener((timing) => snapshots.push(timing));
     expect(snapshots).toEqual([{}]);
 
     const createCamera = camera.createLocalCameraStream.bind(camera);
@@ -2517,9 +2517,9 @@ describe("XmaxRealtimeManager launch timing", () => {
     expect(snapshots).toHaveLength(8);
     expect(stream.beginCalls).toHaveLength(1);
     const replay = vi.fn();
-    await manager.setLaunchTimingListener(replay);
+    await manager.setTimingListener(replay);
     expect(replay).toHaveBeenCalledWith(snapshots.at(-1));
-    await manager.setLaunchTimingListener();
+    await manager.setTimingListener();
     await manager.close();
     expect(replay).toHaveBeenCalledTimes(1);
   });
@@ -2527,7 +2527,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it("停止后保留部分统计，重启清空，旧轨道的迟到首帧无效", async () => {
     const { manager, stream } = makeManager();
     const listener = vi.fn();
-    await manager.setLaunchTimingListener(listener);
+    await manager.setTimingListener(listener);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
@@ -2552,7 +2552,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it("预热未启用时仍分别记录会话、进房和发布", async () => {
     const { manager } = makeManager();
     const listener = vi.fn();
-    await manager.setLaunchTimingListener(listener);
+    await manager.setTimingListener(listener);
     const localStream = await manager.createLocalCameraStream({ ...cameraOptions, enableFrameValidation: false });
     await manager.connect(localStream);
     expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), sessionMs: expect.any(Number), rtcJoinMs: expect.any(Number), publishMs: expect.any(Number) });
@@ -2562,7 +2562,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it.each(["session", "encoding", "publish"])("%s 失败时只保留已完成子阶段", async stage => {
     const { manager, session, stream } = makeManager();
     const listener = vi.fn();
-    await manager.setLaunchTimingListener(listener);
+    await manager.setTimingListener(listener);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     if (stage === "session") {
       vi.spyOn(session, "createSession").mockRejectedValue(new Error("stage failed"));
@@ -2596,7 +2596,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it("进房失败时不提交进房和总耗时", async () => {
     const { manager, stream } = makeManager();
     const listener = vi.fn();
-    await manager.setLaunchTimingListener(listener);
+    await manager.setTimingListener(listener);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     stream.failConnect = new XmaxError(XmaxErrorCode.rtcError, "join failed");
     await expect(manager.startGeneration({ localStream, context: testContext })).rejects.toThrow("join failed");
@@ -2607,7 +2607,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it("生成取消后不提交迟到的首帧", async () => {
     const { manager, stream } = makeManager();
     const listener = vi.fn();
-    await manager.setLaunchTimingListener(listener);
+    await manager.setTimingListener(listener);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     const remote = await manager.connect(localStream);
     const onFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
@@ -2626,7 +2626,7 @@ describe("XmaxRealtimeManager launch timing", () => {
   it.each([false, true])("监听器抛错不影响相机和连接（异步：%s）", async (asyncListener) => {
     const { manager } = makeManager();
     const fail = () => { throw new Error("observer failed"); };
-    await manager.setLaunchTimingListener(asyncListener ? async () => fail() : fail);
+    await manager.setTimingListener(asyncListener ? async () => fail() : fail);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     await manager.connect(localStream);
     expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.connected);
@@ -2637,8 +2637,8 @@ describe("XmaxRealtimeManager launch timing", () => {
 describe("XmaxRealtimeManager connect", () => {
   it.each([undefined, true, false])("相机预热开关 %s 控制生成和重连，禁用时预热不参与连接", async (enableFrameValidation) => {
     const { manager, camera, stream } = makeManager();
-    const snapshots: RealtimeLaunchTiming[] = [];
-    await manager.setLaunchTimingListener((timing) => snapshots.push(timing));
+    const snapshots: RealtimeTiming[] = [];
+    await manager.setTimingListener((timing) => snapshots.push(timing));
     const create = vi.spyOn(camera, "createLocalCameraStream");
     const options = {
       videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false,

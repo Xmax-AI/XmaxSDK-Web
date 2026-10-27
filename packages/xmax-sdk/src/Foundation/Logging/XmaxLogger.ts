@@ -26,7 +26,7 @@ export enum XmaxLoggerOption {
   business = 1 << 0,
 
   /**
-   * RTC 网络质量和音视频运行统计，输出到 console.info。
+   * 启动耗时、RTC 网络质量和音视频运行统计，输出到 console.info。
    */
   performance = 1 << 1,
 

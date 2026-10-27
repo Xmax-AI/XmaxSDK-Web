@@ -5,6 +5,7 @@ import { AgoraRtcStatistics } from "../src/Foundation/RTC/Agora/AgoraRtcStatisti
 import { VeRtcStatistics } from "../src/Foundation/RTC/VeRTC/VeRtcStatistics";
 import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
+import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
 
 describe("RTC network quality conversion", () => {
   it.each([
@@ -25,7 +26,39 @@ describe("RTC network quality conversion", () => {
 });
 
 describe("RTC video statistics stages", () => {
-  afterEach(() => XmaxLogger.configure(XmaxLoggerOption.none));
+  afterEach(() => {
+    XmaxLogger.configure(XmaxLoggerOption.none);
+    vi.restoreAllMocks();
+  });
+
+  it("logs the same normalized Agora objects as the callbacks without serializing native statistics", () => {
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const uplinkLog = vi.spyOn(RtcStatsLogger, "logUplinkVideoStatistics");
+    const downlinkLog = vi.spyOn(RtcStatsLogger, "logDownlinkVideoStatistics");
+    const nativeExtras = { token: "must-not-log", toJSON() { throw new Error("must not serialize native objects"); } };
+    const client = {
+      localTracks: [{ trackMediaType: "video" }],
+      getRTCStats: () => ({ RTT: 32, SendBytes: 100, RecvBytes: 200 }),
+      getLocalVideoStats: () => ({ ...nativeExtras, sendResolutionWidth: 1024, sendResolutionHeight: 1920, captureFrameRate: 30, sendFrameRate: 24, sendBitrate: 4200000, currentPacketLossRate: 0.02 }),
+      getRemoteVideoStats: () => ({ "private-bot": { ...nativeExtras, receiveResolutionWidth: 1920, receiveResolutionHeight: 1024, decodeFrameRate: 24, renderFrameRate: 23, receiveBitrate: 4000000, currentPacketLossRate: 0, end2EndDelay: 85 } }),
+    } as unknown as IAgoraRTCClient;
+    const local = vi.fn(), remote = vi.fn();
+    AgoraRtcStatistics.collect(client, {
+      onLocalVideoStatistics: local, onRemoteVideoStatistics: remote,
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+    });
+    expect(uplinkLog.mock.calls[0]![0]).toBe(local.mock.calls[0]![0]);
+    expect(downlinkLog.mock.calls[0]![0]).toBe(remote.mock.calls[0]![0][0]);
+    const text = info.mock.calls.flat().join("\n");
+    expect(text).toContain("发送码率：4200 kbps");
+    expect(text).toContain("编码帧率：—");
+    expect(text).toContain("视频丢包率：2 %");
+    expect(text).toContain("接收码率：4000 kbps");
+    expect(text).toContain("端到端时延：85 ms");
+    expect(text).not.toMatch(/must-not-log|private-bot|sendResolutionWidth|Agora RTC Statistics/);
+    expect(info).toHaveBeenCalledTimes(3);
+  });
 
   it.each([0, undefined, -1, NaN, Infinity])("keeps actual Agora frame stages and filters unavailable values (%s)", fps => {
     XmaxLogger.configure(XmaxLoggerOption.none);

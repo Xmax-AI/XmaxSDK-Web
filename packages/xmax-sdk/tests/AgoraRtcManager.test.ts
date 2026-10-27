@@ -228,7 +228,11 @@ describe("AgoraRtcManager", () => {
     const logs = info.mock.calls.map(call => String(call[0])).join("\n");
     expect(logs).not.toContain("OutgoingAvailableBandwidth");
     expect(logs).not.toContain("Uplink Bandwidth Estimate");
-    if (options === XmaxLoggerOption.performance) expect(logs).toContain("Agora RTC Statistics");
+    if (options === XmaxLoggerOption.performance) {
+      expect(logs).toContain("Video Uplink Statistics");
+      expect(logs).toContain("Video Downlink Statistics");
+      expect(logs).toContain("RTT: 12 ms");
+    }
     else expect(info).not.toHaveBeenCalled();
   });
 

@@ -23,6 +23,7 @@ import { networkQualityLevel } from "../NetworkStatistics";
 import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "../RtcManaging";
 import { RtcStatsLogger } from "../RtcStatsLogger";
+import type { UplinkVideoStatistics, DownlinkVideoStatistics } from "../VideoStatistics";
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import { canControlTrtcRemoteAudioVolume } from "./TrtcAudioVolumeSupport";
 import {
@@ -779,19 +780,27 @@ export class TrtcRtcManager implements RtcManaging {
     // 直接使用 TRTC 的统计周期，不创建定时器；退房和旧引擎的迟到事件不输出。
     const onStatistics = (stats: TRTCStatistics) => {
       if (this.isInRoom && this.lease?.engine === engine) {
-        RtcStatsLogger.logStatistics(stats);
+        RtcStatsLogger.logConnectionStatistics({
+          rttMs: stats.rtt, uplinkLossPercent: stats.upLoss, downlinkLossPercent: stats.downLoss,
+          sentBytes: stats.bytesSent, receivedBytes: stats.bytesReceived,
+        });
         const video = stats.localStatistics?.video?.find((item) => item.videoType === "big");
         const valid = (value: number | undefined, minimum: number) =>
           typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : undefined;
         // TRTC 的上行 frameRate 来自编码帧率，不作为采集或发送帧率重复输出。
-        this.eventListener?.onLocalVideoStatistics?.(video ? Object.freeze({
+        const localVideo: UplinkVideoStatistics | undefined = video ? Object.freeze({
           width: valid(video.width, 1),
           height: valid(video.height, 1),
           encodeFrameRate: valid(video.frameRate, 0),
           bitrateKbps: valid(video.bitrate, 0),
           packetLossPercent: stats.upLoss <= 100 ? valid(stats.upLoss, 0) : undefined,
-        }) : undefined);
-        this.eventListener?.onRemoteVideoStatistics?.(Object.freeze(
+        }) : undefined;
+        this.eventListener?.onLocalVideoStatistics?.(localVideo);
+        if (localVideo) {
+          RtcStatsLogger.logUplinkVideoStatistics(localVideo);
+        }
+
+        const remoteVideo: readonly DownlinkVideoStatistics[] = Object.freeze(
           (stats.remoteStatistics ?? []).flatMap((remote) => {
             const video = remote.video?.find((item) => item.videoType === "big");
             if (!video) {
@@ -811,17 +820,26 @@ export class TrtcRtcManager implements RtcManaging {
               endToEndDelayMs: valid(playback.point2pointDelay, 0),
             })];
           }),
-        ));
+        );
+        this.eventListener?.onRemoteVideoStatistics?.(remoteVideo);
+        for (const video of remoteVideo) {
+          RtcStatsLogger.logDownlinkVideoStatistics(video);
+        }
       }
     };
 
     const onNetworkQuality = (stats: NetworkQuality) => {
       if (this.isInRoom && this.lease?.engine === engine) {
-        RtcStatsLogger.logNetworkQuality(stats);
-        this.eventListener?.onNetworkStatistics?.(Object.freeze({
+        const quality = Object.freeze({
           uplink: networkQualityLevel(stats.uplinkNetworkQuality),
           downlink: networkQualityLevel(stats.downlinkNetworkQuality),
-        }));
+        });
+        RtcStatsLogger.logNetworkQuality({
+          ...quality,
+          uplinkRTT: stats.uplinkRTT, downlinkRTT: stats.downlinkRTT,
+          uplinkLoss: stats.uplinkLoss, downlinkLoss: stats.downlinkLoss,
+        });
+        this.eventListener?.onNetworkStatistics?.(quality);
       }
     };
 

@@ -20,7 +20,7 @@ import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSe
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
 import type { RemoteStreamBinding, StreamControlling } from "../../Stream/StreamControlling";
-import type { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
+import type { RealtimeTiming } from "./RealtimeTiming";
 import { RealtimeCoordinator } from "./RealtimeCoordinator";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
@@ -70,7 +70,7 @@ export class XmaxRealtimeConnectionManager {
       provider?: RtcProvider;
       sessionService?: RealtimeSessionServicing;
       streamController: StreamControlling;
-      timing: RealtimeLaunchTimer;
+      timing: RealtimeTiming;
       remoteAudioVolume: () => number;
       onHeartbeatFailure: (
         sessionID: string,

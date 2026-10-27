@@ -62,9 +62,9 @@ export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Foundation/Ru
  * Service / Realtime
  */
 export type {
-  RealtimeLaunchTiming,
-  RealtimeLaunchTimingListener,
-} from "./Service/Realtime/RealtimeLaunchTiming";
+  RealtimeTiming,
+  RealtimeTimingListener,
+} from "./Service/Realtime/RealtimeTiming";
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";

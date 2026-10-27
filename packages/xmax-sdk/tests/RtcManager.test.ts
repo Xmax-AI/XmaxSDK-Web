@@ -8,6 +8,7 @@ import { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfigurati
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
+import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 import { QUALITY_TIERS } from "../src/Stream/Quality/QualityTiers";
 
@@ -262,6 +263,36 @@ describe("TrtcRtcManager performance logging", () => {
       uplinkRTT: 32, downlinkRTT: 48, uplinkLoss: 1.5, downlinkLoss: 0,
     });
   };
+
+  it("logs the same normalized main-stream objects as its video callbacks", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const uplinkLog = vi.spyOn(RtcStatsLogger, "logUplinkVideoStatistics");
+    const downlinkLog = vi.spyOn(RtcStatsLogger, "logDownlinkVideoStatistics");
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const { manager, engine } = makeManager();
+    const local = vi.fn(), remote = vi.fn();
+    manager.setEventListener({
+      onRemoteVideoPublished: () => {}, onCustomMessageReceived: () => {},
+      onLocalVideoStatistics: local, onRemoteVideoStatistics: remote,
+    });
+    await manager.initialize();
+    await manager.joinRoom(joinConfig);
+    engine.emit("statistics", {
+      rtt: 32, upLoss: 1.5, downLoss: 0, bytesSent: 100, bytesReceived: 200,
+      localStatistics: { video: [{ videoType: "big", width: 1024, height: 1920, frameRate: 30, bitrate: 4200 }] },
+      remoteStatistics: [{ userId: "private-bot", video: [{ videoType: "big", width: 1920, height: 1024, frameRate: 24, bitrate: 4000, point2pointDelay: 85 }] }],
+    });
+    expect(uplinkLog.mock.calls[0]![0]).toBe(local.mock.calls[0]![0]);
+    expect(downlinkLog.mock.calls[0]![0]).toBe(remote.mock.calls[0]![0][0]);
+    const text = info.mock.calls.flat().join("\n");
+    expect(text).toContain("采集帧率：—");
+    expect(text).toContain("编码帧率：30 fps");
+    expect(text).toContain("发送帧率：—");
+    expect(text).toContain("渲染帧率：—");
+    expect(text).toContain("端到端时延：85 ms");
+    expect(text).not.toContain("private-bot");
+    await manager.destroy();
+  });
 
   it("only logs while joined, follows dynamic options, and resumes on rejoin", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});

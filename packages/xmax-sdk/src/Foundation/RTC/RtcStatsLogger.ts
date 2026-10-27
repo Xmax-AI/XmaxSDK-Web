@@ -8,131 +8,149 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
 import { XmaxLogger, XmaxLoggerOption } from "../Logging/XmaxLogger";
+import { RealtimeNetworkQualityLevel, type RealtimeNetworkQuality } from "./NetworkStatistics";
+import type { DownlinkVideoStatistics, UplinkVideoStatistics } from "./VideoStatistics";
 
 /**
- * TRTC 5.20 的类型声明尚未包含运行时可能提供的 point2pointDelay。
+ * RTC 连接层的通用诊断指标，独立于视频统计回调。
  */
-interface PlaybackStats {
+interface ConnectionStatistics {
 
   /**
-   * RTC 原生播放缓冲延迟，单位为毫秒。
+   * 本端与 RTC 服务的往返时延，单位 ms。
    */
-  jitterBufferDelay?: number;
+  rttMs?: number;
 
   /**
-   * RTC 原生媒体端到端延迟，单位为毫秒。
+   * 连接级上下行丢包率，单位 %。
    */
-  point2pointDelay?: number;
+  uplinkLossPercent?: number;
+  downlinkLossPercent?: number;
+
+  /**
+   * 当前连接累计收发的字节数。
+   */
+  sentBytes?: number;
+  receivedBytes?: number;
 }
 
 /**
- * TRTC 原生音频运行统计。
+ * 网络质量日志可附带厂商实际提供的独立方向指标，不由整体 RTT 推算。
  */
-type AudioStats = TRTCStatistics["localStatistics"]["audio"] & PlaybackStats;
-/**
- * TRTC 原生视频运行统计。
- */
-type VideoStats = TRTCStatistics["localStatistics"]["video"][number] & PlaybackStats;
+interface NetworkQualityStatistics extends RealtimeNetworkQuality {
+
+  /**
+   * 独立上下行往返时延，单位 ms。
+   */
+  uplinkRTT?: number;
+  downlinkRTT?: number;
+
+  /**
+   * 独立上下行丢包率，单位 %。
+   */
+  uplinkLoss?: number;
+  downlinkLoss?: number;
+}
 
 /**
- * 将 TRTC 运行统计按 performance 开关输出到默认可见的 console.info。 @internal
+ * 使用公共统计对象输出厂商无关的性能日志，视频字段顺序和单位与 iOS 一致。 @internal
  */
 export class RtcStatsLogger {
 
   /**
-   * 按上下行及音视频分组输出白名单统计指标，仅在 performance 日志启用时格式化。
+   * 输出上行视频统计；保持 info 级别，关闭性能日志时不格式化。
    */
-  static logStatistics(
-    stats: TRTCStatistics
+  static logUplinkVideoStatistics(
+    video: UplinkVideoStatistics,
   ): void {
-    XmaxLogger.rtc.info(() => {
-      const blocks = [this.block("RTC 运行统计 (RTC Statistics)", [
-        `RTT: ${this.value(stats.rtt, "ms")}`,
-        `${XmaxLogger.localized("上行丢包率：", "Uplink Packet Loss: ")}${this.value(stats.upLoss, "%")}`,
-        `${XmaxLogger.localized("下行丢包率：", "Downlink Packet Loss: ")}${this.value(stats.downLoss, "%")}`,
-        `${XmaxLogger.localized("累计发送：", "Bytes Sent: ")}${this.value(stats.bytesSent, "bytes")}`,
-        `${XmaxLogger.localized("累计接收：", "Bytes Received: ")}${this.value(stats.bytesReceived, "bytes")}`,
-      ])];
-
-      const local = stats.localStatistics;
-      if (local?.audio) {
-        blocks.push(this.audioBlock("本地音频发送 (Local Audio Uplink)", local.audio, false));
-      }
-      for (const video of local?.video ?? []) {
-        blocks.push(this.videoBlock("本地视频发送 (Local Video Uplink)", video, false));
-      }
-
-      for (const remote of stats.remoteStatistics ?? []) {
-        // 只输出白名单指标和用户标识，不序列化原始负载。
-        const user = remote.userId.replace(/[\r\n]/g, " ");
-        if (remote.audio) {
-          blocks.push(this.audioBlock(`远端音频接收 (Remote Audio Downlink) [${user}]`, remote.audio, true));
-        }
-        for (const video of remote.video ?? []) {
-          blocks.push(this.videoBlock(`远端视频接收 (Remote Video Downlink) [${user}]`, video, true));
-        }
-      }
-
-      return blocks.join("\n\n");
-    }, XmaxLoggerOption.performance);
+    XmaxLogger.rtc.info(() => this.uplinkVideoStatisticsMessage(video), XmaxLoggerOption.performance);
   }
 
   /**
-   * 输出上下行网络质量等级、RTT 和丢包率，遵循 performance 日志开关。
+   * 格式化上行视频指标，不以发送帧率填补缺失的编码帧率。
    */
-  static logNetworkQuality(
-    stats: NetworkQuality
+  static uplinkVideoStatisticsMessage(
+    video: UplinkVideoStatistics,
+  ): string {
+    return this.block("视频上行统计 (Video Uplink Statistics)", [
+      `${XmaxLogger.localized("分辨率：", "Resolution: ")}${this.resolution(video.width, video.height)}`,
+      `${XmaxLogger.localized("发送码率：", "Send Bitrate: ")}${this.value(video.bitrateKbps, "kbps")}`,
+      `${XmaxLogger.localized("采集帧率：", "Capture Frame Rate: ")}${this.value(video.captureFrameRate, "fps")}`,
+      `${XmaxLogger.localized("编码帧率：", "Encode Frame Rate: ")}${this.value(video.encodeFrameRate, "fps")}`,
+      `${XmaxLogger.localized("发送帧率：", "Send Frame Rate: ")}${this.value(video.sendFrameRate, "fps")}`,
+      `${XmaxLogger.localized("视频丢包率：", "Video Packet Loss: ")}${this.value(video.packetLossPercent, "%")}`,
+    ]);
+  }
+
+  /**
+   * 输出下行视频统计，采用与统计回调相同的对象。
+   */
+  static logDownlinkVideoStatistics(
+    video: DownlinkVideoStatistics,
   ): void {
-    XmaxLogger.rtc.info(() => this.block("网络质量 (Network Quality Metrics)", [
-      `${XmaxLogger.localized("本地上行：", "Local Uplink: ")}${this.quality(stats.uplinkNetworkQuality)}, RTT ${this.value(stats.uplinkRTT, "ms")}, ${XmaxLogger.localized("丢包率 ", "Loss ")}${this.value(stats.uplinkLoss, "%")}`,
-      `${XmaxLogger.localized("本地下行（平均）：", "Local Downlink (Average): ")}${this.quality(stats.downlinkNetworkQuality)}, RTT ${this.value(stats.downlinkRTT, "ms")}, ${XmaxLogger.localized("丢包率 ", "Loss ")}${this.value(stats.downlinkLoss, "%")}`,
+    XmaxLogger.rtc.info(() => this.downlinkVideoStatisticsMessage(video), XmaxLoggerOption.performance);
+  }
+
+  /**
+   * 格式化下行视频指标；不输出用户标识或未经白名单筛选的厂商字段。
+   */
+  static downlinkVideoStatisticsMessage(
+    video: DownlinkVideoStatistics,
+  ): string {
+    return this.block("视频下行统计 (Video Downlink Statistics)", [
+      `${XmaxLogger.localized("分辨率：", "Resolution: ")}${this.resolution(video.width, video.height)}`,
+      `${XmaxLogger.localized("接收码率：", "Receive Bitrate: ")}${this.value(video.bitrateKbps, "kbps")}`,
+      `${XmaxLogger.localized("解码帧率：", "Decode Frame Rate: ")}${this.value(video.decodeFrameRate, "fps")}`,
+      `${XmaxLogger.localized("渲染帧率：", "Render Frame Rate: ")}${this.value(video.renderFrameRate, "fps")}`,
+      `${XmaxLogger.localized("视频丢包率：", "Video Packet Loss: ")}${this.value(video.packetLossPercent, "%")}`,
+      `${XmaxLogger.localized("端到端时延：", "End-to-End Delay: ")}${this.value(video.endToEndDelayMs, "ms")}`,
+    ]);
+  }
+
+  /**
+   * 独立保留连接级 RTT、丢包率和累计流量，不混入视频指标。
+   */
+  static logConnectionStatistics(
+    stats: ConnectionStatistics,
+  ): void {
+    XmaxLogger.rtc.info(() => this.block("RTC 运行统计 (RTC Statistics)", [
+      `RTT: ${this.value(stats.rttMs, "ms")}`,
+      `${XmaxLogger.localized("上行丢包率：", "Uplink Packet Loss: ")}${this.value(stats.uplinkLossPercent, "%")}`,
+      `${XmaxLogger.localized("下行丢包率：", "Downlink Packet Loss: ")}${this.value(stats.downlinkLossPercent, "%")}`,
+      `${XmaxLogger.localized("累计发送：", "Bytes Sent: ")}${this.value(stats.sentBytes, "bytes")}`,
+      `${XmaxLogger.localized("累计接收：", "Bytes Received: ")}${this.value(stats.receivedBytes, "bytes")}`,
     ]), XmaxLoggerOption.performance);
   }
 
   /**
-   * 格式化音频码率和音量；远端音频额外包含播放延迟。
+   * 输出统一网络质量；仅附带厂商实际提供的独立方向时延和丢包率。
    */
-  private static audioBlock(
-    title: string,
-    stats: AudioStats,
-    remote: boolean
-  ): string {
-    return this.block(title, [
-      `${XmaxLogger.localized("码率：", "Bitrate: ")}${this.value(stats.bitrate, "kbps")}`,
-      `${XmaxLogger.localized("音量（0–1）：", "Audio Level (0–1): ")}${this.value(stats.audioLevel)}`,
-      ...(remote ? this.playbackLines(stats) : []),
-    ]);
+  static logNetworkQuality(
+    stats: NetworkQualityStatistics,
+  ): void {
+    XmaxLogger.rtc.info(() => {
+      const details = (rtt?: number, loss?: number) => rtt === undefined && loss === undefined
+        ? ""
+        : `, RTT ${this.value(rtt, "ms")}, ${XmaxLogger.localized("丢包率 ", "Loss ")}${this.value(loss, "%")}`;
+      return this.block("网络质量 (Network Quality Metrics)", [
+        `${XmaxLogger.localized("本地上行：", "Local Uplink: ")}${this.quality(stats.uplink)}${details(stats.uplinkRTT, stats.uplinkLoss)}`,
+        `${XmaxLogger.localized("本地下行（平均）：", "Local Downlink (Average): ")}${this.quality(stats.downlink)}${details(stats.downlinkRTT, stats.downlinkLoss)}`,
+      ]);
+    }, XmaxLoggerOption.performance);
   }
 
   /**
-   * 格式化视频流类型、尺寸、帧率和码率；远端视频额外包含播放延迟。
+   * 宽高必须同时有效，任意一项缺失时整个分辨率显示占位符。
    */
-  private static videoBlock(
-    title: string,
-    stats: VideoStats,
-    remote: boolean
+  private static resolution(
+    width?: number,
+    height?: number,
   ): string {
-    return this.block(title, [
-      `${XmaxLogger.localized("流类型：", "Stream Type: ")}${stats.videoType ?? "—"}`,
-      `${XmaxLogger.localized("分辨率：", "Resolution: ")}${this.value(stats.width)} × ${this.value(stats.height)}`,
-      `${XmaxLogger.localized("帧率：", "Frame Rate: ")}${this.value(stats.frameRate, "fps")}`,
-      `${XmaxLogger.localized("码率：", "Bitrate: ")}${this.value(stats.bitrate, "kbps")}`,
-      ...(remote ? this.playbackLines(stats) : []),
-    ]);
-  }
-
-  /**
-   * 格式化 TRTC 播放缓冲及估算端到端延迟，缺失或无效指标显示占位符。
-   */
-  private static playbackLines(
-    stats: PlaybackStats
-  ): string[] {
-    return [
-      `${XmaxLogger.localized("播放缓冲延迟：", "Jitter Buffer Delay: ")}${this.value(stats.jitterBufferDelay, "ms")}`,
-      `${XmaxLogger.localized("RTC 端到端延迟（估算）：", "RTC End-to-End Delay (Estimated): ")}${this.value(stats.point2pointDelay, "ms")}`,
-    ];
+    if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return "—";
+    }
+    return `${width} × ${height}`;
   }
 
   /**
@@ -146,7 +164,7 @@ export class RtcStatsLogger {
   }
 
   /**
-   * TRTC 丢包率已是百分数，无需再乘 100。
+   * 不改变公共单位，保留有效零值，Web 小数最多显示两位。
    */
   private static value(
     value: number | undefined,
@@ -155,25 +173,25 @@ export class RtcStatsLogger {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
       return "—";
     }
-    return `${Number(value.toFixed(2))}${unit ? `${unit === "%" ? "" : " "}${unit}` : ""}`;
+    return `${Number(value.toFixed(2))}${unit ? ` ${unit}` : ""}`;
   }
 
   /**
-   * 将 TRTC 质量等级映射为本地化文案；未知等级回退为“未知”。
+   * 将公共网络质量枚举转换为本地化文案。
    */
   private static quality(
-    value: number
+    value: RealtimeNetworkQualityLevel,
   ): string {
-    const names = [
-      ["未知", "Unknown"],
-      ["极好", "Excellent"],
-      ["良好", "Good"],
-      ["一般", "Fair"],
-      ["差", "Poor"],
-      ["极差", "Very Poor"],
-      ["断网", "Disconnected"],
-    ] as const;
-    const name = names[value] ?? names[0];
+    const names: Record<RealtimeNetworkQualityLevel, readonly [string, string]> = {
+      [RealtimeNetworkQualityLevel.unknown]: ["未知", "Unknown"],
+      [RealtimeNetworkQualityLevel.excellent]: ["极好", "Excellent"],
+      [RealtimeNetworkQualityLevel.good]: ["良好", "Good"],
+      [RealtimeNetworkQualityLevel.poor]: ["一般", "Poor"],
+      [RealtimeNetworkQualityLevel.bad]: ["差", "Bad"],
+      [RealtimeNetworkQualityLevel.veryBad]: ["极差", "Very Bad"],
+      [RealtimeNetworkQualityLevel.down]: ["断网", "Disconnected"],
+    };
+    const name = names[value] ?? names[RealtimeNetworkQualityLevel.unknown];
     return XmaxLogger.localized(name[0], name[1]);
   }
 }

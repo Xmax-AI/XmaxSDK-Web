@@ -5,6 +5,8 @@ import { VeRtcManager, VERTC_APP_ID } from "../src/Foundation/RTC/VeRTC/VeRtcMan
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 import type { VeRtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
+import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
+import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 
 type SDK = typeof import("@volcengine/rtc");
 const credentials: VeRtcRoomJoinConfiguration = { provider: RtcProvider.vertc, appID: VERTC_APP_ID, roomID: "000123", userID: "ve-user", roomToken: "secret-v1" };
@@ -62,6 +64,8 @@ function setup() {
 afterEach(async () => {
   for (const manager of managers.splice(0)) await manager.destroy();
   vi.unstubAllGlobals(); vi.useRealTimers();
+  XmaxLogger.configure(XmaxLoggerOption.none);
+  vi.restoreAllMocks();
 });
 
 describe("VeRTC file media", () => {
@@ -391,6 +395,35 @@ describe("VeRTC token recovery", () => {
 });
 
 describe("VeRTC statistics", () => {
+  it("logs the same normalized objects as the callbacks using the shared formatter", async () => {
+    const s = setup();
+    await s.joined();
+    await s.capture();
+    await s.manager.publishLocalVideo();
+    await s.manager.subscribeRemoteVideo("private-bot", true);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const uplinkLog = vi.spyOn(RtcStatsLogger, "logUplinkVideoStatistics");
+    const downlinkLog = vi.spyOn(RtcStatsLogger, "logDownlinkVideoStatistics");
+    XmaxLogger.configure(XmaxLoggerOption.performance);
+    const nativeExtras = { token: "must-not-log", toJSON() { throw new Error("must not serialize native objects"); } };
+    s.emit("onLocalStreamStats", { isScreen: false, videoStats: {
+      ...nativeExtras, encodedFrameWidth: 1024, encodedFrameHeight: 1920, inputFrameRate: 30,
+      encoderOutputFrameRate: 28, sentFrameRate: 27, sentKBitrate: 4200, videoLossRate: 0.02,
+    } });
+    s.emit("onRemoteStreamStats", { userId: "private-bot", isScreen: false, videoStats: {
+      ...nativeExtras, width: 1920, height: 1024, decoderOutputFrameRate: 24, rendererOutputFrameRate: 23,
+      receivedKBitrate: 4000, videoLossRate: 0, e2eDelay: 85,
+    } });
+    expect(uplinkLog.mock.calls[0]![0]).toBe(s.listener.onLocalVideoStatistics.mock.calls.at(-1)![0]);
+    expect(downlinkLog.mock.calls[0]![0]).toBe(s.listener.onRemoteVideoStatistics.mock.calls.at(-1)![0][0]);
+    const text = info.mock.calls.flat().join("\n");
+    expect(text).toContain("视频上行统计 (Video Uplink Statistics)");
+    expect(text).toContain("编码帧率：28 fps");
+    expect(text).toContain("视频下行统计 (Video Downlink Statistics)");
+    expect(text).toContain("端到端时延：85 ms");
+    expect(text).not.toMatch(/must-not-log|private-bot|encodedFrameWidth|VeRTC local video statistics/);
+  });
+
   it("normalizes units, excludes screen streams and clears departed statistics", async () => {
     const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo(); await s.manager.subscribeRemoteVideo("bot", true);
     s.emit("onLocalStreamStats", { isScreen: false, videoStats: { encodedFrameWidth: 1920, encodedFrameHeight: 1024, inputFrameRate: 30, encoderOutputFrameRate: 28, sentFrameRate: 27, sentKBitrate: 4500, videoLossRate: 0.02, rtt: 24.5 } });

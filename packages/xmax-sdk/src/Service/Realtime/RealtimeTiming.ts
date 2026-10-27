@@ -1,5 +1,5 @@
 //
-//  RealtimeLaunchTiming.ts
+//  RealtimeTiming.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -9,11 +9,11 @@
 //
 
 /**
- * 一次相机启动的耗时快照，单位为毫秒；undefined 表示该阶段尚未完成或未启用。
- * 新一轮打开摄像头时重置；失败、关闭或断开后保留已完成的值。
+ * 一次媒体启动的耗时快照，单位为毫秒；undefined 表示该阶段尚未完成或未启用。
+ * 新一轮创建媒体源时重置；失败、关闭或断开后保留已完成的值。
  * 仅预览时不产生首帧和总耗时；预览后手动启动生成的等待计入总耗时。
  */
-export interface RealtimeLaunchTiming {
+export interface RealtimeTiming {
 
   /**
    * 开始打开摄像头到相机流创建完成（包含权限等待）。
@@ -60,6 +60,6 @@ export interface RealtimeLaunchTiming {
 /**
  * 阶段完成时提供完整快照；不支持帧回调的浏览器以 playing 近似首帧。
  */
-export type RealtimeLaunchTimingListener = (
-  timing: RealtimeLaunchTiming
+export type RealtimeTimingListener = (
+  timing: RealtimeTiming
 ) => void;

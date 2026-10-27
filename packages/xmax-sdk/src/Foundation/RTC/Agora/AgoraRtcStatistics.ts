@@ -9,9 +9,10 @@
 //
 
 import type { IAgoraRTCClient, NetworkQuality } from "agora-rtc-sdk-ng";
-import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
 import type { RtcEventListener } from "../RtcEventListener";
 import { networkQualityLevel } from "../NetworkStatistics";
+import { RtcStatsLogger } from "../RtcStatsLogger";
+import type { DownlinkVideoStatistics, UplinkVideoStatistics } from "../VideoStatistics";
 
 /**
  * 将声网统计转换为 SDK 公共单位，保留厂商缺失指标，不推算播放缓冲延迟。
@@ -29,28 +30,29 @@ export class AgoraRtcStatistics {
     const local = client.getLocalVideoStats();
     const valid = AgoraRtcStatistics.valid;
     const loss = AgoraRtcStatistics.loss;
-    const localVideo = client.localTracks.some(track => track.trackMediaType === "video") ? {
+    const localVideo: UplinkVideoStatistics | undefined = client.localTracks.some(track => track.trackMediaType === "video") ? Object.freeze({
       width: valid(local.sendResolutionWidth, 1), height: valid(local.sendResolutionHeight, 1),
       captureFrameRate: valid(local.captureFrameRate), sendFrameRate: valid(local.sendFrameRate),
       bitrateKbps: valid(local.sendBitrate / 1000), packetLossPercent: loss(local.currentPacketLossRate),
-    } : undefined;
-    const remote = Object.entries(client.getRemoteVideoStats()).map(([userID, stats]) => ({
+    }) : undefined;
+    const remote: readonly DownlinkVideoStatistics[] = Object.freeze(Object.entries(client.getRemoteVideoStats()).map(([userID, stats]) => Object.freeze({
       userID, width: valid(stats.receiveResolutionWidth, 1), height: valid(stats.receiveResolutionHeight, 1),
       decodeFrameRate: valid(stats.decodeFrameRate), renderFrameRate: valid(stats.renderFrameRate),
       bitrateKbps: valid(stats.receiveBitrate / 1000),
       packetLossPercent: loss(stats.currentPacketLossRate), endToEndDelayMs: valid(stats.end2EndDelay),
-    }));
-    listener?.onLocalVideoStatistics?.(localVideo && Object.freeze(localVideo));
-    listener?.onRemoteVideoStatistics?.(Object.freeze(remote.map(item => Object.freeze(item))));
+    })));
+    listener?.onLocalVideoStatistics?.(localVideo);
+    listener?.onRemoteVideoStatistics?.(remote);
 
-    XmaxLogger.rtc.info(() => `Agora 运行统计 (Agora RTC Statistics)\n${JSON.stringify({
-      rttMs: valid(rtc.RTT), sentBytes: valid(rtc.SendBytes), receivedBytes: valid(rtc.RecvBytes), localVideo, remoteVideo: remote,
-      capture: {
-        width: valid(local.captureResolutionWidth, 1), height: valid(local.captureResolutionHeight, 1),
-        frameRate: valid(local.captureFrameRate)
-      },
-      localAudio: client.getLocalAudioStats(), remoteAudio: client.getRemoteAudioStats(),
-    }, null, 2)}`, XmaxLoggerOption.performance);
+    RtcStatsLogger.logConnectionStatistics({
+      rttMs: valid(rtc.RTT), sentBytes: valid(rtc.SendBytes), receivedBytes: valid(rtc.RecvBytes),
+    });
+    if (localVideo) {
+      RtcStatsLogger.logUplinkVideoStatistics(localVideo);
+    }
+    for (const video of remote) {
+      RtcStatsLogger.logDownlinkVideoStatistics(video);
+    }
   }
 
   /**
@@ -65,7 +67,7 @@ export class AgoraRtcStatistics {
       downlink: networkQualityLevel(stats.downlinkNetworkQuality),
     });
     listener?.onNetworkStatistics?.(result);
-    XmaxLogger.rtc.info(() => `Agora 网络质量 (Agora Network Quality)\n${JSON.stringify(result, null, 2)}`, XmaxLoggerOption.performance);
+    RtcStatsLogger.logNetworkQuality(result);
   }
 
   /**

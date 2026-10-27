@@ -11,7 +11,7 @@ import {
   XmaxEnvironment,
   XmaxLoggerOption,
   type RealtimeMediaStream,
-  type RealtimeLaunchTiming,
+  type RealtimeTiming,
   type UplinkVideoStatistics,
   type RealtimeNetworkQuality,
   type DownlinkVideoStatistics,
@@ -79,7 +79,7 @@ export function App() {
     RealtimeConnectionState.idle,
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [launchTiming, setLaunchTiming] = useState<RealtimeLaunchTiming>({});
+  const [launchTiming, setLaunchTiming] = useState<RealtimeTiming>({});
   const [localVideoStatistics, setLocalVideoStatistics] = useState<UplinkVideoStatistics>();
   const [remoteVideoStatistics, setRemoteVideoStatistics] = useState<DownlinkVideoStatistics>();
   const [networkStatistics, setNetworkStatistics] = useState<RealtimeNetworkQuality>();
@@ -306,7 +306,7 @@ export function App() {
     try {
       setActiveModeKey("charx");
       await realtime.setRemoteAudioVolume(remoteAudioVolume);
-      await realtime.setLaunchTimingListener((timing) => {
+      await realtime.setTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
           setLaunchTiming(timing);
         }

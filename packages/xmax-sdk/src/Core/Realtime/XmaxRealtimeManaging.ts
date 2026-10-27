@@ -21,7 +21,7 @@ import type {
 } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
-import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
+import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTiming";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
 import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
@@ -145,12 +145,13 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 监听启动耗时；立即回放当前快照，每完成一个阶段再次回调。
-   * 新一轮打开摄像头时重置；失败或终止后冻结，更新生成条件不重置。
+   * 新一轮创建媒体源时重置；失败或终止后冻结，更新生成条件不重置。
    * 首帧统计需要将远端轨道绑定到 SDK 视频视图，且不会阻塞 startGeneration。
    * 传入 undefined 清除监听器；监听器异常不影响生成流程。
+   * 开启 performance 日志后，渲染预热完成时另向 console.info 输出启动汇总，不依赖监听器。
    */
-  setLaunchTimingListener(
-    listener?: RealtimeLaunchTimingListener
+  setTimingListener(
+    listener?: RealtimeTimingListener
   ): Promise<void>;
 
   /**

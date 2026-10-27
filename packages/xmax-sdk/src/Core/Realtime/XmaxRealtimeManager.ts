@@ -56,8 +56,8 @@ import {
   type RealtimeOperationToken,
 } from "./RealtimeCoordinator";
 import { RealtimeErrorHandler } from "./RealtimeErrorHandler";
-import { RealtimeLaunchTimer } from "./RealtimeLaunchTimer";
-import type { RealtimeLaunchTimingListener } from "../../Service/Realtime/RealtimeLaunchTiming";
+import { RealtimeTiming } from "./RealtimeTiming";
+import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTiming";
 import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
 import { RealtimeCameraPreset, cameraPresetSize } from "./RealtimeCameraPreset";
 import { RealtimeQualityLevel } from "./RealtimeQualityLevel";
@@ -158,7 +158,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 启动计时与首帧通知
    */
-  private readonly launchTimer = new RealtimeLaunchTimer();
+  private readonly timing = new RealtimeTiming();
 
   /**
    * 远端首帧提交显示时结束首帧计时。
@@ -344,7 +344,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       provider: options.provider,
       sessionService,
       streamController: this.streamController,
-      timing: this.launchTimer,
+      timing: this.timing,
       remoteAudioVolume: () => this.storedRemoteAudioVolume,
       onHeartbeatFailure: (sessionID, error) => {
         void this.handleHeartbeatFailure(sessionID, error);
@@ -654,10 +654,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * 监听启动耗时；设置后立即回放，传 undefined 取消监听。
    */
-  async setLaunchTimingListener(
-    listener?: RealtimeLaunchTimingListener
+  async setTimingListener(
+    listener?: RealtimeTimingListener
   ): Promise<void> {
-    this.launchTimer.setListener(listener);
+    this.timing.setListener(listener);
   }
 
   /**
@@ -840,7 +840,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         );
         token.ensureCurrent();
 
-        const completeCamera = this.launchTimer.startCamera();
+        const completeCamera = this.timing.startCamera();
         this.clearVideoStatistics();
 
         // 系统弹出授权请求时单独统计用户授权耗时；已授权或未弹窗不记录。
@@ -848,7 +848,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.disposePermissionWatch();
         const permissionWatch = await watchMediaPermissionPrompt(options?.useMicrophone ?? false);
         if (permissionWatch) {
-          const completePermission = this.launchTimer.startPermission();
+          const completePermission = this.timing.startPermission();
           void permissionWatch.decided.then(() => completePermission()).catch(() => { });
           this.permissionWatchDispose = permissionWatch.dispose;
         }
@@ -859,7 +859,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           stream = await this.mediaController.createLocalCameraStream(cameraOptions);
         } catch (error) {
           this.disposePermissionWatch();
-          this.launchTimer.cancel();
+          this.timing.cancel();
           throw error;
         }
 
@@ -891,7 +891,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       this.mediaController.ensureNoLocalSource();
       this.mediaController.validateExternalMediaSupport("local");
       token.setFailureScope(RealtimeTerminationScope.all);
-      this.launchTimer.start();
+      this.timing.start();
       this.clearVideoStatistics();
 
       // 不在浏览器播放解锁之前等待网络或 RTC 初始化，保留用户点击的激活状态。
@@ -915,7 +915,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       this.mediaController.ensureNoLocalSource();
       this.mediaController.validateExternalMediaSupport("image");
       token.setFailureScope(RealtimeTerminationScope.all);
-      this.launchTimer.start();
+      this.timing.start();
       this.clearVideoStatistics();
 
       const stream = await this.mediaController.createLocalImageStream(options, token.signal);
@@ -944,7 +944,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       const stream = await this.mediaController.createExternalVideoStream(options, token.signal);
       token.setFailureScope(RealtimeTerminationScope.all);
       token.ensureCurrent();
-      this.launchTimer.start();
+      this.timing.start();
       this.clearVideoStatistics();
 
       await this.mediaController.prepareSource(() => token.ensureCurrent());
@@ -970,7 +970,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       }
 
       token.setFailureScope(RealtimeTerminationScope.all);
-      this.launchTimer.cancel();
+      this.timing.cancel();
       this.clearVideoStatistics();
       await this.mediaController.stopLocalStream();
       token.ensureCurrent();
@@ -1132,7 +1132,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       RealtimeOperationKind.media,
       undefined,
       async (token) => {
-        this.launchTimer.cancel();
+        this.timing.cancel();
         this.clearVideoStatistics();
         this.disposePermissionWatch();
         await this.mediaController.stopLocalCameraStream();
@@ -1308,7 +1308,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async disconnect(): Promise<void> {
     this.mediaController.pauseLocalVideo();
-    this.launchTimer.cancel();
+    this.timing.cancel();
     this.clearVideoStatistics();
     await this.coordinator.disconnect();
   }
@@ -1319,7 +1319,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   async close(): Promise<void> {
     this.mediaController.pauseLocalVideo();
-    this.launchTimer.cancel();
+    this.timing.cancel();
     this.clearVideoStatistics();
     await this.coordinator.terminate(RealtimeTerminationScope.all);
   }
@@ -1522,12 +1522,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
     const targetSize = this.resolveTargetSize(videoFormat, initialLevel);
 
-    const completeFirstFrame = this.launchTimer.startFirstFrame();
+    const completeFirstFrame = this.timing.startFirstFrame();
     this.remoteRenderWarmupCompletedHandler = undefined;
     this.remoteFrameDisplayHandler = () => {
       if (!token.signal.aborted) {
         completeFirstFrame();
-        this.remoteRenderWarmupCompletedHandler ??= this.launchTimer.startRenderWarmup();
+        this.remoteRenderWarmupCompletedHandler ??= this.timing.startRenderWarmup();
       }
     };
     this.renderController.prepareForGeneration();
@@ -1612,7 +1612,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.remoteMediaFrames.setSource(undefined);
     this.mediaController.setExternalAudioPublished(false);
     this.mediaController.pauseLocalVideo();
-    this.launchTimer.cancel();
+    this.timing.cancel();
     this.remoteFrameDisplayHandler = undefined;
     this.remoteRenderWarmupCompletedHandler = undefined;
     this.clearVideoStatistics();

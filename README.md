@@ -544,7 +544,7 @@ input stream or starting generation.
 | Listener | Purpose |
 | --- | --- |
 | `setStateListener` | Observe pipeline states and termination reasons during real-time generation. |
-| `setLaunchTimingListener` | Monitor camera, connection, first-frame, and total launch timings. |
+| `setTimingListener` | Monitor camera, connection, first-frame, and total startup timings. A summary is logged when render warmup completes and performance logging is enabled. |
 | `setNetworkQualityListener` | Monitor `uplink` and `downlink` quality using `RealtimeNetworkQualityLevel`. |
 | `setUplinkVideoStatisticsListener` | Monitor resolution, capture/encode/send frame rates, bitrate, and packet loss. |
 | `setDownlinkVideoStatisticsListener` | Monitor resolution, decode/RTC-render frame rates, bitrate, packet loss, and estimated RTC end-to-end delay. |
