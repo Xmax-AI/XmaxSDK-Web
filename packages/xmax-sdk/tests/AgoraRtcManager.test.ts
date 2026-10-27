@@ -13,6 +13,8 @@ import { RoomController } from "../src/Stream/Room/RoomController";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import { InteractionController } from "../src/Media/Interaction/InteractionController";
+import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import { cameraRotationEnvironment } from "./helpers/CameraRotationEnvironment";
 
 const credentials: AgoraRoomJoinConfiguration = { provider: RtcProvider.agora, appID: "app", roomID: "000123", userID: "rtc-user", roomToken: "secret" };
@@ -800,6 +802,206 @@ describe("AgoraRtcManager", () => {
     await rejected;
     await vi.advanceTimersByTimeAsync(5000);
     expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(6);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("submits new snapshots and ordered controls without waiting for earlier snapshot responses", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    const first = deferred<void>();
+    const second = deferred<void>();
+    s.client.sendStreamMessage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    await s.manager.sendRoomMessage("point-1", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.sendRoomMessage("point-2", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.sendRoomMessage("stop");
+    expect(s.client.sendStreamMessage.mock.calls).toEqual([
+      ["point-1", false], ["point-2", false], ["stop", false],
+    ]);
+
+    first.resolve();
+    second.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.leaveRoom();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps 30Hz interaction submissions flowing through RoomController with 100ms gateway responses", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    const heartbeat = new RoomHeartbeat({ rtcManager: s.manager });
+    vi.spyOn(heartbeat, "start").mockImplementation(() => {});
+    const room = new RoomController({ rtcManager: s.manager, heartbeat });
+    await room.join(credentials, () => {});
+    s.client.sendStreamMessage.mockImplementation(() => new Promise<void>(resolve => { setTimeout(resolve, 100); }));
+    const interaction = new InteractionController((taskID, points) => room.sendTracks(taskID, points));
+    interaction.startInteraction("task", new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }));
+
+    for (let i = 0; i < 30; i++) {
+      interaction.submitInteraction({
+        points: [{ x: i, y: 50 }], viewportSize: { width: 100, height: 100 }, contentMode: VideoContentMode.fill, mirrored: false,
+      });
+      await vi.advanceTimersByTimeAsync(34);
+    }
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(30);
+    const messages = s.client.sendStreamMessage.mock.calls.map(([message]) => JSON.parse(message));
+    expect(messages.every(message => message.event === "tracks" && message.runtime === undefined)).toBe(true);
+
+    interaction.stopInteraction();
+    await room.leave();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("still waits for an ordered control before dispatching its following snapshot", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    const ack = deferred<void>();
+    s.client.sendStreamMessage.mockReturnValueOnce(ack.promise);
+    const start = s.manager.sendRoomMessage("start");
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.sendRoomMessage("point", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage.mock.calls).toEqual([["start", false]]);
+
+    ack.resolve();
+    await start;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage.mock.calls).toEqual([["start", false], ["point", false]]);
+  });
+
+  it("sends only the latest snapshot after a byte-budget wait, including a final released position", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    for (let i = 0; i < 6; i++) {
+      await s.manager.sendRoomMessage("x".repeat(1000));
+    }
+
+    await s.manager.sendRoomMessage("old-point", "latest");
+    await vi.advanceTimersByTimeAsync(100);
+    await s.manager.sendRoomMessage("new-point", "latest");
+    await s.manager.sendRoomMessage("final-point", "latest");
+    await vi.advanceTimersByTimeAsync(899);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(7);
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("final-point", false);
+  });
+
+  it("reevaluates the budget when a smaller snapshot replaces a waiting one", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    for (let i = 0; i < 5; i++) {
+      await s.manager.sendRoomMessage("x".repeat(1000));
+    }
+    await s.manager.sendRoomMessage("x".repeat(500));
+    await s.manager.sendRoomMessage("old".repeat(200), "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(6);
+
+    await s.manager.sendRoomMessage("latest", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(7);
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("latest", false);
+  });
+
+  it("preserves a final snapshot across a heartbeat while giving the heartbeat priority", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    for (let i = 0; i < 6; i++) {
+      await s.manager.sendRoomMessage("x".repeat(1000));
+    }
+    await s.manager.sendRoomMessage("final-point", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    const heartbeat = s.manager.sendRoomMessage("heartbeat");
+    await vi.advanceTimersByTimeAsync(1000);
+    await heartbeat;
+    expect(s.client.sendStreamMessage.mock.calls.slice(-2)).toEqual([["heartbeat", false], ["final-point", false]]);
+  });
+
+  it("observes failed snapshot responses without rejecting accepted submissions or blocking controls", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    s.client.sendStreamMessage.mockRejectedValueOnce(new Error("network"));
+    await expect(s.manager.sendRoomMessage("point", "latest")).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.sendRoomMessage("stop", "barrier");
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("stop", false);
+  });
+
+  it("drops unsent snapshots at an ordered barrier and never revives them in another room", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    for (let i = 0; i < 6; i++) {
+      await s.manager.sendRoomMessage("x".repeat(1000));
+    }
+    await s.manager.sendRoomMessage("obsolete", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    const stop = s.manager.sendRoomMessage("stop", "barrier");
+    await vi.advanceTimersByTimeAsync(1000);
+    await stop;
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(7);
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("stop", false);
+
+    for (let i = 0; i < 5; i++) {
+      await s.manager.sendRoomMessage("x".repeat(1000));
+    }
+    await s.manager.sendRoomMessage("x".repeat(996));
+    await s.manager.sendRoomMessage("old-room", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.leaveRoom();
+    await s.manager.joinRoom({ ...credentials, roomID: "new-room" });
+    await s.manager.sendRoomMessage("new-room", "latest");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(s.client.sendStreamMessage.mock.calls.some(([message]) => message === "old-room")).toBe(false);
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("new-room", false);
+  });
+
+  it("bounds in-flight snapshots and releases every timer on leave despite late responses", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    const ack = deferred<void>();
+    s.client.sendStreamMessage.mockReturnValue(ack.promise);
+    for (let i = 0; i < 30; i++) {
+      await s.manager.sendRoomMessage(`point-${i}`, "latest");
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(30);
+    await vi.advanceTimersByTimeAsync(1000);
+    await s.manager.sendRoomMessage("final", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(30);
+
+    ack.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenLastCalledWith("final", false);
+    const late = deferred<void>();
+    s.client.sendStreamMessage.mockReturnValue(late.promise);
+    await s.manager.sendRoomMessage("pending", "latest");
+    await vi.advanceTimersByTimeAsync(0);
+    await s.manager.leaveRoom();
+    expect(vi.getTimerCount()).toBe(0);
+    late.reject(new Error("late rejection"));
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
   });
 

@@ -352,6 +352,7 @@ export class RoomController implements RoomControlling {
         taskID,
         points,
       }),
+      "latest",
     );
   }
 
@@ -406,19 +407,26 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 发送房间信令并输出日志。
+   * 控制信令串行确认；快照等待此前控制信令，但不阻塞后续控制信令。
    */
   private send(
-    message: string
+    message: string,
+    delivery: "ordered" | "latest" = "ordered",
   ): Promise<void> {
     const state = this.state;
     const packets = this.codec.encodeOutgoing(message);
+    // 多片消息仍逐片确认，避免快照覆盖导致接收端无法完整组包。
+    const mode = packets.length > 1 ? "ordered" : delivery;
     const operation = this.sendTail.then(async () => {
       for (const packet of packets) {
         if (state !== this.state || state.kind !== "joined") {
           throw new XmaxError(XmaxErrorCode.cancelled, "Room message was cancelled");
         }
-        await this.rtcManager.sendRoomMessage(packet);
+        if (mode === "latest") {
+          await this.rtcManager.sendRoomMessage(packet, "latest");
+        } else {
+          await this.rtcManager.sendRoomMessage(packet, "barrier");
+        }
       }
       XmaxLogger.room.info(
         () =>
@@ -428,7 +436,9 @@ export class RoomController implements RoomControlling {
     }).catch(error => {
       throw XmaxError.from(error);
     });
-    this.sendTail = operation.catch(() => { });
+    if (mode === "ordered") {
+      this.sendTail = operation.catch(() => { });
+    }
     return operation;
   }
 

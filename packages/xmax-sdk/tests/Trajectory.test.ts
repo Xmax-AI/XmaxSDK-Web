@@ -117,13 +117,28 @@ describe("TrajectoryOverlayView", () => {
     overlay.dispose();
   });
 
+  it("ends sampling on pointerup without an extra or delayed submission", () => {
+    const { overlay, send } = setup();
+    pointer(overlay.element, "pointerdown");
+    pointer(overlay.element, "pointermove", 1, 150, 80);
+    expect(send).toHaveBeenCalledTimes(1);
+    pointer(overlay.element, "pointerup", 1, 190, 110);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(frames.size).toBe(0);
+    tick(performance.now() + 1000);
+    pointer(overlay.element, "lostpointercapture");
+    expect(send).toHaveBeenCalledTimes(1);
+    overlay.dispose();
+  });
+
   it.each(["pointercancel", "lostpointercapture"])("releases all sampling resources on %s", event => {
-    const { overlay, renderer } = setup();
+    const { overlay, renderer, send } = setup();
     pointer(overlay.element, "pointerdown");
     pointer(overlay.element, event);
     expect(frames.size).toBe(0);
     expect((overlay.element as unknown as Element).captures.size).toBe(0);
     expect(renderer.renderEnded).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledTimes(1);
     overlay.dispose();
   });
 

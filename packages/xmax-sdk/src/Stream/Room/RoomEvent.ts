@@ -80,7 +80,7 @@ export interface RoomEventGenerationOptions {
 /**
  * 生成 SDK 与 RTC 房间之间传输的结构化事件消息。
  *
- * 每条消息在业务字段外附带 `runtime` 运行环境信息；
+ * 控制消息附带 `runtime` 运行环境信息，轨迹快照仅发送交互字段；
  * 编码失败时抛出 `internalError`。
  */
 export class RoomEvent {
@@ -209,7 +209,7 @@ export class RoomEvent {
       tracks: options.points.map((point) => [point.x, point.y]),
       user_id: options.userID,
       uid: options.taskID,
-    });
+    }, false);
   }
 
   /**
@@ -253,13 +253,14 @@ export class RoomEvent {
   }
 
   /**
-   * 业务字段外加 `runtime` 运行环境信息并序列化为 JSON 文本。
+   * 序列化业务字段；高频轨迹不重复附带运行环境信息。
    */
   private static encode(
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    includeRuntime = true,
   ): string {
     try {
-      return JSON.stringify({ ...payload, runtime: RuntimeInfo.toJSON() });
+      return JSON.stringify(includeRuntime ? { ...payload, runtime: RuntimeInfo.toJSON() } : payload);
     } catch {
       throw new XmaxError(
         XmaxErrorCode.internalError,

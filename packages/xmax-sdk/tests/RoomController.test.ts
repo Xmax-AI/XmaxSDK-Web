@@ -4,7 +4,7 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
 import type { RtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
-import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
+import type { RtcManaging, RtcRoomMessageDelivery } from "../src/Foundation/RTC/RtcManaging";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimePoint } from "../src/Service/Realtime/RealtimePoint";
 import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
@@ -62,7 +62,7 @@ class RtcManagingStub implements RtcManaging {
   async subscribeRemoteAudio(): Promise<void> {}
   readonly supportsRemoteAudioVolumeControl = true;
   setRemoteAudioVolume(): void {}
-  async sendRoomMessage(message: string): Promise<void> {
+  async sendRoomMessage(message: string, _delivery?: RtcRoomMessageDelivery): Promise<void> {
     this.sentMessages.push(message);
   }
   setEventListener(listener?: RtcEventListener): void {
@@ -355,6 +355,58 @@ describe("RoomController", () => {
     expect(events[1]).toMatchObject({ user_id: connection.userID, uid: "task-001" });
     expect(events[0].params).not.toHaveProperty("mirror");
     expect(events[3].tracks).toEqual([[0.5, 0.25]]);
+    expect(events[3]).not.toHaveProperty("runtime");
+  });
+
+  it("submits compact snapshots in latest mode without repeated runtime metadata", async () => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    const send = vi.spyOn(rtc, "sendRoomMessage");
+    await controller.sendTracks("task-001", [new RealtimePoint({ x: 0.5321457238712345, y: 0.4123293857293847 })]);
+    const raw = rtc.sentMessages[0]!;
+    expect(send).toHaveBeenCalledWith(raw, "latest");
+    expect(JSON.parse(raw)).toEqual({
+      event: "tracks", tracks: [[0.5321457238712345, 0.4123293857293847]], user_id: connection.userID, uid: "task-001",
+    });
+    expect(new TextEncoder().encode(raw).byteLength * 30).toBeLessThan(6000);
+    await controller.leave();
+  });
+
+  it("does not put a pending snapshot response ahead of a stop control", async () => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    let acknowledge!: () => void;
+    const response = new Promise<void>(resolve => { acknowledge = resolve; });
+    const send = vi.spyOn(rtc, "sendRoomMessage").mockImplementation(async (message, delivery) => {
+      rtc.sentMessages.push(message);
+      if (delivery === "latest") {
+        await response;
+      }
+    });
+    const snapshot = controller.sendTracks("task", [new RealtimePoint({ x: 0.5, y: 0.5 })]);
+    await Promise.resolve();
+    await controller.stopGeneration("task");
+    expect(send.mock.calls.map(([message]) => JSON.parse(message).event)).toEqual(["tracks", "stop"]);
+    acknowledge();
+    await snapshot;
+    await controller.leave();
+  });
+
+  it("keeps large multipart snapshots ordered so no fragment is replaced", async () => {
+    const { controller, rtc } = makeController();
+    await controller.join(connection, noopEnsureActive);
+    const send = vi.spyOn(rtc, "sendRoomMessage");
+    const points = Array.from({ length: 50 }, () => new RealtimePoint({ x: 0.1234567890123456, y: 0.6543210987654321 }));
+    await controller.sendTracks("task", points);
+    expect(send.mock.calls.length).toBeGreaterThan(1);
+    const codec = new RoomMessageCodec();
+    let decoded: unknown;
+    for (const call of send.mock.calls) {
+      expect(call[1]).toBe("barrier");
+      decoded = codec.processIncoming("sender", call[0]) ?? decoded;
+    }
+    expect(decoded).toMatchObject({ event: "tracks", tracks: points.map(point => [point.x, point.y]) });
+    await controller.leave();
   });
 
   it("ignores stop when the room is not joined but rejects tracks", async () => {

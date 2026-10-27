@@ -14,7 +14,7 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { CameraPosition } from "../../Media/Camera/CameraPosition";
 import { XmaxEnvironment } from "../../Runtime/XmaxEnvironment";
-import type { RtcManaging, RtcCameraCaptureOptions } from "../RtcManaging";
+import type { RtcManaging, RtcCameraCaptureOptions, RtcRoomMessageDelivery } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
@@ -36,6 +36,31 @@ export interface AgoraDataStreamClient extends IAgoraRTCClient {
     message: string,
     needRetry: boolean
   ): Promise<void>;
+}
+
+/**
+ * 绑定房间生命周期的待发消息；控制消息附带完成通知，快照仅保留最新一条。
+ */
+interface PendingRoomMessage {
+  /**
+   * 创建消息时的客户端与房间版本。
+   */
+  client: AgoraDataStreamClient;
+  version: number;
+
+  /**
+   * 文本正文及 UTF-8 字节数。
+   */
+  message: string;
+  bytes: number;
+
+  /**
+   * 控制信令的发送结果；快照入队后即返回，不等待网关确认。
+   */
+  completion?: {
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  };
 }
 
 /**
@@ -218,9 +243,19 @@ export class AgoraRtcManager implements RtcManaging {
   private readonly requestedAudio = new Set<string>();
 
   /**
-   * DataStream 串行发送与限速状态；等待中的消息通过房间版本取消。
+   * DataStream 控制消息与快照调度；控制消息优先，快照不积压历史位置。
    */
-  private sendTail: Promise<void> = Promise.resolve();
+  private readonly orderedMessages: PendingRoomMessage[] = [];
+
+  /**
+   * 尚未提交到声网的最新消息快照。
+   */
+  private latestMessage?: PendingRoomMessage;
+
+  /**
+   * 当前调度循环的身份，隔离退房后迟到的异步工作。
+   */
+  private messageDrain?: object;
 
   /**
    * 房间消息限速窗口内已发送数据包的记录。
@@ -236,9 +271,9 @@ export class AgoraRtcManager implements RtcManaging {
   private cancelSendDelay?: () => void;
 
   /**
-   * 取消正在发送的房间消息等待。
+   * 取消所有正在等待网关响应的消息；快照最多允许三十条在途。
    */
-  private cancelActiveSend?: () => void;
+  private readonly activeSends = new Set<() => void>();
 
   /**
    * 保存服务环境与加载器，不触发浏览器依赖或设备权限请求。
@@ -768,7 +803,9 @@ export class AgoraRtcManager implements RtcManaging {
   ): Promise<void> {
     this.ensureRoomCurrent(client, version);
     this.cancelSendDelay?.();
-    this.cancelActiveSend?.();
+    for (const cancel of this.activeSends) {
+      cancel();
+    }
     this.listener?.onRoomRejoining?.();
     for (const user of client.remoteUsers) user.audioTrack?.stop();
 
@@ -998,30 +1035,133 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * 按房间顺序发送消息，限制每秒包数与总字节；失败返回给原业务调用。
+   * 控制消息按序等待结果；快照只保留最新待发值，不逐包等待网关响应。
    */
-  sendRoomMessage(
-    message: string
+  async sendRoomMessage(
+    message: string,
+    delivery: RtcRoomMessageDelivery = "ordered",
   ): Promise<void> {
     const version = this.roomVersion;
     const client = this.client;
     const bytes = new TextEncoder().encode(message).byteLength;
-    const operation = this.sendTail.then(async () => {
-      await this.rejoinOperation;
-      if (!client || client !== this.client || !this.connection || version !== this.roomVersion || this.tokenExpired)
-        throw this.cancelled();
-      if (bytes > 1000)
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Room message exceeds the 1000-byte limit");
+    if (!client || !this.connection || (this.tokenExpired && !this.rejoinOperation)) {
+      throw this.cancelled();
+    }
+    if (bytes > 1000) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Room message exceeds the 1000-byte limit");
+    }
 
-      await this.waitForSendBudget(bytes, version);
-      await this.rejoinOperation;
-      if (client !== this.client || version !== this.roomVersion || !this.connection || this.tokenExpired)
-        throw this.cancelled();
-      this.sentPackets.push({ time: Date.now(), bytes });
-      await this.sendWithTimeout(client, message);
+    const pending: PendingRoomMessage = { client, version, message, bytes };
+    if (delivery === "latest") {
+      this.latestMessage = pending;
+      if (!this.orderedMessages.length) {
+        this.cancelSendDelay?.();
+      }
+      this.scheduleRoomMessages();
+      return;
+    }
+
+    // 任务控制构成屏障；普通有序消息（例如心跳）不丢弃最后一个交互位置。
+    if (delivery === "barrier") {
+      this.latestMessage = undefined;
+    }
+    return new Promise<void>((resolve, reject) => {
+      pending.completion = { resolve, reject };
+      this.orderedMessages.push(pending);
+      this.cancelSendDelay?.();
+      this.scheduleRoomMessages();
     });
-    this.sendTail = operation.catch(() => { });
-    return operation;
+  }
+
+  /**
+   * 每个房间只运行一个消息调度循环，避免限速额度被并发重复使用。
+   */
+  private scheduleRoomMessages(): void {
+    if (this.messageDrain || (!this.orderedMessages.length && !this.latestMessage)) {
+      return;
+    }
+    const drain = {};
+    this.messageDrain = drain;
+    void this.drainRoomMessages(drain);
+  }
+
+  /**
+   * 控制消息串行确认；快照限速后重新选取最新值，并限制在途请求数。
+   */
+  private async drainRoomMessages(
+    drain: object,
+  ): Promise<void> {
+    try {
+      while (this.messageDrain === drain) {
+        const pending = this.orderedMessages[0] ?? this.latestMessage;
+        if (!pending || (!pending.completion && this.activeSends.size >= 30)) {
+          return;
+        }
+
+        try {
+          await this.rejoinOperation;
+          this.ensureRoomCurrent(pending.client, pending.version);
+          if (this.tokenExpired) {
+            throw this.cancelled();
+          }
+          await this.waitForSendBudget(pending.bytes, pending.version, () => pending === (this.orderedMessages[0] ?? this.latestMessage));
+          await this.rejoinOperation;
+          if (this.messageDrain !== drain) {
+            return;
+          }
+          // 限流等待期间可以到达更新的快照或控制消息，不发送旧位置。
+          if (pending !== (this.orderedMessages[0] ?? this.latestMessage)) {
+            continue;
+          }
+          this.ensureRoomCurrent(pending.client, pending.version);
+          if (this.tokenExpired) {
+            throw this.cancelled();
+          }
+
+          if (pending.completion) {
+            this.orderedMessages.shift();
+          } else {
+            this.latestMessage = undefined;
+          }
+          this.sentPackets.push({ time: Date.now(), bytes: pending.bytes });
+          const sending = this.sendWithTimeout(pending.client, pending.message);
+          if (pending.completion) {
+            await sending;
+            pending.completion.resolve();
+          } else {
+            void sending.catch(error => this.reportLatestMessageFailure(pending, error)).finally(() => this.scheduleRoomMessages());
+          }
+        } catch (error) {
+          if (this.orderedMessages[0] === pending) {
+            this.orderedMessages.shift();
+          }
+          if (this.latestMessage === pending) {
+            this.latestMessage = undefined;
+          }
+          if (pending.completion) {
+            pending.completion.reject(this.mapError(error));
+          } else {
+            this.reportLatestMessageFailure(pending, error);
+          }
+        }
+      }
+    } finally {
+      if (this.messageDrain === drain) {
+        this.messageDrain = undefined;
+      }
+    }
+  }
+
+  /**
+   * 快照失败不终止生成；退房和恢复期间取消的旧请求不再输出警告。
+   */
+  private reportLatestMessageFailure(
+    pending: PendingRoomMessage,
+    error: unknown,
+  ): void {
+    if (this.isRoomCurrent(pending.client, pending.version) && this.mapError(error).code !== XmaxErrorCode.cancelled) {
+      XmaxLogger.rtc.warning(() => "发送实时房间快照失败，已丢弃当前采样帧 (Latest Room Message Dropped)");
+    }
   }
 
   /**
@@ -1032,10 +1172,14 @@ export class AgoraRtcManager implements RtcManaging {
     message: string
   ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
       const finish = (error?: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timer);
-        if (this.cancelActiveSend === cancel)
-          this.cancelActiveSend = undefined;
+        this.activeSends.delete(cancel);
         if (error)
           reject(this.mapError(error));
         else
@@ -1043,7 +1187,7 @@ export class AgoraRtcManager implements RtcManaging {
       };
       const cancel = () => finish(this.cancelled());
       const timer = setTimeout(() => finish(new XmaxError(XmaxErrorCode.timeout, "Agora room message send timed out")), 5000);
-      this.cancelActiveSend = cancel;
+      this.activeSends.add(cancel);
 
       // run 同时接住同步异常和异步拒绝；即使取消或超时，底层结果仍有处理器。
       void this.run(() => client.sendStreamMessage(message, false)).then(() => finish(), finish);
@@ -1055,9 +1199,13 @@ export class AgoraRtcManager implements RtcManaging {
    */
   private async waitForSendBudget(
     bytes: number,
-    version: number
+    version: number,
+    isCurrent: () => boolean,
   ): Promise<void> {
     while (version === this.roomVersion) {
+      if (!isCurrent()) {
+        return;
+      }
       const now = Date.now();
       this.sentPackets = this.sentPackets.filter(packet => now - packet.time < 1000);
       if (this.sentPackets.length < 30 && this.sentPackets.reduce((sum, packet) => sum + packet.bytes, bytes) <= 6000)
@@ -1167,10 +1315,16 @@ export class AgoraRtcManager implements RtcManaging {
     this.audioPublishRequested = false;
     clearInterval(this.statisticsTimer);
     this.statisticsTimer = undefined;
+    this.messageDrain = undefined;
+    this.latestMessage = undefined;
+    for (const pending of this.orderedMessages.splice(0)) {
+      pending.completion?.reject(this.cancelled());
+    }
     this.cancelSendDelay?.();
-    this.cancelActiveSend?.();
+    for (const cancel of this.activeSends) {
+      cancel();
+    }
     this.sentPackets = [];
-    this.sendTail = Promise.resolve();
     this.requestedAudio.clear();
     this.audioVolumes.clear();
     for (const user of this.client?.remoteUsers ?? []) user.audioTrack?.stop();

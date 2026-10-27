@@ -15,6 +15,11 @@ import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
 /**
+ * ordered 逐条等待发送结果；latest 合并待发快照；barrier 额外丢弃此前未发送的快照。
+ */
+export type RtcRoomMessageDelivery = "ordered" | "latest" | "barrier";
+
+/**
  * 摄像头采集参数。
  */
 export interface RtcCameraCaptureOptions {
@@ -218,10 +223,12 @@ export interface RtcManaging {
    * 向当前 RTC 房间发送业务文本消息；TRTC 使用 `cmdId = 1`。
    *
    * @param message UTF-8 文本消息；最大字节数由各厂商适配器校验。
+   * @param delivery 发送和覆盖策略；latest 可在入队后返回，不保证远端已接收。
    * @throws 未在房间中或消息超长时抛出错误。
    */
   sendRoomMessage(
-    message: string
+    message: string,
+    delivery?: RtcRoomMessageDelivery,
   ): Promise<void>;
 
   /**
