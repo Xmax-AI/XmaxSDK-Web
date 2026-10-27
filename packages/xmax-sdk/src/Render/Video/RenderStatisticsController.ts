@@ -12,7 +12,7 @@ import type { VideoRenderStatistics } from "./VideoRenderStatistics";
 
 /**
  * 单个视频视图的呈现统计采集器，管理帧观察、采样窗口和统计回调。
- * 不控制视频播放或插帧，仅观察原视频帧与画布呈现提交。 @internal
+ * 不控制视频播放，仅观察浏览器呈现的视频帧。 @internal
  */
 export class RenderStatisticsController {
 
@@ -49,16 +49,6 @@ export class RenderStatisticsController {
   private originalFrames = 0;
 
   /**
-   * 当前统计窗口累计的插值帧数。
-   */
-  private interpolatedFrames = 0;
-
-  /**
-   * 当前画面是否由插帧管线呈现。
-   */
-  private interpolationActive = false;
-
-  /**
    * 上一次观察到的浏览器累计呈现帧数。
    */
   private previousPresentedFrames?: number;
@@ -89,10 +79,10 @@ export class RenderStatisticsController {
           return;
         }
         this.callbackID = undefined;
-        if (!this.interpolationActive && !document.hidden) {
+        if (!document.hidden) {
           this.recordVideoFrames(metadata.presentedFrames);
         } else {
-          // 画布接管或页面隐藏期间的原视频帧不归入后续可见窗口。
+          // 页面隐藏期间的视频帧不归入后续可见窗口。
           this.previousPresentedFrames = undefined;
         }
         observe();
@@ -100,29 +90,6 @@ export class RenderStatisticsController {
     };
     observe();
     this.timer = setInterval(() => this.sample(), 1_000);
-  }
-
-  /**
-   * 切换输出方式并清空采样窗口，避免原视频和画布重复计数。
-   */
-  setInterpolationActive(
-    active: boolean
-  ): void {
-    this.interpolationActive = active;
-    this.reset();
-  }
-
-  /**
-   * 记录实际提交到画布的原帧或插值帧，不统计未呈现的计算结果。
-   */
-  recordCanvasFrame(
-    interpolated: boolean
-  ): void {
-    if (interpolated) {
-      this.interpolatedFrames++;
-    } else {
-      this.originalFrames++;
-    }
   }
 
   /**
@@ -168,7 +135,6 @@ export class RenderStatisticsController {
   private reset(): void {
     this.startedAt = performance.now();
     this.originalFrames = 0;
-    this.interpolatedFrames = 0;
     this.previousPresentedFrames = undefined;
     this.notify(undefined);
   }
@@ -185,14 +151,12 @@ export class RenderStatisticsController {
     }
 
     const statistics: VideoRenderStatistics = Object.freeze({
-      source: this.interpolationActive ? "canvas" : "video",
-      frameRate: (this.originalFrames + this.interpolatedFrames) / seconds,
+      source: "video",
+      frameRate: this.originalFrames / seconds,
       originalFrameRate: this.originalFrames / seconds,
-      interpolatedFrameRate: this.interpolatedFrames / seconds,
     });
     this.startedAt = now;
     this.originalFrames = 0;
-    this.interpolatedFrames = 0;
     this.notify(statistics);
   }
 

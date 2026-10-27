@@ -15,7 +15,6 @@ import { RenderStatisticsController } from "./RenderStatisticsController";
 import { RenderWarmupController } from "./RenderWarmupController";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
-import { RemoteVideoFramePipeline, type RemoteFrameInterpolationOptions } from "./RemoteVideoFramePipeline";
 import { TrajectoryRegistry } from "../Trajectory/TrajectoryRegistry";
 import { TrajectoryOverlayView } from "../Trajectory/TrajectoryOverlayView";
 import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectoryEffectRenderer";
@@ -49,7 +48,7 @@ export class XmaxRealtimeVideoView {
   readonly videoElement: HTMLVideoElement;
 
   /**
-   * 视频与插帧画布共用的显示层，与触控轨迹层独立。
+   * 视频显示层，与触控轨迹层独立。
    */
   private readonly videoLayer: HTMLDivElement;
 
@@ -102,21 +101,6 @@ export class XmaxRealtimeVideoView {
    * 首帧通知版本，避免旧流回调影响新流。
    */
   private frameNotificationSequence = 0;
-
-  /**
-   * 远端插帧配置与渲染资源
-   */
-  private interpolationOptions?: RemoteFrameInterpolationOptions;
-
-  /**
-   * 当前远端视频的插帧处理与显示管线。
-   */
-  private interpolationPipeline?: RemoteVideoFramePipeline;
-
-  /**
-   * 呈现插帧结果的画布。
-   */
-  private interpolationCanvas?: HTMLCanvasElement;
 
   /**
    * 呈现统计组件
@@ -225,7 +209,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 即时切换视频和插帧画布的显隐，不改变触控配置或媒体流。
+   * 即时切换视频的显隐，不改变触控配置或媒体流。
    */
   set isVideoVisible(
     visible: boolean
@@ -329,7 +313,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 更新视频及插帧画布的内容缩放方式；相同配置不重复应用。
+   * 更新视频的内容缩放方式；相同配置不重复应用。
    */
   set videoContentMode(
     mode: VideoContentMode
@@ -378,7 +362,6 @@ export class XmaxRealtimeVideoView {
       });
     }
 
-    this.startInterpolation();
     this.startRenderStatistics();
     if (this.videoElement.srcObject && !this.hasNotifiedFrameDisplay) {
       this.prepareRenderWarmup();
@@ -393,7 +376,6 @@ export class XmaxRealtimeVideoView {
     this.detached = true;
     this.disposeTrajectory();
     this.statisticsController.stop();
-    this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.warmupController.reset();
     this.hasNotifiedFrameDisplay = false;
@@ -411,7 +393,6 @@ export class XmaxRealtimeVideoView {
     }
 
     this.statisticsController.stop();
-    this.stopInterpolation();
     this.cancelFrameDisplayNotification();
     this.hasNotifiedFrameDisplay = false;
 
@@ -421,7 +402,6 @@ export class XmaxRealtimeVideoView {
       this.videoElement.autoplay = true;
       this.prepareRenderWarmup();
       this.armFrameDisplayNotification();
-      this.startInterpolation();
       this.startRenderStatistics();
     }
   }
@@ -437,62 +417,6 @@ export class XmaxRealtimeVideoView {
     if (!this.detached && this.videoElement.srcObject) {
       this.armFrameDisplayNotification();
     }
-  }
-
-  /**
-   * 由远端绑定注入配置；本地预览不走此管线。 @internal
-   */
-  setFrameInterpolation(
-    options?: RemoteFrameInterpolationOptions
-  ): void {
-    if (options === this.interpolationOptions)
-      return;
-    this.stopInterpolation();
-    this.interpolationOptions = options;
-    this.startInterpolation();
-  }
-
-  /**
-   * 视图已挂载且媒体与配置就绪时创建插帧画布和管线，避免重复启动。
-   */
-  private startInterpolation(): void {
-    if (this.detached || this.interpolationPipeline || !this.interpolationOptions || !this.videoElement.srcObject)
-      return;
-
-    const canvas = document.createElement("canvas");
-    Object.assign(canvas.style, {
-      position: "absolute", inset: "0", width: "100%", height: "100%",
-      pointerEvents: "none", visibility: "hidden", backgroundColor: "black",
-    });
-    this.interpolationCanvas = canvas;
-    this.applyContentMode();
-    this.warmupLayer.appendChild(canvas);
-
-    const options = this.interpolationOptions;
-    const pipeline = new RemoteVideoFramePipeline(this.videoElement, canvas, {
-      ...options,
-      onActiveChange: (active) => {
-        this.statisticsController.setInterpolationActive(active);
-        options.onActiveChange?.(active);
-      },
-      onFramePresented: (interpolated) => {
-        this.statisticsController.recordCanvasFrame(interpolated);
-        options.onFramePresented?.(interpolated);
-      },
-    });
-    this.interpolationPipeline = pipeline;
-    pipeline.start();
-  }
-
-  /**
-   * 停止并释放插帧管线，移除辅助画布，保留原始视频元素。
-   */
-  private stopInterpolation(): void {
-    const pipeline = this.interpolationPipeline;
-    this.interpolationPipeline = undefined;
-    pipeline?.stop();
-    this.interpolationCanvas?.remove();
-    this.interpolationCanvas = undefined;
   }
 
   /**
@@ -529,7 +453,6 @@ export class XmaxRealtimeVideoView {
     if (track) {
       VideoRenderRegistry.binding(track)?.detachHandler(this);
     }
-    this.setFrameInterpolation(undefined);
     this.cancelFrameDisplayNotification();
     this.videoElement.srcObject = null;
   }
@@ -606,10 +529,6 @@ export class XmaxRealtimeVideoView {
     this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled);
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
-    if (this.interpolationCanvas) {
-      this.interpolationCanvas.style.objectFit = OBJECT_FIT[this.contentMode];
-      this.interpolationCanvas.style.transform = this.mirrored ? "scaleX(-1)" : "";
-    }
   }
 
   /**

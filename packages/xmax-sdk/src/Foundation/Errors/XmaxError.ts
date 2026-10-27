@@ -54,11 +54,6 @@ export enum XmaxErrorCode {
   mediaError = "MEDIA_ERROR",
 
   /**
-   * 当前系统、设备或视频规格不支持远端视频插帧。
-   */
-  frameInterpolationUnsupported = "FRAME_INTERPOLATION_UNSUPPORTED",
-
-  /**
    * 接入方未授予相机权限。
    */
   cameraPermissionDenied = "CAMERA_PERMISSION_DENIED",

@@ -9,5 +9,4 @@ export default defineConfig({
   splitting: true,
   external: ["react", "react/jsx-runtime"],
   target: "es2020",
-  noExternal: ["framegen"],
 });

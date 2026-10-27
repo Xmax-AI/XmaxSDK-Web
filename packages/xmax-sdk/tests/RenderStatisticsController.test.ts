@@ -54,28 +54,17 @@ it("starts only with a media source and a statistics consumer", () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("samples video and canvas separately and resets the window on output changes", async () => {
+it("samples video and reports zero when no new frames are presented", async () => {
   const { collector, frame } = setup();
   const listener = vi.fn();
   collector.handler = listener;
   collector.start();
   for (let i = 0; i < 25; i++) frame();
   await vi.advanceTimersByTimeAsync(1000);
-  expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 25, originalFrameRate: 25, interpolatedFrameRate: 0 });
+  expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 25, originalFrameRate: 25 });
 
-  collector.setInterpolationActive(true);
-  for (let i = 0; i < 25; i++) {
-    frame();
-    collector.recordCanvasFrame(false);
-    collector.recordCanvasFrame(true);
-  }
   await vi.advanceTimersByTimeAsync(1000);
-  expect(listener).toHaveBeenLastCalledWith({ source: "canvas", frameRate: 50, originalFrameRate: 25, interpolatedFrameRate: 25 });
-
-  collector.recordCanvasFrame(true);
-  collector.setInterpolationActive(false);
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 0, originalFrameRate: 0, interpolatedFrameRate: 0 });
+  expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 0, originalFrameRate: 0 });
   collector.stop();
 });
 
@@ -98,24 +87,14 @@ it("counts skipped callback frames and preserves the baseline across sampling wi
   collector.stop();
 });
 
-it("does not count historical frames after an output switch or source restart", async () => {
+it("does not count historical frames after a source restart", async () => {
   const { collector, frame } = setup();
   const listener = vi.fn();
   collector.handler = listener;
   collector.start();
   frame(10);
-  collector.setInterpolationActive(true);
-  frame(200);
-  collector.recordCanvasFrame(false);
-  collector.recordCanvasFrame(true);
   await vi.advanceTimersByTimeAsync(1000);
-  expect(listener).toHaveBeenLastCalledWith({ source: "canvas", frameRate: 2, originalFrameRate: 1, interpolatedFrameRate: 1 });
-
-  collector.setInterpolationActive(false);
-  frame(300);
-  frame(302);
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ source: "video", frameRate: 3 }));
+  expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ source: "video", frameRate: 1 }));
 
   collector.stop();
   collector.start();

@@ -19,7 +19,6 @@ import {
 } from "../Realtime/RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { MediaServicing } from "./MediaServicing";
-import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
 import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 
 /**
@@ -91,7 +90,6 @@ export class MediaService implements MediaServicing {
 
   /**
    * 综合下行宽高上限计算回传尺寸，不放大、优先保持比例并按 4 对齐。
-   * 插帧在 WebGPU 内部补边，不因开启插帧额外缩小回传画面。
    */
   resolveTargetSize(
     resolvedMediaSize: ModelSize,
@@ -117,27 +115,6 @@ export class MediaService implements MediaServicing {
     }
   }
 
-  /**
-   * Web 插帧保留原始尺寸；/16 对齐由 GPU 内部补边处理，不缩小回传视频。
-   */
-  resolveFrameInterpolationSize(
-    size: ModelSize
-  ): ModelSize {
-    const { width, height } = size;
-    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video dimensions must be positive integers");
-    }
-    return { width, height };
-  }
-
-  /**
-   * WebGPU 适配器探测是异步的；实际性能和运行状态由渲染管线判断。
-   */
-  async supportsFrameInterpolation(
-    size: ModelSize
-  ): Promise<boolean> {
-    return (await frameInterpolationAdapter(size)) !== null;
-  }
 
   /**
    * 按模型分辨率档位或像素预算解析输入尺寸，保持宽高比例并对齐；不支持的规格抛错。

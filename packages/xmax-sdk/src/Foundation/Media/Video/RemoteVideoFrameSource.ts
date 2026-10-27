@@ -11,7 +11,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
- * 原始解码视频帧及其时间连续性，不包含客户端插帧。
+ * 原始解码视频帧及其时间连续性。
  */
 export interface RemoteVideoPacket {
 
@@ -27,7 +27,7 @@ export interface RemoteVideoPacket {
 }
 
 /**
- * 通过独立的静音 video 观察原始轨道，不依赖 SDK 视图或插帧画布。
+ * 通过独立的静音 video 观察原始轨道，不依赖 SDK 视图。
  * 帧按浏览器呈现回调获取，不保证包含全部网络接收/解码帧。
  */
 export class RemoteVideoFrameSource {

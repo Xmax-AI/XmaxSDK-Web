@@ -457,7 +457,7 @@ await realtime.setRemoteMediaFrameListener(packet => {
 await realtime.setRemoteMediaFrameListener(undefined);
 ```
 
-- Video is copied from the original remote track, excluding interpolation,
+- Video is copied from the original remote track, excluding
   mirroring, cropping, interaction effects, and UI overlays.
 - Audio is taken before playback-volume processing. Muting playback does not mute
   observed PCM on supported platforms. No synthetic silence is added when no audio
@@ -551,7 +551,7 @@ input stream or starting generation.
 
 Unavailable video metrics are `undefined`, not inferred from another stage's frame
 rate. Both video statistics types use `packetLossPercent` (0–100) and `bitrateKbps`;
-downlink `renderFrameRate` excludes SDK interpolation. Network quality ranges from
+downlink `renderFrameRate` is reported by the RTC provider. Network quality ranges from
 `unknown` to `excellent`, `good`, `poor`, `bad`, `veryBad`, and `down`.
 RTT and playback-buffer diagnostics remain in RTC performance logs rather than
 these public statistics structures. Listeners receive `undefined` when their
@@ -641,7 +641,7 @@ stop. A preview/save dialog opens when encoding finishes. The example uses
 `setRemoteMediaFrameListener` and encodes in a Worker; the recorder and its
 `mediabunny` dependency belong to XLab, not the SDK. It prefers MP4 (H.264/AAC),
 with WebM (VP8/Opus) as a fallback. Playback muting does not mute recorded audio on
-supported platforms. Recordings exclude interpolation and UI overlays, and retain
+supported platforms. Recordings exclude UI overlays, and retain
 the receiver timeline rather than trimming network stalls. Ending a session also
 finishes the current recording. To bound memory, XLab automatically finishes near
 128 MiB of encoded media; overloaded encoders report an error instead of queuing

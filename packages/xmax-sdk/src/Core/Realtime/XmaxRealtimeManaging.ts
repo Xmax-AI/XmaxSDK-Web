@@ -33,7 +33,7 @@ import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/Re
 export interface XmaxRealtimeManaging {
 
   /**
-   * 监听当前结果流的原始解码视频和播放音量处理前的 PCM 音频，不包含客户端插帧。
+   * 监听当前结果流的原始解码视频和播放音量处理前的 PCM 音频。
    * 两轨共用接收端呈现时间轴，单位为微秒；按时间戳同步，不按回调到达时间配对。
    * 视频帧交付后由接入方 close()；回调须保持轻量，队列超限或换流会标记不连续。
    * 从用户手势调用并等待准备完成；不支持的浏览器或 RTC 平台会拒绝，不终止生成。
@@ -99,18 +99,6 @@ export interface XmaxRealtimeManaging {
   ): Promise<void>;
 
   /**
-   * 插帧功能开关；不随首帧等待、跳帧或视图挂载变化，不支持或故障降级时关闭。
-   */
-  readonly isFrameInterpolationEnabled: boolean;
-
-  /**
-   * 切换客户端插帧，不改变回传分辨率或重启任务。不支持时抛错且保留配置。
-   */
-  setFrameInterpolationEnabled(
-    enabled: boolean
-  ): Promise<void>;
-
-  /**
    * 手动升/降一档上行配置，需要正在生成且存在本地上行。
    * Agora、VeRTC 调整分辨率、帧率和编码码率；TRTC 只调整帧率，保留尺寸和码率配置。
    * 保留原始 L1 基准，不改变下行尺寸；已启用的自动调档保持开启。
@@ -122,7 +110,7 @@ export interface XmaxRealtimeManaging {
 
   /**
    * 手动升/降一档下行输出尺寸，需要正在生成。
-   * 仅改变分辨率，成功发送后同步目标档位与插帧尺寸；已启用的自动调档保持开启。
+   * 仅改变分辨率，成功发送后同步目标档位；已启用的自动调档保持开启。
    * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
    */
   adjustDownlinkQuality(
@@ -289,7 +277,7 @@ export interface XmaxRealtimeManaging {
    * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
    * 尺寸向下做 4 对齐，优先保持精确比例；帧率、码率及编码偏好保持传入配置。
    * 成功后本地轨道的 videoFormat 记录对齐后的格式，后续重连继续使用该格式。
-   * 模型生成及远端插帧仍使用创建本地流时的格式；此接口不改变生成尺寸。
+   * 模型生成仍使用创建本地流时的格式；此接口不改变生成尺寸。
    * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
    * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 仅调帧率。
    *

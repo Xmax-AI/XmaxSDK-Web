@@ -45,7 +45,7 @@ export interface RealtimeAudioFrame {
 }
 
 /**
- * 原始远端解码视频帧，不包含客户端插帧、镜像、裁剪或界面叠层。
+ * 原始远端解码视频帧，不包含镜像、裁剪或界面叠层。
  */
 export interface RealtimeVideoFrame {
 

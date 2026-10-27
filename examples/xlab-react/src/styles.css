@@ -411,7 +411,6 @@ button:disabled,
 
 .remoteVolumeButton,
 .recordingButton,
-.interpolationPill,
 .sessionModel,
 .sessionTimer {
   border: 1px solid #e2e5ea;
@@ -551,21 +550,6 @@ button:disabled,
   outline-offset: 6px;
 }
 
-.interpolationPill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  gap: 3px;
-  height: 36px;
-  padding: 0 15px 0 12px;
-  color: #8b919d;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: color 0.15s ease;
-}
-
 .recordingButton {
   display: inline-flex;
   align-items: center;
@@ -682,22 +666,6 @@ button:disabled,
   background: var(--accent);
   border-color: var(--accent);
   color: white;
-}
-
-.interpolationPill.active {
-  color: #a96608;
-  border-color: #f0cf88;
-  background: linear-gradient(180deg, #fffaf0 0%, #fff0ca 100%);
-}
-
-.interpolationPill.active:not(:disabled):hover {
-  border-color: #dda842;
-  color: #865007;
-}
-
-.interpolationPill:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
 }
 
 .sessionModel,
@@ -1533,14 +1501,9 @@ button:disabled,
     gap: 10px;
   }
 
-  .recordingButton,
-  .interpolationPill {
-    height: 30px;
-    padding: 0 11px 0 8px;
-    font-size: 12px;
-  }
-
   .recordingButton {
+    height: 30px;
+    font-size: 12px;
     width: 30px;
     padding: 0;
   }

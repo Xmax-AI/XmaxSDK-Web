@@ -34,7 +34,6 @@ import { StreamID } from "../src/Service/Realtime/StreamID";
 import type { RealtimeLaunchTiming } from "../src/Service/Realtime/RealtimeLaunchTiming";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
-import type { RemoteFrameInterpolationOptions } from "../src/Render/Video/RemoteVideoFramePipeline";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import type {
   StreamControlling,
@@ -300,7 +299,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
 }
 
 /** 组装 Manager 与各层桩。 */
-function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interpolationEnabled = false, model = "test-trtc", adaptiveQualityEnabled = true) {
+function makeManager(model = "test-trtc", adaptiveQualityEnabled = true) {
   const camera = new CameraControllingStub();
   const stream = new StreamControllingStub();
   const session = new RealtimeSessionServicingStub();
@@ -313,14 +312,12 @@ function makeManager(supportsFrameInterpolation?: () => Promise<boolean>, interp
     new RealtimeConfiguration({
       model,
       provider: model === "test-trtc" ? RtcProvider.trtc : model === "test-vertc" ? RtcProvider.vertc : undefined,
-      isFrameInterpolationEnabled: interpolationEnabled,
       isAdaptiveQualityEnabled: adaptiveQualityEnabled,
     }),
     {
       cameraController: camera,
       streamController: stream,
       sessionService: session,
-      supportsFrameInterpolation,
       rtcManager: rtc as unknown as RtcManaging,
     },
   );
@@ -346,7 +343,7 @@ describe("XmaxRealtimeManager camera formats", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it.each(Object.values(RealtimeCameraPreset))("creates %s using the model preset without exposing it to the capture layer", async preset => {
-    const s = makeManager(undefined, false, RealtimeModel.x2_1);
+    const s = makeManager(RealtimeModel.x2_1);
     const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const size = cameraPresetSize(preset);
     const expected = supportedVideoFormats(RealtimeModel.x2_1).find(format => format.width === size.width && format.height === size.height)!;
@@ -368,7 +365,7 @@ describe("XmaxRealtimeManager camera formats", () => {
       [RealtimeModel.x2_1, "invalid-preset"],
       [RealtimeModel.x2_0, RealtimeCameraPreset.resolution1080x1920],
     ] as const) {
-      const s = makeManager(undefined, false, model);
+      const s = makeManager(model);
       const create = vi.spyOn(s.camera, "createLocalCameraStream");
       await expect(s.manager.createLocalCameraStream({ preset: preset as RealtimeCameraPreset,
         position: CameraPosition.front, useMicrophone: false })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
@@ -437,7 +434,7 @@ describe("XmaxRealtimeManager interaction lifecycle", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("binds %s output gestures only after generation and keeps model coordinates during quality changes", async model => {
-    const s = makeManager(async () => false, false, model);
+    const s = makeManager(model);
     const provider = s.manager.options.provider;
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({ id: "interaction-session", connection: {
@@ -487,7 +484,7 @@ describe("XmaxRealtimeManager interaction lifecycle", () => {
   });
 
   it("never enables interaction after failed generation confirmation", async () => {
-    const s = makeManager(async () => false);
+    const s = makeManager();
     const local = makeLocalStream(s.camera);
     const remote = await s.manager.connect(local);
     const binding = TrajectoryRegistry.binding(remote.videoTrack!)!;
@@ -517,8 +514,8 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     return storage;
   }
 
-  function setup(fps = 30, model: string = adaptiveModel, interpolation = false, adaptiveQualityEnabled = true) {
-    const s = makeManager(async () => true, interpolation, model, adaptiveQualityEnabled);
+  function setup(fps = 30, model: string = adaptiveModel, adaptiveQualityEnabled = true) {
+    const s = makeManager(model, adaptiveQualityEnabled);
     if (s.manager.options.provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
         id: "adaptive-session", connection: { provider: s.manager.options.provider, roomID: "room", appID: "app",
@@ -581,7 +578,7 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     storage.getItem.mockClear();
     storage.setItem.mockClear();
 
-    const s = setup(30, model, false, false);
+    const s = setup(30, model, false);
     const network = vi.fn();
     const uplink = vi.fn();
     const downlink = vi.fn();
@@ -1221,30 +1218,25 @@ describe("XmaxRealtimeManager adaptive quality", () => {
     await s.manager.close();
   });
 
-  it("updates interpolation dimensions and retains the target when toggled, without treating it as observed statistics", async () => {
-    const s = setup(30, RealtimeModel.x2_1, true); const remote = await s.start();
-    let rendering: RemoteFrameInterpolationOptions | undefined;
-    const view = { isMirrored: false, setMediaStream: vi.fn(),
-      setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; } };
-    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
-    expect(rendering!.size).toEqual({ width: 1680, height: 896 });
-    for (let i = 0; i < 3; i++) await s.sample(1, 5);
-    expect(rendering!.size).toEqual({ width: 1440, height: 768 });
-    await s.manager.setFrameInterpolationEnabled(false);
-    expect(rendering).toBeUndefined();
-    await s.manager.setFrameInterpolationEnabled(true);
-    expect(rendering!.size).toEqual({ width: 1440, height: 768 });
+  it("updates downlink targets without changing the media baseline and invalidates pending sends on close", async () => {
+    const s = setup(30, RealtimeModel.x2_1);
+    await s.start();
+    const baseline = s.localStream.videoTrack!.videoFormat;
+    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1680, height: 896 });
+    for (let i = 0; i < 3; i++) await s.sample(3, 5);
+    expect(s.stream.updateDownlinkVideoResolution).toHaveBeenLastCalledWith(s.manager.currentState.taskID,
+      { width: 1440, height: 768 }, expect.any(Function));
+    expect(s.localStream.videoTrack!.videoFormat).toBe(baseline);
     expect(s.stream.updateDownlinkVideoResolution).toHaveBeenCalledTimes(1);
     const gate = makeDeferred<void>();
     s.stream.updateDownlinkVideoResolution.mockReturnValueOnce(gate.promise);
-    for (let i = 0; i < 4; i++) await s.sample(1, 5);
-    expect(rendering!.size).toEqual({ width: 1440, height: 768 });
+    for (let i = 0; i < 4; i++) await s.sample(3, 5);
+    expect(s.localStream.videoTrack!.videoFormat).toBe(baseline);
     const ensureActive = s.stream.updateDownlinkVideoResolution.mock.calls.at(-1)![2] as () => void;
     const closing = s.manager.close();
     expect(ensureActive).toThrow();
     gate.resolve(); await closing;
-    expect(rendering).toBeUndefined();
-    for (let i = 0; i < 5; i++) await s.sample(1, 5);
+    for (let i = 0; i < 5; i++) await s.sample(3, 5);
     expect(s.stream.updateDownlinkVideoResolution).toHaveBeenCalledTimes(2);
   });
 
@@ -1303,7 +1295,7 @@ describe("XmaxRealtimeManager external video", () => {
   const videoFormat = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
 
   function setup(model = "test-trtc", format = videoFormat) {
-    const s = makeManager(undefined, false, model);
+    const s = makeManager(model);
     const clone = Object.assign(new EventTarget(), { kind: "video", readyState: "live", stop: vi.fn() });
     const source = { kind: "video", readyState: "live", clone: vi.fn(() => clone), stop: vi.fn() };
     const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat: format };
@@ -1314,7 +1306,7 @@ describe("XmaxRealtimeManager external video", () => {
     ["test-trtc", true], [RealtimeModel.x2_1, true], ["test-vertc", true],
     ["test-trtc", false], [RealtimeModel.x2_1, false], ["test-vertc", false],
   ] as const)("binds a frame source for %s, audio=%s, retaining it on disconnect but not replaying queued audio", async (model, hasAudio) => {
-    const s = makeManager(undefined, false, model);
+    const s = makeManager(model);
     let active = false;
     const track = new RealtimeVideoTrack({ id: "input-frames", videoFormat });
     track.mediaStreamTrack = { kind: "video" } as MediaStreamTrack;
@@ -1590,7 +1582,7 @@ describe("XmaxRealtimeManager local video", () => {
     const pause = vi.spyOn(LocalVideoController.prototype, "pause").mockImplementation(() => {});
     const stop = vi.spyOn(LocalVideoController.prototype, "stop").mockImplementation(async () => { active = false; });
     const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
-    const s = makeManager(undefined, false, model);
+    const s = makeManager(model);
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
         id: "session-file", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
@@ -1758,7 +1750,7 @@ describe("XmaxRealtimeManager local image", () => {
     });
     const stop = vi.spyOn(LocalImageController.prototype, "stop").mockImplementation(() => { active = false; });
     const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
-    const s = makeManager(undefined, false, model);
+    const s = makeManager(model);
     if (provider !== RtcProvider.trtc) {
       vi.spyOn(s.session, "createSession").mockResolvedValue(new RealtimeSession({
         id: "session-image", connection: { provider, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
@@ -1878,7 +1870,7 @@ describe("XmaxRealtimeManager video format updates", () => {
   });
 
   it.each(["test-trtc", RealtimeModel.x2_1, "test-vertc"])("aligns explicit uplink dimensions without changing other options for %s", async model => {
-    const { manager, camera, stream } = makeManager(undefined, false, model);
+    const { manager, camera, stream } = makeManager(model);
     const local = makeLocalStream(camera);
     const requested = new RealtimeVideoFormat({
       width: 1710, height: 912, fps: 23,
@@ -1924,7 +1916,7 @@ describe("XmaxRealtimeManager video format updates", () => {
   });
 
   it("uses the aligned format as the new adaptive baseline and restores it at L1", async () => {
-    const { manager, camera, stream, session } = makeManager(undefined, false, RealtimeModel.x2_1);
+    const { manager, camera, stream, session } = makeManager(RealtimeModel.x2_1);
     vi.spyOn(session, "createSession").mockResolvedValue(new RealtimeSession({
       id: "aligned-session",
       connection: { provider: RtcProvider.agora, roomID: "room", appID: "app", userID: "user", roomToken: "token", botID: "bot" },
@@ -1993,8 +1985,8 @@ describe("XmaxRealtimeManager video format updates", () => {
     await manager.close();
   });
 
-  it("updates during generation without signals, restarts, state changes or altered interpolation size", async () => {
-    const { manager, camera, stream } = makeManager(async () => true, true);
+  it("updates during generation without signals, restarts, state changes or altered target size", async () => {
+    const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     const remote = await manager.connect(localStream);
     const starting = manager.startGeneration({ localStream, context: testContext });
@@ -2011,14 +2003,13 @@ describe("XmaxRealtimeManager video format updates", () => {
     expect(stream.stopGenerationCalls).toHaveLength(0);
     expect(stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
 
-    // 生成条件保留原始尺寸；插帧跟随下行 L2，与上行手动更新无关。
+    // 生成条件保留原始尺寸，下行 L2 与上行手动更新无关。
     await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "new prompt" }) });
     expect(stream.updateCalls[0]!.videoFormat).toBe(testVideoFormat);
-    await manager.setFrameInterpolationEnabled(false);
-    await manager.setFrameInterpolationEnabled(true);
-    const view = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+    expect(stream.updateCalls[0]!.targetSize).toEqual({ width: 1152, height: 648 });
+    const view = { isMirrored: false, setMediaStream: vi.fn() };
     VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
-    expect(view.setFrameInterpolation).toHaveBeenLastCalledWith(expect.objectContaining({ size: { width: 1152, height: 648 } }));
+    expect(view.setMediaStream).toHaveBeenCalledOnce();
     await manager.close();
   });
 
@@ -2187,135 +2178,6 @@ describe("XmaxRealtimeManager frame rate updates", () => {
   });
 });
 
-describe("XmaxRealtimeManager frame interpolation", () => {
-  async function generating(supports: () => Promise<boolean> = async () => true) {
-    const s = makeManager(supports, true);
-    const localStream = makeLocalStream(s.camera);
-    const remote = await s.manager.connect(localStream);
-    const pending = s.manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
-    s.stream.confirmationDeferreds[0]!.resolve();
-    await pending;
-    let rendering: RemoteFrameInterpolationOptions | undefined;
-    const view = {
-      isMirrored: false, setMediaStream: vi.fn(),
-      setFrameInterpolation: (options?: RemoteFrameInterpolationOptions) => { rendering = options; },
-    };
-    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
-    binding.attachHandler(view, VideoContentMode.fill);
-    completeRenderWarmup(remote);
-    return { ...s, localStream, view, binding, rendering: () => rendering };
-  }
-
-  it("preserves the adaptive target size and toggles locally without sending size signals or restarting generation", async () => {
-    const s = await generating();
-    expect(s.stream.beginCalls[0]!.videoFormat).toBe(testVideoFormat);
-    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1152, height: 648 });
-    expect(s.rendering()!.size).toEqual({ width: 1152, height: 648 });
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    const taskID = s.manager.currentState.taskID;
-    await s.manager.setFrameInterpolationEnabled(false);
-    expect(s.rendering()).toBeUndefined();
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    await s.manager.setFrameInterpolationEnabled(true);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    expect(s.rendering()!.size).toEqual({ width: 1152, height: 648 });
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    expect(s.stream.beginCalls).toHaveLength(1);
-    expect(s.manager.currentState.taskID).toBe(taskID);
-    await s.manager.close();
-    expect(s.view.setMediaStream).toHaveBeenLastCalledWith(null);
-    expect(s.rendering()).toBeUndefined();
-  });
-
-  it("keeps the feature enabled through view remounts without observing frame activity", async () => {
-    const s = await generating();
-    expect(s.rendering()!.onActiveChange).toBeUndefined();
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    s.binding.detachHandler(s.view);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    s.binding.attachHandler(s.view, VideoContentMode.fill);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    await s.manager.close();
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-  });
-
-  it("keeps the running task and render configuration intact when a capability check fails", async () => {
-    let supported = true;
-    const s = await generating(async () => supported);
-    const initial = s.rendering()!;
-    supported = false;
-    await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
-    expect(s.rendering()).toBe(initial);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true);
-    expect(s.stream.disconnectCalls).toBe(0);
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
-    await s.manager.close();
-  });
-
-  it("defaults to raw video on unsupported devices; explicit enable fails without interrupting generation", async () => {
-    const s = await generating(async () => false);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    expect(s.stream.beginCalls[0]!.targetSize).toEqual({ width: 1152, height: 648 });
-    expect(s.rendering()).toBeUndefined();
-    await expect(s.manager.setFrameInterpolationEnabled(true)).rejects.toMatchObject({ code: XmaxErrorCode.frameInterpolationUnsupported });
-    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    expect(s.stream.disconnectCalls).toBe(0);
-    await s.manager.close();
-  });
-
-  it("falls back locally on render failure without changing the return size, and ignores stale failures", async () => {
-    const s = await generating();
-    const initial = s.rendering()!;
-    initial.onFailure(new Error("GPU lost"));
-    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    expect(s.rendering()).toBeUndefined();
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    initial.onFailure(new Error("late"));
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    await s.manager.startGeneration({ localStream: s.localStream, context: testContext });
-    expect(s.stream.updateCalls[0]!.targetSize).toEqual({ width: 1152, height: 648 });
-    expect(s.stream.disconnectCalls).toBe(0);
-    await s.manager.close();
-  });
-
-  it("does not publish a late capability result after a close", async () => {
-    const pendingSupport = makeDeferred<boolean>();
-    const s = makeManager(() => pendingSupport.promise, true);
-    makeLocalStream(s.camera);
-    const enabling = s.manager.setFrameInterpolationEnabled(true);
-    const rejected = expect(enabling).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
-    const closing = s.manager.close();
-    pendingSupport.resolve(true);
-    await Promise.all([closing, rejected]);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(true); // cancelled operation preserves the feature setting
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-  });
-
-  it("does not change the return size when a GPU failure happens before generation confirmation", async () => {
-    const s = makeManager(async () => true, true);
-    const localStream = makeLocalStream(s.camera);
-    const remote = await s.manager.connect(localStream);
-    let rendering: RemoteFrameInterpolationOptions | undefined;
-    VideoRenderRegistry.binding(remote.videoTrack!)!.attachHandler({
-      isMirrored: false, setMediaStream: vi.fn(),
-      setFrameInterpolation: (options) => { rendering = options; },
-    }, VideoContentMode.fill);
-    const pending = s.manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
-    rendering!.onFailure(new Error("initial GPU failure"));
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    s.stream.confirmationDeferreds[0]!.resolve();
-    completeRenderWarmup(await pending);
-    expect(s.stream.updateDownlinkVideoResolution).not.toHaveBeenCalled();
-    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
-    expect(s.manager.isFrameInterpolationEnabled).toBe(false);
-    await s.manager.close();
-  });
-});
 
 describe("XmaxRealtimeManager network statistics", () => {
   it("replays immutable snapshots and clears on disconnect without accepting late updates", async () => {
@@ -3484,7 +3346,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("生成后断开：由生成管理器停止任务，再清理连接并保留预览", async () => {
-    const { manager, camera, stream, session } = makeManager(async () => false);
+    const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
@@ -3504,7 +3366,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("静态触控在任务确认后即可发送轨迹，不等待远端首帧", async () => {
-    const { manager, camera, stream } = makeManager(async () => false);
+    const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     const remote = await manager.connect(localStream);
     const mediaTrack = Object.assign(new EventTarget(), { muted: true }) as MediaStreamTrack;
@@ -3531,7 +3393,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("等待远端轨就绪时断开：立即取消等待，只停止一次任务", async () => {
-    const { manager, camera, stream } = makeManager(async () => false);
+    const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     const remote = await manager.connect(localStream);
     const mediaTrack = Object.assign(new EventTarget(), { muted: true }) as MediaStreamTrack;

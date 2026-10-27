@@ -11,7 +11,6 @@
 import type { InteractionFrame } from "../Media/Interaction/InteractionFrame";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
-import type { RemoteFrameInterpolationOptions } from "./Video/RemoteVideoFramePipeline";
 
 /**
  * 渲染层统一入口；Core 不直接持有视图、Registry 或轨迹 Binding。
@@ -43,13 +42,6 @@ export interface RenderControlling {
    */
   setRemoteMedia(
     track: MediaStreamTrack | null
-  ): void;
-
-  /**
-   * 同步插帧配置；undefined 停用。
-   */
-  setFrameInterpolation(
-    options?: RemoteFrameInterpolationOptions
   ): void;
 
   /**

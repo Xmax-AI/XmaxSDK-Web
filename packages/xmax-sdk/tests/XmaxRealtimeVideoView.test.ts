@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FrameInterpolationManager } from "../src/Foundation/Media/Video/FrameInterpolationManager";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView";
 import { XmaxRealtimeDualVideoView } from "../src/Render/Video/XmaxRealtimeDualVideoView";
+import { RenderController } from "../src/Render/RenderController";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
@@ -269,6 +269,39 @@ describe("remote render warmup", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps the SDK first-frame, 750ms warmup and default fade sequence without an auxiliary video canvas", async () => {
+    const { view, video } = makeView();
+    const onFrame = vi.fn(), onWarmup = vi.fn();
+    const render = new RenderController({ onFrameDisplayed: onFrame, onRenderWarmupCompleted: onWarmup });
+    const track = new RealtimeVideoTrack({ id: "raw-remote" });
+    vi.stubGlobal("MediaStream", class {});
+    track.mediaStreamTrack = {} as MediaStreamTrack;
+    render.registerRemoteTrack(track, () => {});
+    view.track = track;
+    expect(mediaLayer(view).children).toEqual([video]);
+    expect(mediaLayer(view).style.opacity).toBe("0");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(render.isReady).toBe(false);
+    expect(onFrame).not.toHaveBeenCalled();
+
+    video.nextFrame();
+    expect(onFrame).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(749);
+    expect(render.isReady).toBe(false);
+    expect(onWarmup).not.toHaveBeenCalled();
+    expect(mediaLayer(view).style.opacity).toBe("0");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(render.isReady).toBe(true);
+    expect(onWarmup).toHaveBeenCalledOnce();
+    expect(mediaLayer(view).style.opacity).toBe("1");
+    expect(mediaLayer(view).style.transition).toBe("opacity 300ms ease-in-out");
+    render.resetRemoteTrack();
+    expect(render.isReady).toBe(false);
+    expect(video.srcObject).toBeNull();
+    view.detach();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each([true, false])("shows immediately after warmup when fadeInDurationMs is zero (frame callback: %s)", async useFrameCallback => {
     const { view, video, onWarmup } = makeView(useFrameCallback, 500, 0);
     await vi.advanceTimersByTimeAsync(1000);
@@ -441,7 +474,7 @@ describe("video render statistics", () => {
     video.nextFrame(0, 100);
     video.nextFrame(0, 123);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 24, originalFrameRate: 24, interpolatedFrameRate: 0 });
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 24, originalFrameRate: 24 });
     await vi.advanceTimersByTimeAsync(1000);
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ frameRate: 0 }));
 
@@ -455,47 +488,6 @@ describe("video render statistics", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("counts only presented canvas originals and midpoints, not source callbacks or idle vsyncs", async () => {
-    const { view, video } = makeView();
-    const listener = vi.fn();
-    view.renderStatisticsHandler = listener;
-    let slot = 0;
-    vi.spyOn(FrameInterpolationManager, "create").mockResolvedValue({
-      capture: () => slot++ % 3,
-      interpolate: async () => 3,
-      present: vi.fn(), destroy: vi.fn(),
-    } as unknown as FrameInterpolationManager);
-    let tick: FrameRequestCallback | undefined;
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { tick = callback; return 1; });
-    vi.stubGlobal("cancelAnimationFrame", () => { tick = undefined; });
-    view.isVideoVisible = false;
-    view.setFrameInterpolation({ size: { width: 320, height: 180 }, onFailure: vi.fn() });
-    const layer = (view.element as unknown as ElementStub).children[0]!;
-    expect(mediaLayer(view).children).toHaveLength(2);
-    expect(mediaLayer(view).children[0]).toBe(video);
-    video.nextFrame(0, 1);
-    await vi.advanceTimersByTimeAsync(0);
-    video.nextFrame(0.04, 2);
-    await vi.advanceTimersByTimeAsync(40);
-    video.nextFrame(0.08, 3);
-    await vi.advanceTimersByTimeAsync(20);
-    tick?.(performance.now());
-    await vi.advanceTimersByTimeAsync(20);
-    tick?.(performance.now());
-    tick?.(performance.now());
-    await vi.advanceTimersByTimeAsync(920);
-    expect(listener).toHaveBeenLastCalledWith({ source: "canvas", frameRate: 3, originalFrameRate: 2, interpolatedFrameRate: 1 });
-    expect(layer.style.opacity).toBe("0");
-    view.isVideoVisible = true;
-    expect(layer.style.opacity).toBe("1");
-
-    view.setFrameInterpolation(undefined);
-    video.nextFrame(0.12, 4);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
-    view.detach();
-    expect(vi.getTimerCount()).toBe(0);
-  });
 
   it("clears old samples on source changes and ignores queued callbacks after detach", async () => {
     const { view, video } = makeView();
@@ -536,10 +528,10 @@ describe("video render statistics", () => {
     view.renderStatisticsHandler = listener;
     video.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1 });
     video.nextFrame();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1, interpolatedFrameRate: 0 });
+    expect(listener).toHaveBeenLastCalledWith({ source: "video", frameRate: 1, originalFrameRate: 1 });
     expect(log).not.toHaveBeenCalled();
     view.renderStatisticsHandler = undefined;
     expect(vi.getTimerCount()).toBe(0);

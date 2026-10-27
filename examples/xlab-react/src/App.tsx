@@ -26,7 +26,6 @@ import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
-import { FrameInterpolationToggle } from "./FrameInterpolationToggle";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
@@ -86,8 +85,6 @@ export function App() {
   const [networkStatistics, setNetworkStatistics] = useState<RealtimeNetworkQuality>();
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [interpolationRequested, setInterpolationRequested] = useState(false);
-  const [interpolationSwitching, setInterpolationSwitching] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>("idle");
   const [recordingResult, setRecordingResult] = useState<RecordingResult>();
@@ -170,18 +167,6 @@ export function App() {
     const timer = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
-    return () => clearInterval(timer);
-  }, [localStream]);
-
-  // 只同步功能开关和故障降级，不使用逐帧插值状态驱动按钮。
-  useEffect(() => {
-    if (!localStream) return;
-    const update = () => {
-      const realtime = realtimeRef.current;
-      if (realtime) setInterpolationRequested(realtime.isFrameInterpolationEnabled);
-    };
-    update();
-    const timer = setInterval(update, 250);
     return () => clearInterval(timer);
   }, [localStream]);
 
@@ -313,8 +298,6 @@ export function App() {
     const realtime = client.createRealtimeManager(
       new RealtimeConfiguration({
         model,
-        // 与 SDK 一致默认关闭，允许用户在会话中手动切换。
-        isFrameInterpolationEnabled: interpolationRequested,
       }),
     );
     realtimeRef.current = realtime;
@@ -380,29 +363,6 @@ export function App() {
     } finally {
       generationBusyRef.current = false;
       setBusy(false);
-    }
-  }
-
-  async function handleToggleInterpolation() {
-    const realtime = realtimeRef.current;
-    if (!realtime || generationBusyRef.current) return;
-    generationBusyRef.current = true;
-    setBusy(true);
-    setInterpolationSwitching(true);
-    setErrorText("");
-    try {
-      await realtime.setFrameInterpolationEnabled(!realtime.isFrameInterpolationEnabled);
-    } catch (error) {
-      if (realtimeRef.current === realtime) {
-        setErrorText(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      if (realtimeRef.current === realtime) {
-        setInterpolationRequested(realtime.isFrameInterpolationEnabled);
-      }
-      generationBusyRef.current = false;
-      setBusy(false);
-      setInterpolationSwitching(false);
     }
   }
 
@@ -854,8 +814,6 @@ export function App() {
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
-          <FrameInterpolationToggle enabled={interpolationRequested} switching={interpolationSwitching}
-            disabled={busy || !sessionActive || !realtimeRef.current} onToggle={handleToggleInterpolation} />
           <RecordingControl status={recordingStatus} disabled={stateText !== RealtimeConnectionState.generating}
             onToggle={() => void handleToggleRecording()} />
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>

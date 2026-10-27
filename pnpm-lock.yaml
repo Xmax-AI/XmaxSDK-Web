@@ -60,9 +60,6 @@ importers:
       cos-js-sdk-v5:
         specifier: ^1.10.1
         version: 1.10.1
-      framegen:
-        specifier: 1.4.0
-        version: 1.4.0
       trtc-sdk-v5:
         specifier: ^5.6.0
         version: 5.20.0
@@ -70,9 +67,6 @@ importers:
       '@types/react':
         specifier: ^18.3.12
         version: 18.3.31
-      '@webgpu/types':
-        specifier: ^0.1.64
-        version: 0.1.74
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -709,9 +703,6 @@ packages:
   '@volcengine/rtc@4.69.3':
     resolution: {integrity: sha512-FaQ+GiBESW0+o4Hd80rEdEW8CPzYp3X1kSiN6caxnsl+4rBt8E8qVoiDHFDIsD6AT8U4qrE7i1rCJXKQ7wHjaw==}
 
-  '@webgpu/types@0.1.74':
-    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
-
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
@@ -909,10 +900,6 @@ packages:
   formdata-polyfill@4.0.10:
     resolution: {integrity: sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g==}
     engines: {node: '>=12.20.0'}
-
-  framegen@1.4.0:
-    resolution: {integrity: sha512-NqK6nckQMqW6l29mKlNzVlbwH89YLPi7wqiPbrmLSm3p9LMqWEnURTjubNQ8k8F4ogz2OWpygT5MSTmxtvojQQ==}
-    engines: {node: '>=18'}
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1817,8 +1804,6 @@ snapshots:
     dependencies:
       eventemitter3: 4.0.7
 
-  '@webgpu/types@0.1.74': {}
-
   acorn@8.18.0: {}
 
   agent-base@6.0.2:
@@ -2050,8 +2035,6 @@ snapshots:
   formdata-polyfill@4.0.10:
     dependencies:
       fetch-blob: 3.2.0
-
-  framegen@1.4.0: {}
 
   fsevents@2.3.3:
     optional: true

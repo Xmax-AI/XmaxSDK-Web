@@ -40,26 +40,12 @@ export interface MediaServicing {
   ): ModelSize;
 
   /**
-   * 根据固定媒体基准和下行尺寸上限计算 4 对齐回传尺寸；Web 不附加插帧像素上限。
+   * 根据固定媒体基准和下行尺寸上限计算 4 对齐回传尺寸。
    */
   resolveTargetSize(
     resolvedMediaSize: ModelSize,
     maximumSize: ModelSize
   ): ModelSize;
-
-  /**
-   * 校验并保留原始尺寸；Web 插帧不降低回传分辨率。
-   */
-  resolveFrameInterpolationSize(
-    size: ModelSize
-  ): ModelSize;
-
-  /**
-   * 异步判断平台是否支持指定尺寸的插帧；不代表运行期性能保证。
-   */
-  supportsFrameInterpolation(
-    size: ModelSize
-  ): Promise<boolean>;
 
   /**
    * 解析模型支持的采集规格或生成画布，不处理媒体像素。

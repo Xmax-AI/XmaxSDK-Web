@@ -78,7 +78,7 @@ export interface DownlinkVideoStatistics extends VideoStatistics {
   readonly decodeFrameRate?: number;
 
   /**
-   * RTC 渲染帧率，单位 fps，不包含 SDK 插帧。
+   * RTC 渲染帧率，单位 fps。
    */
   readonly renderFrameRate?: number;
 

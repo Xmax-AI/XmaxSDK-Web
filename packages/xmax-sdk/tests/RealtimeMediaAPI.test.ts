@@ -10,6 +10,17 @@ import type { RealtimeContextInit } from "../src/Service/Realtime/RealtimeContex
 type MediaCreationMethod = Extract<keyof XmaxRealtimeManaging, `create${string}Stream`>;
 
 describe("realtime media API", () => {
+  it("does not expose removed frame interpolation controls", () => {
+    const configuration = new sdk.RealtimeConfiguration({ model: sdk.RealtimeModel.x2_1 });
+    expect(configuration).not.toHaveProperty("isFrameInterpolationEnabled");
+    expect(XmaxRealtimeManager.prototype).not.toHaveProperty("isFrameInterpolationEnabled");
+    expect(XmaxRealtimeManager.prototype).not.toHaveProperty("setFrameInterpolationEnabled");
+    expect(XmaxRealtimeVideoView.prototype).not.toHaveProperty("setFrameInterpolation");
+    expect(sdk.MediaService.prototype).not.toHaveProperty("resolveFrameInterpolationSize");
+    expect(sdk.MediaService.prototype).not.toHaveProperty("supportsFrameInterpolation");
+    expect(sdk.XmaxErrorCode).not.toHaveProperty("frameInterpolationUnsupported");
+  });
+
   it("accepts external source/sink input while preserving the legacy track form", () => {
     const source: sdk.RealtimeExternalVideoSource = {
       videoFormat: new sdk.RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),

@@ -28,23 +28,17 @@ export class RealtimeConfiguration {
   readonly provider: RtcProvider;
 
   /**
-   * 是否默认请求开启远端生成画面的插帧，默认 false。
-   */
-  readonly isFrameInterpolationEnabled: boolean;
-
-  /**
    * 是否自动调整上下行档位，默认 true。关闭时从 L1 启动且不读写历史档位，仍支持手动调档。
    */
   readonly isAdaptiveQualityEnabled: boolean;
 
   /**
-   * 补全 RTC、插帧和自动调档默认值，并校验模型名称与 RTC 提供方配置。
+   * 补全 RTC 和自动调档默认值，并校验模型名称与 RTC 提供方配置。
    */
   constructor(
     init: {
       model: RealtimeModelName;
       provider?: RtcProvider;
-      isFrameInterpolationEnabled?: boolean;
       isAdaptiveQualityEnabled?: boolean;
     }
   ) {
@@ -61,7 +55,6 @@ export class RealtimeConfiguration {
     }
     this.model = init.model;
 
-    this.isFrameInterpolationEnabled = init.isFrameInterpolationEnabled ?? false;
     this.isAdaptiveQualityEnabled = init.isAdaptiveQualityEnabled ?? true;
   }
 }

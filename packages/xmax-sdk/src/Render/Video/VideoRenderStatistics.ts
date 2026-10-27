@@ -14,12 +14,12 @@
 export interface VideoRenderStatistics {
 
   /**
-   * video 按浏览器 presentedFrames 增量计数；canvas 按实际呈现提交计数。
+   * 按浏览器 presentedFrames 增量计数的视频呈现来源。
    */
-  readonly source: "video" | "canvas";
+  readonly source: "video";
 
   /**
-   * 原帧与插值帧的总呈现帧率，单位 fps。
+   * 视频呈现帧率，单位 fps。
    */
   readonly frameRate: number;
 
@@ -27,9 +27,4 @@ export interface VideoRenderStatistics {
    * 原帧呈现帧率，单位 fps。
    */
   readonly originalFrameRate: number;
-
-  /**
-   * 插值帧呈现帧率，单位 fps；未开启插帧时为 0。
-   */
-  readonly interpolatedFrameRate: number;
 }

@@ -27,7 +27,6 @@ import type { MediaControlling } from "../../Media/MediaControlling";
 import { RenderController } from "../../Render/RenderController";
 import type { RenderControlling } from "../../Render/RenderControlling";
 import type { CameraControlling } from "../../Media/Camera/CameraControlling";
-import { frameInterpolationAdapter } from "../../Foundation/Media/Video/FrameInterpolationSupport";
 import { resolutionBuckets, supportedVideoFormats, type ModelSize } from "../../Service/Realtime/RealtimeModel";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
@@ -135,28 +134,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 本地流创建时解析的固定媒体基准；不被上行调档、生成画布或回传尺寸覆盖。
    */
   private resolvedMediaVideoFormat?: RealtimeVideoFormat;
-
-  /**
-   * 插帧能力、用户配置与渲染版本
-   */
-  private readonly supportsInterpolation: (
-    size?: ModelSize
-  ) => Promise<boolean>;
-
-  /**
-   * 接入方是否请求开启远端插帧。
-   */
-  private interpolationRequested: boolean;
-
-  /**
-   * 当前插帧管线使用的回传尺寸。
-   */
-  private interpolationSize?: ModelSize;
-
-  /**
-   * 插帧配置版本，防止旧能力探测覆盖新配置。
-   */
-  private interpolationRevision = 0;
 
   /**
    * 业务组件
@@ -309,17 +286,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       streamController?: StreamControlling;
       cameraController?: CameraControlling;
       rtcManager?: RtcManaging;
-      supportsFrameInterpolation?: (
-        size?: ModelSize
-      ) => Promise<boolean>;
     }
   ) {
     this.options = options;
     this.mediaService = new MediaService(options.model);
-
-    this.interpolationRequested = options.isFrameInterpolationEnabled;
-    this.supportsInterpolation = dependencies?.supportsFrameInterpolation ??
-      (async (size) => (await frameInterpolationAdapter(size)) !== null);
 
     this.errorHandler = new RealtimeErrorHandler();
 
@@ -368,10 +338,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       onRenderWarmupCompleted: () => {
         this.remoteRenderWarmupCompletedHandler?.();
         void this.completeGenerationPresentation().catch(error => this.errorHandler.report(error));
-      },
-      onAttached: () => this.applyRemoteInterpolation(),
-      onDetached: () => {
-        this.interpolationRevision++;
       },
     });
     this.connectionManager = new XmaxRealtimeConnectionManager({
@@ -520,41 +486,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 指定下行档位，沿用尺寸信令和插帧配置更新流程。
+   * 指定下行档位，沿用尺寸信令更新流程。
    */
   setDownlinkQualityLevel(
     level: RealtimeQualityLevel
   ): Promise<void> {
     return this.updateQualityLevel(level, true, true);
-  }
-
-  /**
-   * 当前是否请求启用插帧；能力探测或运行期降级后可能为 false。
-   */
-  get isFrameInterpolationEnabled(): boolean {
-    return this.interpolationRequested;
-  }
-
-  /**
-   * 串行更新插帧开关；开启前验证能力，不支持时抛错并保留原配置，不改变回传尺寸。
-   */
-  async setFrameInterpolationEnabled(
-    enabled: boolean
-  ): Promise<void> {
-    await this.coordinator.run(RealtimeOperationKind.configuration, undefined, async (token) => {
-      const format = this.downlinkQualityState?.size ?? this.resolvedMediaVideoFormat ?? this.currentLocalTrack?.videoFormat;
-      const size = format && enabled ? this.mediaService.resolveFrameInterpolationSize(format) : undefined;
-      if (enabled && !await this.checkInterpolationSupport(size, token)) {
-        token.ensureCurrent();
-        throw new XmaxError(XmaxErrorCode.frameInterpolationUnsupported, "Frame interpolation is unavailable on this device or for this size");
-      }
-
-      token.ensureCurrent();
-      // 插帧仅影响本地渲染；能力检查失败时保留已有配置，不调整回传尺寸。
-      this.interpolationRequested = enabled;
-      this.interpolationSize = size;
-      this.applyRemoteInterpolation();
-    });
   }
 
   /**
@@ -663,7 +600,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 发送下行目标尺寸，成功后更新当前档位与插帧尺寸。
+   * 发送下行目标尺寸，成功后更新当前档位。
    */
   private async applyDownlinkQuality(
     level: number,
@@ -687,97 +624,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     state.level = level;
     state.size = size;
     this.qualityHistory?.write("downlink", level);
-    // 新尺寸尚未到达时展示原视频，不能跨尺寸插帧。
-    if (this.interpolationRequested) {
-      this.interpolationSize = size;
-      this.applyRemoteInterpolation();
-    }
-  }
-
-  /**
-   * 根据当前视频尺寸准备插帧，能力不可用时降级为原视频，并在应用前校验租约。
-   */
-  private async prepareFrameInterpolation(
-    format: ModelSize,
-    token: RealtimeOperationToken
-  ): Promise<void> {
-    let size: ModelSize | undefined;
-    if (this.interpolationRequested) {
-      try {
-        const candidate = this.mediaService.resolveFrameInterpolationSize(format);
-        if (await this.checkInterpolationSupport(candidate, token))
-          size = candidate;
-      } catch (error) {
-        XmaxLogger.render.warning(() => `插帧不可用 (Frame Interpolation Unavailable)\n└─ ${XmaxError.from(error).message}`);
-      }
-    }
-
-    token.ensureCurrent();
-    // 能力检测确认不可用时关闭功能；短暂缺帧不改变开关状态。
-    if (this.interpolationRequested && !size)
-      this.interpolationRequested = false;
-    this.interpolationSize = size;
-    this.applyRemoteInterpolation();
-  }
-
-  /**
-   * 在 5 秒预算内探测插帧能力；超时或探测失败返回 false，主动取消则拒绝。
-   */
-  private checkInterpolationSupport(
-    size: ModelSize | undefined,
-    token: RealtimeOperationToken
-  ): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const finish = (supported: boolean) => {
-        cleanup();
-        resolve(supported);
-      };
-      const abort = () => {
-        cleanup();
-        reject(RealtimeCoordinator.cancelledError());
-      };
-
-      const timer = setTimeout(() => finish(false), 5_000);
-      const cleanup = () => {
-        clearTimeout(timer);
-        token.signal.removeEventListener("abort", abort);
-      };
-
-      token.signal.addEventListener("abort", abort, { once: true });
-      if (token.signal.aborted) {
-        abort();
-        return;
-      }
-
-      void this.supportsInterpolation(size).then(finish, () => finish(false));
-    });
-  }
-
-  /**
-   * 将当前插帧配置同步到远端绑定，并用版本号忽略旧管线的迟到失败。
-   */
-  private applyRemoteInterpolation(): void {
-    const revision = ++this.interpolationRevision;
-    const size = this.interpolationSize;
-    this.renderController.setFrameInterpolation(size ? {
-      size,
-      onFailure: (error) => {
-        if (revision === this.interpolationRevision)
-          this.handleInterpolationFailure(error);
-      },
-    } : undefined);
-  }
-
-  /**
-   * 关闭已失败的插帧配置并记录降级原因，保持原始视频渲染可用。
-   */
-  private handleInterpolationFailure(
-    error: unknown
-  ): void {
-    this.interpolationRequested = false;
-    this.interpolationSize = undefined;
-    this.applyRemoteInterpolation();
-    XmaxLogger.render.warning(() => `插帧已降级 (Frame Interpolation Disabled)\n└─ ${XmaxError.from(error).message}`);
   }
 
   /**
@@ -1643,7 +1489,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * 编排插帧、首帧计时和生成状态，任务与确认由生成管理器负责。
+   * 编排首帧计时和生成状态，任务与确认由生成管理器负责。
    *
    * @param token 当前生成操作的取消与状态控制令牌。
    * @param videoFormat 固定本地媒体基准，用于派生生成画布、回传尺寸和交互坐标。
@@ -1675,7 +1521,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     const initialLevel = this.qualityHistory?.read("downlink") ?? 1;
     const targetSize = this.resolveTargetSize(videoFormat, initialLevel);
-    await this.prepareFrameInterpolation(targetSize, token);
 
     const completeFirstFrame = this.launchTimer.startFirstFrame();
     this.remoteRenderWarmupCompletedHandler = undefined;
@@ -1772,8 +1617,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     this.remoteRenderWarmupCompletedHandler = undefined;
     this.clearVideoStatistics();
 
-    this.interpolationSize = undefined;
-    this.applyRemoteInterpolation();
     this.connectionManager.clearRemoteMedia();
 
     this.connectionManager.stopHeartbeat();

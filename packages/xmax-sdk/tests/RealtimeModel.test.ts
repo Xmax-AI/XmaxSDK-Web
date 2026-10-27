@@ -29,7 +29,6 @@ describe("custom realtime models", () => {
     const media = client.createMediaService(model);
     for (const size of [{ width: 1080, height: 1920 }, { width: 1920, height: 1080 }]) {
       expect(media.resolveModelInputSize(size)).toEqual(size);
-      expect(media.resolveFrameInterpolationSize(size)).toEqual(size);
     }
     expect(() => media.resolveModelInputSize({ width: 640, height: 360 })).toThrow("does not support input resolution");
     expect(new MediaService(model).model).toBe(model);

@@ -13,12 +13,11 @@ import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack"
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import { VideoRenderRegistry, type VideoRenderTarget } from "../Service/Realtime/VideoRenderBinding";
 import type { RenderControlling } from "./RenderControlling";
-import type { RemoteFrameInterpolationOptions } from "./Video/RemoteVideoFramePipeline";
 import { TrajectoryBinding } from "./Trajectory/TrajectoryBinding";
 import { TrajectoryRegistry } from "./Trajectory/TrajectoryRegistry";
 
 /**
- * 统一管理远端轨道的画面、插帧配置转交与交互绑定，不管理生成任务。
+ * 统一管理远端轨道的画面、展示就绪状态与交互绑定，不管理生成任务。
  */
 export class RenderController implements RenderControlling {
 
@@ -49,8 +48,6 @@ export class RenderController implements RenderControlling {
     private readonly callbacks: {
       onFrameDisplayed?: () => void;
       onRenderWarmupCompleted?: () => void;
-      onAttached?: () => void;
-      onDetached?: () => void;
     } = {}
   ) { }
 
@@ -102,21 +99,17 @@ export class RenderController implements RenderControlling {
         if (this.track !== track) {
           return;
         }
-        this.target?.setFrameInterpolation?.(undefined);
         this.ready = false;
         // 生成结果不再次镜像；显示镜像仍可由视图的公开属性设置。
         view.isMirrored = false;
         this.target = view;
-        this.callbacks.onAttached?.();
         view.setMediaStream(track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
       },
       detachHandler: view => {
         if (this.target === view) {
           this.ready = false;
-          this.callbacks.onDetached?.();
           this.target = undefined;
         }
-        view.setFrameInterpolation?.(undefined);
         view.setMediaStream(null);
       },
     });
@@ -133,15 +126,6 @@ export class RenderController implements RenderControlling {
       TrajectoryRegistry.binding(this.track)?.update(!!track && this.interactionEnabled);
     }
     this.target?.setMediaStream(track ? new MediaStream([track]) : null);
-  }
-
-  /**
-   * 转交插帧配置，不重建交互视图。
-   */
-  setFrameInterpolation(
-    options?: RemoteFrameInterpolationOptions
-  ): void {
-    this.target?.setFrameInterpolation?.(options);
   }
 
   /**
@@ -169,7 +153,6 @@ export class RenderController implements RenderControlling {
       TrajectoryRegistry.unregister(track);
       VideoRenderRegistry.unregister(track);
     }
-    this.target?.setFrameInterpolation?.(undefined);
     this.target?.setMediaStream(null);
     this.target = undefined;
   }

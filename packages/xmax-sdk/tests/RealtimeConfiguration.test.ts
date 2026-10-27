@@ -9,7 +9,7 @@ describe("RealtimeConfiguration", () => {
     [RealtimeModel.x2_1, RtcProvider.agora],
   ] as const)("keeps the public configuration minimal for %s", (model, provider) => {
     expect(new RealtimeConfiguration({ model })).toEqual({
-      model, provider, isFrameInterpolationEnabled: false, isAdaptiveQualityEnabled: true,
+      model, provider, isAdaptiveQualityEnabled: true,
     });
   });
 

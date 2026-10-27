@@ -214,12 +214,10 @@ describe("XmaxRealtimeConnectionManager", () => {
       startHeartbeat: vi.fn((_id: string, _handlers: RealtimeSessionHeartbeatHandlers) => {}),
       stopHeartbeat: vi.fn(),
     };
-    const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderWarmupCompleted: vi.fn(), onRenderAttached: vi.fn(), onRenderDetached: vi.fn() };
+    const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderWarmupCompleted: vi.fn() };
     const render = new RenderController({
       onFrameDisplayed: events.onFrameDisplayed,
       onRenderWarmupCompleted: events.onRenderWarmupCompleted,
-      onAttached: events.onRenderAttached,
-      onDetached: events.onRenderDetached,
     });
     const manager = new XmaxRealtimeConnectionManager({
       provider,
@@ -256,10 +254,10 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(stream.beginGeneration).not.toHaveBeenCalled();
     const track = remote.videoTrack!;
     const binding = VideoRenderRegistry.binding(track)!;
-    const view = { isMirrored: true, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+    const view = { isMirrored: true, setMediaStream: vi.fn() };
     binding.attachHandler(view, VideoContentMode.fit);
     expect(view.isMirrored).toBe(false);
-    expect(events.onRenderAttached).toHaveBeenCalledOnce();
+    expect(view.setMediaStream).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
     expect(binding.renderWarmupMs).toBe(750);
@@ -277,20 +275,17 @@ describe("XmaxRealtimeConnectionManager", () => {
   });
 
   it("updates the current render target without clearing it on a stale detach", async () => {
-    const { render, manager, events, options } = setup();
+    const { manager, options } = setup();
     const remote = await manager.connect(options);
     const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
-    const previous = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
-    const current = { isMirrored: false, setMediaStream: vi.fn(), setFrameInterpolation: vi.fn() };
+    const previous = { isMirrored: false, setMediaStream: vi.fn() };
+    const current = { isMirrored: false, setMediaStream: vi.fn() };
 
     binding.attachHandler(previous, VideoContentMode.fit);
-    events.onRenderAttached.mockImplementation(() => render.setFrameInterpolation(undefined));
     binding.attachHandler(current, VideoContentMode.fit);
-    expect(previous.setFrameInterpolation).toHaveBeenCalledWith(undefined);
-    expect(current.setFrameInterpolation.mock.contexts).toEqual([current]);
+    expect(current.setMediaStream.mock.contexts).toEqual([current]);
 
     binding.detachHandler(previous);
-    expect(events.onRenderDetached).not.toHaveBeenCalled();
     expect(current.isMirrored).toBe(false);
     current.setMediaStream.mockClear();
     manager.clearRemoteMedia();
@@ -299,22 +294,24 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(current.setMediaStream.mock.contexts).toEqual([current]);
 
     binding.detachHandler(current);
-    expect(events.onRenderDetached).toHaveBeenCalledOnce();
     current.setMediaStream.mockClear();
     manager.clearRemoteMedia();
     expect(current.setMediaStream).not.toHaveBeenCalled();
     await manager.disconnect();
   });
 
-  it("supports render targets without frame interpolation", async () => {
+  it("supports custom render targets with media and readiness notifications", async () => {
     const { render, manager, options } = setup();
     const remote = await manager.connect(options);
     const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
     const view = { isMirrored: false, setMediaStream: vi.fn() };
 
     binding.attachHandler(view, VideoContentMode.fit);
-    expect(() => render.setFrameInterpolation(undefined)).not.toThrow();
+    expect(render.isReady).toBe(false);
+    binding.renderWarmupCompletedHandler?.();
+    expect(render.isReady).toBe(true);
     binding.detachHandler(view);
+    expect(render.isReady).toBe(false);
     await manager.disconnect();
   });
 
