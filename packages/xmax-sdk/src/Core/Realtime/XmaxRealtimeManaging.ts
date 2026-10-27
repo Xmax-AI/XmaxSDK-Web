@@ -14,6 +14,7 @@ import type { RealtimeNetworkQualityListener } from "../../Foundation/RTC/Networ
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
+import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -31,6 +32,15 @@ import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/Re
  * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
  */
 export interface XmaxRealtimeManaging {
+
+  /**
+   * 观察当前生成结果的原始 Web 音视频轨道，立即回放当前绑定。
+   * 不依赖 WebCodecs；适用于 MediaRecorder 等原生媒体流处理。
+   * 轨道仅借用；需要停止或修改时应先 clone()，不得停止 SDK 的原始轨道。
+   * 无结果流时回调 undefined；传 undefined 取消监听，不影响订阅、音量或生成。
+   * 可与原始帧监听并存，close() 时自动清除。
+   */
+  setRemoteMediaTracksListener(listener?: (tracks?: RemoteMediaTracks) => void): void;
 
   /**
    * 监听当前结果流的原始解码视频和播放音量处理前的 PCM 音频。

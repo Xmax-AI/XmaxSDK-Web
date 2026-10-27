@@ -91,6 +91,7 @@ export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFo
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
 export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/RealtimeExtraParams";
 export type { RealtimeAudioFrame, RealtimeVideoFrame, RealtimeMediaFrame, RealtimeMediaFrameListener } from "./Service/Realtime/RealtimeMediaFrame";
+export type { RemoteMediaTracks } from "./Foundation/Media/RemoteMediaTracks";
 
 /**
  * Media / External

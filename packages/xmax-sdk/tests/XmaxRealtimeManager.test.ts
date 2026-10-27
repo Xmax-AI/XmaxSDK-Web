@@ -2949,6 +2949,35 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await s.manager.close();
   });
 
+  it("observes borrowed tracks without preparing WebCodecs and keeps frame observation independent", async () => {
+    const capture = vi.spyOn(RemoteMediaFrameController.prototype, "setListener").mockResolvedValue();
+    const setSource = vi.spyOn(RemoteMediaFrameController.prototype, "setSource").mockImplementation(() => {});
+    const s = makeManager();
+    const listener = vi.fn();
+    const videoTrack = { stop: vi.fn() } as unknown as MediaStreamTrack;
+    const tracks = { bindingID: "task", userID: "bot", videoTrack };
+    s.manager.setRemoteMediaTracksListener(listener);
+    s.stream.remoteMediaListener?.(tracks);
+    expect(listener).toHaveBeenLastCalledWith(tracks);
+    expect(capture).not.toHaveBeenCalled();
+    await s.manager.setRemoteMediaFrameListener(vi.fn());
+    await s.manager.setRemoteMediaFrameListener(undefined);
+    s.stream.remoteMediaListener?.(tracks);
+    expect(listener).toHaveBeenLastCalledWith(tracks);
+    s.manager.setRemoteMediaTracksListener(undefined);
+    expect(s.stream.remoteMediaListener).toBeUndefined();
+    await s.manager.setRemoteMediaFrameListener(vi.fn());
+    s.manager.setRemoteMediaTracksListener(listener);
+    s.manager.setRemoteMediaTracksListener(undefined);
+    s.stream.remoteMediaListener?.(tracks);
+    expect(setSource).toHaveBeenLastCalledWith(tracks);
+    s.manager.setRemoteMediaTracksListener(listener);
+    await s.manager.close();
+    expect(s.stream.remoteMediaListener).toBeUndefined();
+    expect(videoTrack.stop).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   it("restarts with a new task on the same connection and only uses this call's extraParams", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);

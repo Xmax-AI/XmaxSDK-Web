@@ -23,6 +23,7 @@ import type { DownlinkVideoStatistics, DownlinkVideoStatisticsListener, UplinkVi
 import { MediaController } from "../../Media/MediaController";
 import { RemoteMediaFrameController } from "../../Render/Video/RemoteMediaFrameController";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
+import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
 import type { MediaControlling } from "../../Media/MediaControlling";
 import { RenderController } from "../../Render/RenderController";
 import type { RenderControlling } from "../../Render/RenderControlling";
@@ -124,6 +125,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * 按需观察原始远端音视频，不持有录制或文件封装能力。
    */
   private readonly remoteMediaFrames = new RemoteMediaFrameController();
+
+  /** 独立于 WebCodecs 的原始轨道观察者。 */
+  private remoteMediaTracksListener?: (tracks?: RemoteMediaTracks) => void;
+  private remoteMediaFrameObservation = false;
 
   /**
    * 当前 RTC 平台能否独立于播放音量读取音频。
@@ -1297,10 +1302,32 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     if (listener && !this.canReadRemoteAudio) {
       throw new XmaxError(XmaxErrorCode.mediaError, "This RTC platform cannot observe remote audio independently of playback");
     }
-    this.streamController.setRemoteMediaListener(undefined);
+    this.remoteMediaFrameObservation = false;
     this.remoteMediaFrames.setSource(undefined);
+    this.updateRemoteMediaObservation();
     await this.remoteMediaFrames.setListener(listener);
-    if (listener) this.streamController.setRemoteMediaListener(tracks => this.remoteMediaFrames.setSource(tracks));
+    this.remoteMediaFrameObservation = Boolean(listener);
+    this.updateRemoteMediaObservation();
+  }
+
+  /** 交付借用的远端轨道，不创建音频处理器或视频取帧器。 */
+  setRemoteMediaTracksListener(listener?: (tracks?: RemoteMediaTracks) => void): void {
+    this.remoteMediaTracksListener = listener;
+    this.updateRemoteMediaObservation();
+  }
+
+  /** 两种观察方式共享 RTC 轨道通知，但各自独立订阅和清理。 */
+  private updateRemoteMediaObservation(): void {
+    this.streamController.setRemoteMediaListener(
+      this.remoteMediaFrameObservation || this.remoteMediaTracksListener ? tracks => {
+        if (this.remoteMediaFrameObservation) this.remoteMediaFrames.setSource(tracks);
+        try {
+          this.remoteMediaTracksListener?.(tracks);
+        } catch (error) {
+          XmaxLogger.render.warning(() => `Remote media track observer failed: ${XmaxError.from(error).message}`);
+        }
+      } : undefined,
+    );
   }
 
   /**
@@ -1624,6 +1651,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const sessionID = await this.connectionManager.disconnect();
 
     if (scope === RealtimeTerminationScope.all) {
+      this.setRemoteMediaTracksListener(undefined);
       await this.setRemoteMediaFrameListener(undefined);
       this.resolvedMediaVideoFormat = undefined;
       this.disposePermissionWatch();
