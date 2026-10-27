@@ -661,7 +661,7 @@ export function App() {
         { label: "RTC 进房", value: formatLaunchTiming(launchTiming.rtcJoinMs), title: "仅统计 RTC 进房调用耗时" },
         { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
         { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
-        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "首帧后预热 1000 ms，再渐入画面；不含渐入动画" },
+        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "首帧后预热 750 ms，再渐入画面；不含渐入动画" },
         { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
