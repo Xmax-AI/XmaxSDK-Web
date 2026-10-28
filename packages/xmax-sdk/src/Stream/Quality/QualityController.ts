@@ -13,105 +13,108 @@ import { DEFAULT_POLICY, type QualityPolicy } from "./QualityPolicy";
 import { RealtimeNetworkQualityLevel } from "../../Foundation/RTC/NetworkStatistics";
 
 /**
- * 按 L1～L5 顺序供状态机逐级切换，规格只在共享定义中维护。
+ * The ordered L1–L5 presets used for adjacent transitions.
  */
 const ORDERED_QUALITY_TIERS = Object.values(QUALITY_TIERS);
 
 /**
- * 网络质量触发的档位变更及其原因。
+ * A network-triggered quality-level transition and its cause.
  */
 export interface QualityChange {
 
   /**
-   * 切档前后的档位编号，范围 1～5；不能仅靠帧率区分档位。
+   * The previous level, from 1 to 5; frame rate alone does not identify a preset.
    */
   from: number;
 
   /**
-   * 切档后的档位编号，范围为 1–5。
+   * The resulting level, from 1 to 5.
    */
   to: number;
 
   /**
-   * 相对固定媒体基准的缩放比例，实际尺寸由调用方解析。
+   * The scale relative to the fixed media baseline; the caller resolves dimensions.
    */
   scale: number;
 
   /**
-   * 当前档位的上行帧率上限，单位为 fps。
+   * The uplink frame-rate limit for the selected level, in fps.
    */
   frameRate: number;
 
   /**
-   * 降档、尝试升档或试升失败回退的触发原因。
+   * The reason for downgrading, probing an upgrade, or reverting a failed probe.
    */
   reason: "poorNetwork" | "probeUpgrade" | "failedProbe";
 }
 
 /**
- * 每个方向各自持有的质量状态机，默认停止，不持有 RTC 或定时器。
- * 调用方须在生成成功后 start，仅传入新到达的质量样本，重连/换流/结束时 stop。
- * apply 必须遵循 AbortSignal 及会话操作租约。下行无生效 ACK 时，档位仅表示已发送目标。
+ * A per-direction quality state machine, initially stopped and independent of RTC and timers.
+ *
+ * Start after generation succeeds, pass only newly received quality samples, and stop on reconnection,
+ * replacement, or termination. Applied changes must honor cancellation and operation leases. Downlink
+ * levels describe submitted targets without server acknowledgments.
  */
 export class QualityController {
 
   /**
-   * 网络质量样本阈值与升降档时间窗口。
+   * The sample thresholds and transition windows.
    */
   private readonly policy: QualityPolicy;
 
   /**
-   * 当前功能是否处于活动状态。
+   * Whether this state machine is active.
    */
   private active = false;
 
   /**
-   * 当前档位在共享档位表中的索引。
+   * The current index in the ordered quality presets.
    */
   private index = 0;
 
   /**
-   * 连续好网络样本数。
+   * The consecutive good-network sample count.
    */
   private good = 0;
 
   /**
-   * 连续差网络样本数。
+   * The consecutive poor-network sample count.
    */
   private poor = 0;
 
   /**
-   * 最近一次有效网络样本的单调时间，单位为毫秒。
+   * The monotonic time of the last valid sample, in milliseconds.
    */
   private lastSampleAt?: number;
 
   /**
-   * 切档后恢复样本累计的最早时间，单位为单调时钟毫秒。
+   * The earliest monotonic time for resuming sample accumulation after a transition, in milliseconds.
    */
   private stableUntil = 0;
 
   /**
-   * 允许再次尝试升档的最早时间，单位为单调时钟毫秒。
+   * The earliest monotonic time for another upgrade probe, in milliseconds.
    */
   private upgradeAfter = 0;
 
   /**
-   * 当前升档观察窗口的截止时间，单位为单调时钟毫秒。
+   * The active upgrade-probe deadline, in monotonic milliseconds.
    */
   private probeUntil = 0;
 
   /**
-   * 是否正在应用档位参数。
+   * Whether a quality change is being applied.
    */
   private switching = false;
 
   /**
-   * 生命周期标识，使释放后的异步结果失效。
+   * The controller invalidating work from an obsolete lifecycle.
    */
   private lifecycle = new AbortController();
 
   /**
-   * 创建调档状态机；候选档位不满足编码约束时保持当前档位，不跨档尝试。
+   * Creates a quality state machine that retains its level when the adjacent candidate violates encoding
+   * limits.
    */
   constructor(
     private readonly apply: (
@@ -124,29 +127,37 @@ export class QualityController {
       level: number
     ) => boolean = () => true,
   ) {
-    this.policy = { ...DEFAULT_POLICY, ...policy };
+    this.policy = {
+      ...DEFAULT_POLICY,
+      ...policy
+    };
     for (const value of Object.values(this.policy)) {
-      if (!Number.isFinite(value) || value < 0)
+      if (!Number.isFinite(value) || value < 0) {
         throw new Error("Invalid quality policy");
+      }
     }
     for (const value of [this.policy.poorSamples, this.policy.goodSamples]) {
-      if (!Number.isInteger(value) || value < 1)
+      if (!Number.isInteger(value) || value < 1) {
         throw new Error("Sample counts must be positive integers");
+      }
     }
   }
 
   /**
-   * 当前档位、活动状态和升档等待时间的只读快照。
+   * An immutable snapshot of the current level, activity, and upgrade waiting state.
    */
   get snapshot() {
     return Object.freeze({
-      active: this.active, level: this.index + 1, ...ORDERED_QUALITY_TIERS[this.index]!,
-      switching: this.switching, upgradeAfter: this.upgradeAfter,
+      active: this.active,
+      level: this.index + 1,
+      ...ORDERED_QUALITY_TIERS[this.index]!,
+      switching: this.switching,
+      upgradeAfter: this.upgradeAfter,
     });
   }
 
   /**
-   * 传入调用方保存的档位，不在 start 中擅自改写编码配置。
+   * Starts from a caller-supplied level without changing encoding settings.
    */
   start(
     level = 1
@@ -162,7 +173,7 @@ export class QualityController {
   }
 
   /**
-   * 取消旧会话的迟到结果；底层尚未完成时仍保持串行限制。
+   * Invalidates old-session results while retaining serialization until pending native work completes.
    */
   stop(): void {
     this.active = false;
@@ -171,7 +182,7 @@ export class QualityController {
   }
 
   /**
-   * 前台操作期间丢弃累计样本，但保留试升失败后的冷却时间。
+   * Discards accumulated samples during foreground work while retaining failed-probe cooldown.
    */
   resetSamples(): void {
     this.resetCounts();
@@ -179,22 +190,27 @@ export class QualityController {
   }
 
   /**
-   * 只接收质量事件，不得用定时器重复提交同一份缓存统计。异常由调用方记录。
+   * Processes only new quality events, never timer-replayed cached statistics. The caller reports
+   * failures.
    */
   async observe(
     quality: RealtimeNetworkQualityLevel | undefined,
     sampleAt = this.now()
   ): Promise<QualityChange | undefined> {
-    if (!this.active || this.switching || !Number.isFinite(sampleAt))
+    if (!this.active || this.switching || !Number.isFinite(sampleAt)) {
       return;
+    }
     const now = this.now();
-    if (sampleAt > now)
+    if (sampleAt > now) {
       return;
+    }
     if (this.lastSampleAt !== undefined) {
-      if (sampleAt <= this.lastSampleAt)
+      if (sampleAt <= this.lastSampleAt) {
         return;
-      if (sampleAt - this.lastSampleAt > this.policy.sampleTimeoutMs)
+      }
+      if (sampleAt - this.lastSampleAt > this.policy.sampleTimeoutMs) {
         this.resetCounts();
+      }
     }
     this.lastSampleAt = sampleAt;
     if (now - sampleAt > this.policy.sampleTimeoutMs || sampleAt < this.stableUntil) {
@@ -205,7 +221,10 @@ export class QualityController {
       this.good = 0;
       this.poor++;
       if (this.poor >= this.policy.poorSamples && this.index < ORDERED_QUALITY_TIERS.length - 1) {
-        return this.change(this.index + 1, now < this.probeUntil ? "failedProbe" : "poorNetwork");
+        return this.change(
+          this.index + 1,
+          now < this.probeUntil ? "failedProbe" : "poorNetwork"
+        );
       }
     } else if (quality === RealtimeNetworkQualityLevel.excellent || quality === RealtimeNetworkQualityLevel.good) {
       this.poor = 0;
@@ -215,24 +234,27 @@ export class QualityController {
       }
       this.good++;
       if (this.good >= this.policy.goodSamples && this.index > 0) {
-        return this.change(this.index - 1, "probeUpgrade");
+        return this.change(
+          this.index - 1,
+          "probeUpgrade"
+        );
       }
     } else {
-      // 一般、未知、断连和无效等级均打断连续计数，不推测可用带宽。
+      // Unknown, intermediate, disconnected, and invalid ratings break consecutive counts without inferring bandwidth.
       this.resetCounts();
     }
     return;
   }
 
   /**
-   * 清除连续好网络与差网络样本计数。
+   * Clears consecutive good and poor sample counts.
    */
   private resetCounts(): void {
     this.good = this.poor = 0;
   }
 
   /**
-   * 应用候选档位，成功后更新状态及升降档时间窗口。
+   * Applies an adjacent candidate and updates state and transition windows after success.
    */
   private async change(
     index: number,
@@ -244,18 +266,28 @@ export class QualityController {
     }
 
     const lifecycle = this.lifecycle;
-    const change: QualityChange = { from: this.index + 1, to: index + 1, ...ORDERED_QUALITY_TIERS[index]!, reason };
+    const change: QualityChange = {
+      from: this.index + 1,
+      to: index + 1,
+      ...ORDERED_QUALITY_TIERS[index]!,
+      reason
+    };
     this.switching = true;
     try {
-      await this.apply(change, lifecycle.signal);
-      if (lifecycle.signal.aborted)
+      await this.apply(
+        change,
+        lifecycle.signal
+      );
+      if (lifecycle.signal.aborted) {
         return;
+      }
       this.index = index;
       const now = this.now();
       this.stableUntil = now + this.policy.stabilizationMs;
       this.probeUntil = reason === "probeUpgrade" ? now + this.policy.probeMs : 0;
-      if (reason === "failedProbe")
+      if (reason === "failedProbe") {
         this.upgradeAfter = now + this.policy.upgradeCooldownMs;
+      }
       return change;
     } catch (error) {
       if (!lifecycle.signal.aborted) {

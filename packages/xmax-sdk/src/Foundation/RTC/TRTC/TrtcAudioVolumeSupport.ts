@@ -9,27 +9,24 @@
 //
 
 /**
- * TRTC 远端音量控制能力检测的环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
+ * Replaceable browser capabilities used to detect TRTC volume support.
  */
 export interface TrtcAudioVolumeEnvironment {
 
   /**
-   * 浏览器报告的用户代理字符串。
+   * The browser's User-Agent string.
    */
   userAgent?: string;
 
   /**
-   * 设备支持的最大同时触点数。
+   * The maximum simultaneous touch count.
    */
   maxTouchPoints?: number;
 }
 
 /**
- * 判断当前平台是否支持 TRTC 的 `setRemoteAudioVolume` 远端音量控制。
- *
- * iOS Safari 与 WKWebView 不允许 JS 修改媒体元素音量
- * （`HTMLMediaElement.volume` 只读），TRTC 官方亦标注该接口不支持
- * iOS Safari；桌面模式 UA 的 iPad 通过触控点数识别。
+ * Checks TRTC remote-volume support. JavaScript media-element volume control is unavailable on iOS
+ * Safari and WKWebView. Desktop-User-Agent iPads are identified through touch capability.
  */
 export function canControlTrtcRemoteAudioVolume(
   environment?: TrtcAudioVolumeEnvironment,

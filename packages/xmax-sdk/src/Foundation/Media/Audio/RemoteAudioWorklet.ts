@@ -9,8 +9,8 @@
 //
 
 /**
- * 独立音频线程将输入复制成约 20 ms 的 S16LE PCM 包，不输出可听声音。
- * 时间使用音频上下文的采样时钟，不使用主线程收到消息的时间。
+ * Copies input into approximately 20 ms S16LE packets on the audio thread without audible output.
+ * Timestamps follow the audio sampling clock, not main-thread message arrival.
  */
 export const REMOTE_AUDIO_WORKLET = `
 class XmaxRemoteAudioProcessor extends AudioWorkletProcessor {

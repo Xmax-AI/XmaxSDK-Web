@@ -9,35 +9,31 @@
 //
 
 /**
- * 媒体权限弹窗观察器。
+ * An observer of media permission decisions.
  */
 export interface MediaPermissionWatch {
 
   /**
-   * 用户完成授权决定（所有观察的权限离开 prompt 状态）时兑现。
+   * Resolves when every observed permission leaves the prompt state.
    */
   readonly decided: Promise<void>;
 
   /**
-   * 移除授权变化监听；调用后 decided 不再兑现。
+   * Removes permission observation; a pending decision no longer resolves afterward.
    */
   dispose(): void;
 }
 
 /**
- * 授权状态轮询间隔（毫秒）。
- *
- * Safari 的 PermissionStatus.onchange 不会触发（状态变化只能重新查询
- * 发现），在 onchange 之外用轮询兜底；间隔决定授权耗时的最大误差。
+ * The permission-polling interval, in milliseconds. Polling supplements onchange in browsers that do not
+ * deliver permission-change events and bounds observation error.
  */
 const PERMISSION_POLL_INTERVAL_MS = 100;
 
 /**
- * 观察相机（可选麦克风）的系统授权状态。
- *
- * 权限均已授权时返回立即兑现的观察器（授权耗时接近 0）；任一权限处于
- * prompt 状态时返回观察器，在用户完成授权决定时兑现；存在已拒绝权限或
- * 浏览器不支持该查询（如部分 Safari 版本）时返回 undefined，不记录耗时。
+ * Observes camera permission and optional microphone permission. Returns an already-resolved observer
+ * when all permissions are granted, or waits while any permission is prompt. Denied permissions or
+ * unsupported queries return undefined.
  */
 export async function watchMediaPermissionPrompt(
   includeMicrophone: boolean,
@@ -46,7 +42,7 @@ export async function watchMediaPermissionPrompt(
     return undefined;
   }
 
-  // TS 标准库未包含 camera/microphone 描述名，按运行时能力调用。
+  // Query camera and microphone by runtime capability because their names are absent from some TypeScript DOM libraries.
   const names = ["camera", ...(includeMicrophone ? ["microphone"] : [])];
   const queryOnce = (): Promise<PermissionState[]> =>
     Promise.all(
@@ -66,7 +62,7 @@ export async function watchMediaPermissionPrompt(
           });
           return status.state;
         } catch {
-          // 轮询期间的查询失败按未决定处理，等待下次轮询。
+          // Treat a failed polling query as undecided and try again on the next interval.
           return "prompt" as PermissionState;
         }
       }),
@@ -76,13 +72,20 @@ export async function watchMediaPermissionPrompt(
   try {
     states = await queryOnce();
   } catch {
-    // 浏览器不支持该查询（如部分 Safari 版本），无法观察授权耗时。
+    // Unsupported permission queries cannot provide authorization timing.
     return undefined;
   }
 
-  // 已全部授权时立即兑现（授权耗时接近 0）；存在 denied 时无法观察，不记录。
+  // Already-granted permissions complete immediately; denied permissions do not produce an observer.
   if (states.every((state) => state === "granted")) {
-    return { decided: Promise.resolve(), dispose() { } };
+    return {
+      decided: Promise.resolve(),
+
+      /**
+       * Completes cleanup without work because no observer was allocated.
+       */
+      dispose() { }
+    };
   }
   if (!states.includes("prompt")) {
     return undefined;
@@ -102,15 +105,23 @@ export async function watchMediaPermissionPrompt(
     resolveDecided();
   };
 
-  const poll = setInterval(() => {
-    void queryStates().then(finishIfDecided);
-  }, PERMISSION_POLL_INTERVAL_MS);
+  const poll = setInterval(
+    () => {
+      void queryStates().then(finishIfDecided);
+    },
+    PERMISSION_POLL_INTERVAL_MS
+  );
 
-  // 结束授权轮询，后续权限变化不再通知当前观察器。
+  /**
+   * Stops polling and prevents further permission-change notifications.
+   */
   function dispose(): void {
     disposed = true;
     clearInterval(poll);
   }
 
-  return { decided, dispose };
+  return {
+    decided,
+    dispose
+  };
 }

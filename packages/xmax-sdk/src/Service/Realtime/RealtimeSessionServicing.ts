@@ -16,49 +16,49 @@ import type {
 import type { RealtimeSession } from "./RealtimeSession";
 
 /**
- * 实时会话心跳回调集合。
+ * Callbacks for the realtime session heartbeat lifecycle.
  */
 export interface RealtimeSessionHeartbeatHandlers {
 
   /**
-   * 心跳失败或会话失效时调用（一次性，触发后心跳停止）。
+   * Reports one heartbeat failure or invalid session, then stops the heartbeat.
    */
   onFailure: RealtimeSessionHeartbeatFailureHandler;
 
   /**
-   * 心跳成功后调用，携带包含最新 RTC 凭据的会话数据。
+   * Receives refreshed session data, including updated RTC credentials, after a successful heartbeat.
    */
   onRefresh?: RealtimeSessionHeartbeatRefreshHandler;
 }
 
 /**
- * 定义实时会话 API 与心跳生命周期能力。
+ * The realtime session API and heartbeat lifecycle capabilities.
  */
 export interface RealtimeSessionServicing {
 
   /**
-   * 创建实时会话并返回 RTC 连接信息。
+   * Creates a realtime session with RTC connection information.
    *
-   * @param model 实时生成模型。
-   * @returns 包含 RTC 连接参数的会话。
-   * @throws 网络失败或响应缺少完整 RTC 连接参数时抛出错误。
+   * @param model - The realtime generation model.
+   * @returns A session containing RTC connection parameters.
+   * @throws Rejects if the request fails or complete RTC credentials are missing.
    */
   createSession(
     model: RealtimeModelName
   ): Promise<RealtimeSession>;
 
   /**
-   * 请求一次会话心跳并返回当前有效凭据，用于 RTC Token 续期。
+   * Requests one heartbeat and returns current credentials for RTC token renewal.
    */
   heartbeatSession(
     sessionID: string
   ): Promise<RealtimeSession>;
 
   /**
-   * 启动指定会话的周期心跳；重复启动会替换当前心跳。
+   * Starts periodic heartbeats, replacing any existing heartbeat.
    *
-   * @param sessionID 会话标识。
-   * @param handlers 心跳失败与凭据刷新回调。
+   * @param sessionID - The session ID.
+   * @param handlers - The failure and credential-refresh callbacks.
    */
   startHeartbeat(
     sessionID: string,
@@ -66,14 +66,14 @@ export interface RealtimeSessionServicing {
   ): void;
 
   /**
-   * 停止当前心跳；已经失效的迟到结果不会再触发回调。
+   * Stops heartbeats and prevents obsolete pending responses from invoking callbacks.
    */
   stopHeartbeat(): void;
 
   /**
-   * 关闭指定实时会话。
+   * Closes a realtime session.
    *
-   * @param sessionID 会话标识。
+   * @param sessionID - The session ID.
    */
   closeSession(
     sessionID: string

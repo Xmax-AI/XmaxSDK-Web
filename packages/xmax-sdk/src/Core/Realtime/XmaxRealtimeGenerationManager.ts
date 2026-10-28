@@ -20,63 +20,64 @@ import type { InteractionControlling } from "../../Media/Interaction/Interaction
 import type { RenderControlling } from "../../Render/RenderControlling";
 
 /**
- * 生成画布、媒体基准和本次生成条件。
+ * The generation canvas, media baseline, and conditions for one request.
  */
 interface GenerationOptions {
 
   /**
-   * 固定本地媒体规格，用于交互坐标。
+   * The fixed local-media format used for interaction coordinates.
    */
   videoFormat: RealtimeVideoFormat;
 
   /**
-   * 模型生成画布；缺省时与本地媒体规格一致。
+   * The generation canvas format; defaults to the local-media format.
    */
   generationVideoFormat?: RealtimeVideoFormat;
 
   /**
-   * 是否由服务端按包含模式适配生成画布。
+   * Whether the server contains the input within the generation canvas.
    */
   paddingContain?: boolean;
 
   /**
-   * 生成条件，缺省复用最近缓存的上下文。
+   * The generation conditions; omission reuses cached conditions.
    */
   context?: RealtimeContext;
 
   /**
-   * 服务端生成后的回传尺寸，缺省时不发送。
+   * The returned dimensions after server generation; omitted when unset.
    */
   targetSize?: RoomEventTargetSize;
 
   /**
-   * 是否回贴原始人脸，默认 false。
+   * Whether to restore the original face; defaults to false.
    */
   faceRestoration?: boolean;
 
   /**
-   * 合并到本次生成信令的 params，不缓存。
+   * Additional parameters for this signaling message, without caching.
    */
   extraParams?: RealtimeExtraParams;
 }
 
 /**
- * 内部生成管理器：拥有生成任务与上下文，管理信令、确认和取消；不持有会话或公开状态。
+ * Owns tasks and conditions, coordinating generation signaling, confirmation, and cancellation without
+ * owning sessions or public state.
  */
 export class XmaxRealtimeGenerationManager {
 
   /**
-   * 当前生成条件与任务标识
+   * The latest successfully cached generation conditions.
    */
   private currentContext?: RealtimeContext;
 
   /**
-   * 当前生成任务标识。
+   * The active generation task ID.
    */
   private activeTaskID?: string;
 
   /**
-   * 并发停止操作的共享结果
+   * The shared result of concurrent task-stop requests.
    */
   private pendingStop?: {
     taskID: string;
@@ -84,7 +85,7 @@ export class XmaxRealtimeGenerationManager {
   };
 
   /**
-   * 注入房间传输组件和任务标识生成器，不创建会话或启动生成。
+   * Creates a generation manager with transport, interaction, rendering, and task-ID dependencies.
    */
   constructor(
     private readonly streamController: StreamControlling,
@@ -94,34 +95,40 @@ export class XmaxRealtimeGenerationManager {
   ) { }
 
   /**
-   * 首次请求在建立连接前校验条件；后续请求可复用缓存。
+   * Validates initial conditions before connecting, allowing later calls to reuse the cache.
    */
   validateContext(
     context?: RealtimeContext
   ): RealtimeContext {
     const resolved = context ?? this.currentContext;
     if (!resolved) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A realtime context is required for the first generation");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "A realtime context is required for the first generation"
+      );
     }
     return resolved;
   }
 
   /**
-   * 发送生成指令并等待确认、远端就绪和音频激活，成功后返回任务标识。
-   * 条件上下文在生成确认后缓存；启动失败时尽力停止本次任务并保留原始错误。
-   * @param options.videoFormat 固定本地媒体规格，用于交互坐标。
-   * @param options.generationVideoFormat 模型生成画布，缺省沿用媒体规格。
-   * @param options.paddingContain 是否由服务端按包含模式适配画布。
-   * @param options.signal 取消本次生成启动的信号。
-   * @param options.ensureCurrent 校验当前操作仍有效。
-   * @param options.waitUntilRemoteReady 等待远端生成流就绪。
-   * @param options.context 生成条件，缺省复用最近缓存的上下文。
-   * @param options.restart 是否替换当前任务并重新发送 start，默认 false；不发送 stop。
-   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
-   * @param options.mirror 是否由后端水平翻转输入，默认 false；仅用于 start 信令。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.onStartSent start 信令发送成功后的可选异步回调。
-   * @param options.extraParams 合并到本次 start 的 params，不缓存。
+   * Sends generation signaling and waits for confirmation, remote readiness, and audio activation.
+   * Caches conditions only after confirmation. Startup failure attempts to stop the task while
+   * preserving the original error.
+   *
+   * @param options.videoFormat - The fixed media format for interaction coordinates.
+   * @param options.generationVideoFormat - The model canvas format; defaults to the media format.
+   * @param options.paddingContain - Whether the server contains the input within the canvas.
+   * @param options.signal - The startup cancellation signal.
+   * @param options.ensureCurrent - The operation-validity check.
+   * @param options.waitUntilRemoteReady - The remote-stream readiness wait.
+   * @param options.context - The generation conditions; omission reuses cached conditions.
+   * @param options.restart - Whether to replace the task with a new start message without sending stop;
+   * defaults to false.
+   * @param options.targetSize - The returned dimensions, omitted when unset.
+   * @param options.mirror - Whether start requests horizontal input mirroring; defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.onStartSent - The optional asynchronous callback after start is sent.
+   * @param options.extraParams - Additional uncached start parameters.
    */
   async start(
     options: {
@@ -163,11 +170,14 @@ export class XmaxRealtimeGenerationManager {
         ...(options.onStartSent && { onStartSent: options.onStartSent }),
         extraParams: options.extraParams,
       });
-      await this.awaitConfirmation(confirmation, options.signal);
+      await this.awaitConfirmation(
+        confirmation,
+        options.signal
+      );
       options.ensureCurrent();
       this.currentContext = context;
 
-      // 静态触控任务确认后即可交互，让轨迹驱动首帧。
+      // Enable interaction after static-task confirmation so trajectories can produce the first frame.
       if (options.extraParams?.static_generate !== true) {
         await options.waitUntilRemoteReady();
       }
@@ -176,8 +186,14 @@ export class XmaxRealtimeGenerationManager {
       await this.streamController.activateRemoteAudio();
       options.ensureCurrent();
 
-      this.interactionController.startInteraction(taskID, options.videoFormat);
-      this.renderController.setInteractionEnabled(true, options.videoFormat);
+      this.interactionController.startInteraction(
+        taskID,
+        options.videoFormat
+      );
+      this.renderController.setInteractionEnabled(
+        true,
+        options.videoFormat
+      );
       return taskID;
     } catch (error) {
       await this.stop(taskID);
@@ -186,15 +202,16 @@ export class XmaxRealtimeGenerationManager {
   }
 
   /**
-   * 更新活动任务的生成条件；信令发送成功后才覆盖缓存，无任务或上下文时抛错。
-   * @param taskID 当前活动任务标识。
-   * @param options.videoFormat 固定本地媒体规格，用于交互坐标。
-   * @param options.generationVideoFormat 模型生成画布，缺省沿用媒体规格。
-   * @param options.paddingContain 是否由服务端按包含模式适配画布。
-   * @param options.context 生成条件，缺省复用最近缓存的上下文。
-   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
+   * Updates active-task conditions and replaces cached conditions only after signaling succeeds.
+   *
+   * @param taskID - The active task ID.
+   * @param options.videoFormat - The fixed media format for interaction coordinates.
+   * @param options.generationVideoFormat - The model canvas format; defaults to the media format.
+   * @param options.paddingContain - Whether the server contains the input within the canvas.
+   * @param options.context - The generation conditions; omission reuses cached conditions.
+   * @param options.targetSize - The returned dimensions, omitted when unset.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Additional uncached change_condition parameters.
    */
   async update(
     taskID: string | undefined,
@@ -202,7 +219,10 @@ export class XmaxRealtimeGenerationManager {
   ): Promise<void> {
     const context = options.context ?? this.currentContext;
     if (!taskID || !context) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A realtime context is required to update the current generation");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "A realtime context is required to update the current generation"
+      );
     }
 
     await this.streamController.updateGeneration({
@@ -214,25 +234,33 @@ export class XmaxRealtimeGenerationManager {
       faceRestoration: options.faceRestoration ?? false,
       extraParams: options.extraParams,
     });
-    if (this.activeTaskID !== taskID)
+    if (this.activeTaskID !== taskID) {
       throw RealtimeCoordinator.cancelledError();
+    }
     this.currentContext = context;
-    this.interactionController.startInteraction(taskID, options.videoFormat);
-    this.renderController.setInteractionEnabled(true, options.videoFormat);
+    this.interactionController.startInteraction(
+      taskID,
+      options.videoFormat
+    );
+    this.renderController.setInteractionEnabled(
+      true,
+      options.videoFormat
+    );
   }
 
   /**
-   * 幂等停止指定活动任务；并发调用共享结果，停止失败仅记录日志。
+   * Stops an active task idempotently, sharing concurrent results and logging stop failures.
    */
   async stop(
     taskID = this.activeTaskID
   ): Promise<void> {
-    // 取消与统一清理可能同时到达：共享停止结果，不重复发送，也不提前退房。
+    // Cancellation and cleanup share the stop result to avoid duplicate messages or premature room exit.
     if (this.pendingStop && (!taskID || this.pendingStop.taskID === taskID)) {
       return this.pendingStop.completion;
     }
-    if (!taskID || this.activeTaskID !== taskID)
+    if (!taskID || this.activeTaskID !== taskID) {
       return;
+    }
 
     this.activeTaskID = undefined;
     this.interactionController.stopInteraction();
@@ -244,18 +272,22 @@ export class XmaxRealtimeGenerationManager {
         XmaxLogger.realtime.error(() => `停止生成任务失败 (Failed to Stop Generation Task)\n└─ ${XmaxError.from(error).message}`);
       }
     })();
-    this.pendingStop = { taskID, completion };
+    this.pendingStop = {
+      taskID,
+      completion
+    };
 
     try {
       await completion;
     } finally {
-      if (this.pendingStop?.completion === completion)
+      if (this.pendingStop?.completion === completion) {
         this.pendingStop = undefined;
+      }
     }
   }
 
   /**
-   * 清空缓存的生成条件并等待活动任务停止，供断连和关闭流程使用。
+   * Clears cached conditions and awaits task shutdown for disconnect or close.
    */
   async reset(
     taskID?: string
@@ -263,19 +295,26 @@ export class XmaxRealtimeGenerationManager {
     this.currentContext = undefined;
     this.interactionController.stopInteraction();
     this.renderController.setInteractionEnabled(false);
-    // Coordinator 进入 disconnecting 后可能不再携带 taskID，仍须停止本类持有的任务。
+    // Disconnecting state may omit taskID, but the task owned by this manager must still stop.
     await this.stop(this.activeTaskID ?? (taskID || undefined));
   }
 
   /**
-   * 等待生成确认；取消时立即拒绝，并在所有结束路径移除取消监听。
+   * Awaits confirmation, rejecting promptly on cancellation and releasing the abort listener on every
+   * path.
    */
   private async awaitConfirmation(
     confirmation: Promise<void>,
     signal: AbortSignal
   ): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => signal.removeEventListener("abort", abort);
+    await new Promise<void>((
+      resolve,
+      reject
+    ) => {
+      const cleanup = () => signal.removeEventListener(
+        "abort",
+        abort
+      );
       const abort = () => {
         cleanup();
         reject(RealtimeCoordinator.cancelledError());
@@ -292,26 +331,49 @@ export class XmaxRealtimeGenerationManager {
         },
       );
 
-      signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted)
+      signal.addEventListener(
+        "abort",
+        abort,
+        { once: true }
+      );
+      if (signal.aborted) {
         abort();
+      }
     });
   }
 
   /**
-   * 生成当前生成任务的唯一标识。
+   * Creates a unique generation task ID.
    */
   private static createTaskID(): string {
-    const hex = crypto.randomUUID().replace(/-/g, "");
+    const hex = crypto.randomUUID().replace(
+      /-/g,
+      ""
+    );
     let binary = "";
     for (let index = 0; index < 16; index += 1) {
-      binary += String.fromCharCode(parseInt(hex.slice(index * 2, index * 2 + 2), 16));
+      binary += String.fromCharCode(parseInt(
+        hex.slice(
+          index * 2,
+          index * 2 + 2
+        ),
+        16
+      ));
     }
 
     const base64url = btoa(binary)
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+      .replace(
+        /\+/g,
+        "-"
+      )
+      .replace(
+        /\//g,
+        "_"
+      )
+      .replace(
+        /=+$/,
+        ""
+      );
 
     return `task-${base64url}?os=web`;
   }

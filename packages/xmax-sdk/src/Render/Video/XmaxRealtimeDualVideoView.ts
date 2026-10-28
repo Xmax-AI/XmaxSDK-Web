@@ -15,55 +15,56 @@ import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 /**
- * 双轨视频容器：在本地预览和远端生成画面之间自动切换（框架无关）。
+ * A framework-independent view switching between local preview and remote generated video.
  *
- * 设置 SDK 远端轨道后，等待首帧及渲染预热结束再渐入远端画面；
- * 远端轨道置空时立即恢复本地预览。
+ * SDK remote tracks fade in after first-frame readiness and render warmup. Clearing the remote track
+ * immediately restores local preview.
  */
 export class XmaxRealtimeDualVideoView {
 
   /**
-   * 视图根元素。
+   * The view's root element.
    */
   readonly element: HTMLDivElement;
 
   /**
-   * 视频视图
+   * The local-preview video view.
    */
   private readonly localVideoView: XmaxRealtimeVideoView;
 
   /**
-   * 展示生成结果流的远端视频视图。
+   * The remote generated-video view.
    */
   private readonly remoteVideoView: XmaxRealtimeVideoView;
 
   /**
-   * 公共配置
+   * The currently bound local track.
    */
   private currentLocalTrack?: RealtimeVideoTrack;
 
   /**
-   * 当前绑定的远端视频轨。
+   * The currently bound remote track.
    */
   private currentRemoteTrack?: RealtimeVideoTrack;
 
   /**
-   * 画面在视口中的缩放与裁剪方式。
+   * The shared scaling and cropping mode.
    */
   private contentMode: VideoContentMode;
 
   /**
-   * 远端画面渐入时长，单位为秒。
+   * The remote fade-in duration, in seconds.
    */
   private fadeInDuration = 0.3;
 
   /**
-   * 创建实时视频容器。
+   * Creates a dual-track realtime video view.
    *
-   * @param options.localTrack 需要持续预览的本地视频轨道。
-   * @param options.remoteTrack 需要覆盖显示的远端生成视频轨道。
-   * @param options.videoContentMode 本地与远端视频的内容显示模式，默认 fill。
-   * @param options.remoteVideoFadeInDuration 远端渐入时长，单位为秒，默认 0.3；非正数或非有限值关闭动画。
+   * @param options.localTrack - The local preview track.
+   * @param options.remoteTrack - The generated track displayed over preview.
+   * @param options.videoContentMode - The layout mode for both tracks; defaults to fill.
+   * @param options.remoteVideoFadeInDuration - Fade duration in seconds; defaults to 0.3. Nonpositive or
+   * nonfinite values disable animation.
    */
   constructor(
     options?: {
@@ -83,8 +84,14 @@ export class XmaxRealtimeDualVideoView {
     this.element.style.overflow = "hidden";
     this.element.style.backgroundColor = "black";
 
-    this.localVideoView = new XmaxRealtimeVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: false });
-    this.remoteVideoView = new XmaxRealtimeVideoView({ videoContentMode: this.contentMode, isInteractionEnabled: options?.isInteractionEnabled });
+    this.localVideoView = new XmaxRealtimeVideoView({
+      videoContentMode: this.contentMode,
+      isInteractionEnabled: false
+    });
+    this.remoteVideoView = new XmaxRealtimeVideoView({
+      videoContentMode: this.contentMode,
+      isInteractionEnabled: options?.isInteractionEnabled
+    });
     this.remoteVideoFadeInDuration = options?.remoteVideoFadeInDuration ?? 0.3;
     for (const view of [this.localVideoView, this.remoteVideoView]) {
       view.element.style.position = "absolute";
@@ -97,14 +104,15 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 远端画面的渐入时长，单位为秒，默认 0.3。
+   * The remote fade-in duration, in seconds; defaults to 0.3.
    */
   get remoteVideoFadeInDuration(): number {
     return this.fadeInDuration;
   }
 
   /**
-   * 配置下一次渐入；非正数或非有限值关闭动画，不跳过首帧等待及渲染预热。
+   * Sets the next fade duration, disabling animation for nonpositive or nonfinite values without
+   * skipping first-frame or warmup waits.
    */
   set remoteVideoFadeInDuration(
     duration: number
@@ -115,21 +123,21 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 当前显示的本地视频轨道。
+   * The displayed local track.
    */
   get localTrack(): RealtimeVideoTrack | undefined {
     return this.currentLocalTrack;
   }
 
   /**
-   * 只控制远端视图的轨迹交互，本地预览始终不接管手势。
+   * Whether remote trajectory interaction is enabled; local preview never captures gestures.
    */
   get isInteractionEnabled(): boolean {
     return this.remoteVideoView.isInteractionEnabled;
   }
 
   /**
-   * 转交远端交互开关。
+   * Updates the remote view's interaction preference.
    */
   set isInteractionEnabled(
     enabled: boolean
@@ -138,14 +146,14 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 远端视图的自定义轨迹效果。
+   * The remote view's custom trajectory effect.
    */
   get trajectoryRenderer(): TrajectoryEffectRendering | undefined {
     return this.remoteVideoView.trajectoryRenderer;
   }
 
   /**
-   * undefined 恢复默认效果，不改变轨迹发送逻辑。
+   * Sets the remote effect; undefined restores the default without changing trajectory transmission.
    */
   set trajectoryRenderer(
     renderer: TrajectoryEffectRendering | undefined
@@ -154,7 +162,7 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 替换本地预览轨道；轨道未变化时保留当前绑定。
+   * Replaces local preview, retaining its binding when the track is unchanged.
    */
   set localTrack(
     track: RealtimeVideoTrack | undefined
@@ -167,15 +175,15 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 当前显示的远端生成视频轨道。
-   * SDK 远端轨道等待首帧及预热后渐入；置空时立即恢复本地预览。
+   * The generated remote track, shown after first-frame readiness and warmup. Clearing it restores local
+   * preview.
    */
   get remoteTrack(): RealtimeVideoTrack | undefined {
     return this.currentRemoteTrack;
   }
 
   /**
-   * 替换远端轨道并重新等待首帧渐入；清空轨道时恢复本地预览。
+   * Replaces the remote track and restarts first-frame presentation, or restores preview when cleared.
    */
   set remoteTrack(
     track: RealtimeVideoTrack | undefined
@@ -188,14 +196,14 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 视频内容在容器中的显示模式。
+   * The video layout mode.
    */
   get videoContentMode(): VideoContentMode {
     return this.contentMode;
   }
 
   /**
-   * 同步调整本地与远端视频在容器中的缩放和裁剪方式。
+   * Updates scaling and cropping for both local and remote views.
    */
   set videoContentMode(
     mode: VideoContentMode
@@ -209,14 +217,14 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 本地预览是否镜像显示（前置摄像头）。
+   * Whether local preview is mirrored.
    */
   get isLocalMirrored(): boolean {
     return this.localVideoView.isMirrored;
   }
 
   /**
-   * 更新本地预览镜像；不修改采集帧或远端画面。
+   * Changes local-preview mirroring without modifying capture pixels or remote video.
    */
   set isLocalMirrored(
     mirrored: boolean
@@ -225,7 +233,7 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 挂载到容器元素。
+   * Attaches the view to a container.
    */
   attach(
     to: HTMLElement
@@ -236,7 +244,7 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 从容器元素移除。
+   * Removes the view from its container.
    */
   detach(): void {
     this.localVideoView.detach();
@@ -245,7 +253,8 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 更新远端轨道绑定；SDK 轨道共用单轨视图的预热，普通轨道等待首帧后渐入。
+   * Updates remote binding, sharing SDK single-view warmup or waiting for an ordinary track's first
+   * frame.
    */
   private updateRemoteTrack(): void {
     const remoteTrack = this.currentRemoteTrack;
@@ -261,7 +270,7 @@ export class XmaxRealtimeDualVideoView {
       return;
     }
 
-    // SDK 远端轨道由单轨视图统一预热和渐入，不再叠加容器动画。
+    // SDK tracks already own warmup and fade-in; do not layer another container animation over them.
     if (VideoRenderRegistry.binding(remoteTrack)?.renderWarmupMs !== undefined) {
       this.remoteVideoView.element.style.visibility = "visible";
       this.remoteVideoView.element.style.opacity = "1";
@@ -280,7 +289,7 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * 远端首帧已提交：渐入远端画面。
+   * Fades in remote video after its first frame is submitted.
    */
   private showRemoteVideo(): void {
     const element = this.remoteVideoView.element;
@@ -298,7 +307,7 @@ export class XmaxRealtimeDualVideoView {
     }
     element.style.transition = `opacity ${durationMs}ms ease-in-out`;
 
-    // 强制一帧后再过渡，确保渐入生效。
+    // Wait for one animation frame so the opacity transition begins from the hidden state.
     requestAnimationFrame(() => {
       element.style.opacity = "1";
     });

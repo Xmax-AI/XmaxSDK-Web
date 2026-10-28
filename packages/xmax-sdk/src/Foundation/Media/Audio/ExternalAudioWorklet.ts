@@ -9,8 +9,9 @@
 //
 
 /**
- * 按 AudioContext 采样时钟调度外部单声道 PCM；线性重采样，间断输出静音。
- * 主线程限制在途包预算，线程内释放消费完的包并反馈预算，不连接扬声器。
+ * Schedules external mono PCM on the AudioContext clock, resampling linearly and filling gaps with
+ * silence. The main thread bounds pending audio; the worklet releases consumed packets and reports
+ * budget usage without speaker playback.
  */
 export const EXTERNAL_AUDIO_WORKLET = `
 class XmaxExternalAudioProcessor extends AudioWorkletProcessor {

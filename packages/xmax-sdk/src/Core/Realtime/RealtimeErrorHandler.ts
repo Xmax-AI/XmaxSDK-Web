@@ -13,18 +13,17 @@ import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import { RealtimeTerminationScope } from "./RealtimeCoordinator";
 
 /**
- * 实时业务异步错误的统一出口。
- * 当前为简化实现：记录日志并保留待上报错误。
+ * Reports asynchronous realtime failures through logging and retains pending errors.
  */
 export class RealtimeErrorHandler {
 
   /**
-   * 运行状态
+   * The pending failures awaiting lifecycle invalidation.
    */
   private pendingFailures: XmaxError[] = [];
 
   /**
-   * 上报错误；当前通过日志输出，后续里程碑接入状态原因上报。
+   * Records a realtime failure and outputs its diagnostic log.
    */
   async report(
     error: XmaxError
@@ -41,7 +40,7 @@ export class RealtimeErrorHandler {
   }
 
   /**
-   * 清理仍属于已终止生命周期的后台故障。
+   * Clears background failures belonging to a terminated lifecycle.
    */
   invalidatePendingFailures(
     _target: RealtimeTerminationScope

@@ -11,21 +11,27 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { NonRealtimeTaskService, validateTaskUid } from "../../Service/NonRealtime/NonRealtimeTaskService";
 import { NonRealtimeTaskError } from "../../Service/NonRealtime/NonRealtimeTaskError";
-import { NonRealtimeTaskStatus, type NonRealtimeTask, type NonRealtimeTaskOptions, type NonRealtimeTaskListOptions } from "../../Service/NonRealtime/NonRealtimeTask";
+import {
+  NonRealtimeTaskStatus,
+  type NonRealtimeTask,
+  type NonRealtimeTaskOptions,
+  type NonRealtimeTaskListOptions
+} from "../../Service/NonRealtime/NonRealtimeTask";
 import type { NonRealtimeWaitOptions, XmaxNonRealtimeManaging } from "./XmaxNonRealtimeManaging";
 
 /**
- * 非实时任务门面；复用 HTTP 服务，独立管理每一次等待，不创建 RTC 或实时会话。
+ * A non-realtime task facade with independent waits, sharing HTTP services without creating RTC
+ * connections or realtime sessions.
  */
 export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
 
   /**
-   * 服务层组件
+   * The service that submits and queries non-realtime tasks.
    */
   private readonly tasks: NonRealtimeTaskService;
 
   /**
-   * 注入非实时任务服务。
+   * Creates a manager with a non-realtime task service.
    */
   constructor(
     tasks: NonRealtimeTaskService
@@ -34,7 +40,7 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
   }
 
   /**
-   * 单次提交任务，不自动重试可能已扣费的请求。
+   * Submits a task once without retrying a potentially billable request.
    */
   submitTask(
     options: NonRealtimeTaskOptions
@@ -43,7 +49,7 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
   }
 
   /**
-   * 取得任务快照，不把服务端失败终态当成查询失败。
+   * Returns a task snapshot without treating a server-side task failure as a query failure.
    */
   getTask(
     taskUid: string,
@@ -51,11 +57,14 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
       signal?: AbortSignal
     }
   ): Promise<NonRealtimeTask> {
-    return this.tasks.getTask(taskUid, options?.signal);
+    return this.tasks.getTask(
+      taskUid,
+      options?.signal
+    );
   }
 
   /**
-   * 批量取得任务快照。
+   * Returns snapshots for multiple tasks.
    */
   getTasks(
     taskUids: readonly string[]
@@ -64,7 +73,7 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
   }
 
   /**
-   * 分页取得任务列表。
+   * Returns a page of tasks.
    */
   listTasks(
     options?: NonRealtimeTaskListOptions
@@ -73,7 +82,8 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
   }
 
   /**
-   * 等待任务完成；查询串行执行，瞬时错误有限退避，取消与总超时覆盖请求及等待阶段。
+   * Waits for completion using serial queries and bounded transient-error backoff. Cancellation and the
+   * overall timeout cover requests and polling delays.
    */
   async waitForCompletion(
     taskUid: string,
@@ -96,14 +106,21 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
     const controller = new AbortController();
     let timedOut = false;
     const abort = () => controller.abort();
-    options.signal?.addEventListener("abort", abort, { once: true });
+    options.signal?.addEventListener(
+      "abort",
+      abort,
+      { once: true }
+    );
     if (options.signal?.aborted) {
       abort();
     }
-    const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => {
-      timedOut = true;
-      abort();
-    }, options.timeoutMs);
+    const timer = options.timeoutMs === undefined ? undefined : setTimeout(
+      () => {
+        timedOut = true;
+        abort();
+      },
+      options.timeoutMs
+    );
 
     let failures = 0;
     try {
@@ -111,29 +128,38 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
         ensureActive(controller.signal);
         let task: NonRealtimeTask;
         try {
-          task = await this.tasks.getTask(uid, controller.signal);
+          task = await this.tasks.getTask(
+            uid,
+            controller.signal
+          );
         } catch (error) {
           ensureActive(controller.signal);
           if (!isTransient(error) || failures >= retries) {
             throw error;
           }
           failures++;
-          await delay(Math.min(interval * 2 ** (failures - 1), 30_000), controller.signal);
+          await delay(
+            Math.min(interval * 2 ** (failures - 1), 30_000),
+            controller.signal
+          );
           continue;
         }
 
         ensureActive(controller.signal);
         failures = 0;
-        // 观察回调异常不改变服务器任务状态，也不触发重复提交或查询重试。
+        // Observer failures must not change server state, resubmit tasks, or retry queries.
         try {
           void Promise.resolve(options.onTaskUpdated?.(task)).catch(() => { });
         } catch {
-          // 接入方负责处理观察回调错误。
+          // Observer errors are handled by the integrating app.
         }
         ensureActive(controller.signal);
 
         if (task.status === NonRealtimeTaskStatus.error) {
-          throw new NonRealtimeTaskError(task, `Non-realtime task ${uid} failed`);
+          throw new NonRealtimeTaskError(
+            task,
+            `Non-realtime task ${uid} failed`
+          );
         }
         if (task.status === NonRealtimeTaskStatus.completed) {
           if (!isResultAvailable(task)) {
@@ -144,7 +170,10 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
           }
           return task;
         }
-        await delay(interval, controller.signal);
+        await delay(
+          interval,
+          controller.signal
+        );
       }
     } catch (error) {
       if (timedOut) {
@@ -157,24 +186,30 @@ export class XmaxNonRealtimeManager implements XmaxNonRealtimeManaging {
       throw error;
     } finally {
       clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
+      options.signal?.removeEventListener(
+        "abort",
+        abort
+      );
     }
   }
 }
 
 /**
- * 校验浏览器 setTimeout 可表示的正数时长。
+ * Validates a positive duration supported by browser timers.
  */
 function validateDelay(
   value: number
 ): void {
   if (!Number.isFinite(value) || value <= 0 || value > 2_147_483_647) {
-    throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Polling durations must be positive and within the timer range");
+    throw new XmaxError(
+      XmaxErrorCode.invalidConfiguration,
+      "Polling durations must be positive and within the timer range"
+    );
   }
 }
 
 /**
- * 统一取消错误，避免误表达为服务端任务取消。
+ * Reports local cancellation without implying cancellation of the server task.
  */
 function ensureActive(
   signal: AbortSignal
@@ -188,16 +223,22 @@ function ensureActive(
 }
 
 /**
- * 可取消的轮询间隔，完成后释放定时器及事件监听。
+ * Waits for a cancellable polling interval and releases its timer and listener afterward.
  */
 function delay(
   ms: number,
   signal: AbortSignal
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((
+    resolve,
+    reject
+  ) => {
     const finish = () => {
       clearTimeout(timer);
-      signal.removeEventListener("abort", finish);
+      signal.removeEventListener(
+        "abort",
+        finish
+      );
       try {
         ensureActive(signal);
         resolve();
@@ -205,8 +246,15 @@ function delay(
         reject(error);
       }
     };
-    const timer = setTimeout(finish, ms);
-    signal.addEventListener("abort", finish, { once: true });
+    const timer = setTimeout(
+      finish,
+      ms
+    );
+    signal.addEventListener(
+      "abort",
+      finish,
+      { once: true }
+    );
     if (signal.aborted) {
       finish();
     }
@@ -214,7 +262,8 @@ function delay(
 }
 
 /**
- * 只重试查询中的网络异常、请求超时和没有明确业务拒绝码的服务器故障。
+ * Identifies retryable network failures, request timeouts, and server errors without an explicit
+ * business rejection.
  */
 function isTransient(
   error: unknown
@@ -223,11 +272,12 @@ function isTransient(
     return false;
   }
   return error.code === XmaxErrorCode.networkError || error.code === XmaxErrorCode.timeout ||
-    (error.code === XmaxErrorCode.apiError && (error.httpStatus ?? 0) >= 500 && (error.apiCode === undefined || error.apiCode === error.httpStatus));
+    (error.code === XmaxErrorCode.apiError && (error.httpStatus ?? 0) >= 500 &&
+      (error.apiCode === undefined || error.apiCode === error.httpStatus));
 }
 
 /**
- * 完成必须有 HTTP(S) 结果地址，且没有明确的上传失败信息。
+ * Checks for an HTTP(S) result URL without an explicit upload failure.
  */
 function isResultAvailable(
   task: NonRealtimeTask

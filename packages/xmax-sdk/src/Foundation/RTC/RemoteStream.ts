@@ -9,38 +9,38 @@
 //
 
 /**
- * 远端视频流的身份和轨道信息。
+ * The identity of a remote video stream.
  */
 export interface RemoteStreamInit {
 
   /**
-   * 远端流所在房间号。
+   * The room containing the remote stream.
    */
   roomID: string;
 
   /**
-   * 远端流所属用户标识。
+   * The user publishing the remote stream.
    */
   userID: string;
 }
 
 /**
- * 标识 RTC 房间中的一条远端主流。
+ * The identity of a remote main stream in an RTC room.
  */
 export class RemoteStream {
 
   /**
-   * 远端流所在房间号。
+   * The room containing the remote stream.
    */
   readonly roomID: string;
 
   /**
-   * 远端流所属用户标识。
+   * The user publishing the remote stream.
    */
   readonly userID: string;
 
   /**
-   * 创建远端流标识。
+   * Creates a remote-stream identity.
    */
   constructor(
     init: RemoteStreamInit
@@ -50,7 +50,7 @@ export class RemoteStream {
   }
 
   /**
-   * 跨房间唯一的远端流键。
+   * The stream key unique across rooms.
    */
   get key(): string {
     return `${this.roomID}:${this.userID}`;

@@ -9,19 +9,21 @@
 //
 
 /**
- * 定义相机与麦克风权限保障能力。
+ * Camera and microphone permission checks.
  */
 export interface PermissionManaging {
 
   /**
-   * 确保相机权限可用。
-   * @throws 权限被拒绝或不可用时抛出 `cameraPermissionDenied`。
+   * Checks camera permission availability.
+   *
+   * @throws Rejects with cameraPermissionDenied if permission is denied or unavailable.
    */
   ensureCameraPermission(): Promise<void>;
 
   /**
-   * 确保麦克风权限可用。
-   * @throws 权限被拒绝或不可用时抛出 `microphonePermissionDenied`。
+   * Checks microphone permission availability.
+   *
+   * @throws Rejects with microphonePermissionDenied if permission is denied or unavailable.
    */
   ensureMicrophonePermission(): Promise<void>;
 }

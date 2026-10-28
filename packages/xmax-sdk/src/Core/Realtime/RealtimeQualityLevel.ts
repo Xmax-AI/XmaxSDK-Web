@@ -9,32 +9,33 @@
 //
 
 /**
- * 实时传输档位；L1 质量最高，L5 最节省带宽，与网络质量评级无关。
+ * Realtime transmission presets, from highest quality (L1) to lowest bandwidth (L5). These presets are
+ * independent of network quality ratings.
  */
 export enum RealtimeQualityLevel {
 
   /**
-   * 保留媒体基准尺寸。
+   * Retains the baseline media dimensions.
    */
   l1 = 1,
 
   /**
-   * 目标宽高为媒体基准的 90%。
+   * Targets 90% of the baseline width and height.
    */
   l2 = 2,
 
   /**
-   * 目标宽高为媒体基准的 75%。
+   * Targets 75% of the baseline width and height.
    */
   l3 = 3,
 
   /**
-   * 目标宽高为媒体基准的 60%。
+   * Targets 60% of the baseline width and height.
    */
   l4 = 4,
 
   /**
-   * 目标宽高为媒体基准的 50%，上行帧率上限为 16 fps。
+   * Targets 50% of the baseline width and height, with an uplink frame-rate limit of 16 fps.
    */
   l5 = 5,
 }

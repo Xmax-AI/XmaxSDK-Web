@@ -11,54 +11,54 @@
 import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
 
 /**
- * 控制 XmaxSDK 输出的日志类型（位掩码，可组合）。
+ * Log-category flags that can be combined as a bitmask.
  */
 export enum XmaxLoggerOption {
 
   /**
-   * 关闭全部 SDK 日志输出。
+   * Disables all SDK logs.
    */
   none = 0,
 
   /**
-   * Room、API、Realtime、Storage 等业务运行日志。
+   * Business logs for rooms, API requests, realtime operations, and storage.
    */
   business = 1 << 0,
 
   /**
-   * 启动耗时、RTC 网络质量和音视频运行统计，输出到 console.info。
+   * Startup, RTC network-quality, and media statistics sent to console.info.
    */
   performance = 1 << 1,
 
   /**
-   * 输出全部 XmaxSDK 日志。
+   * Enables all SDK logs.
    */
   all = business | performance,
 }
 
 /**
- * SDK 日志的严重程度。
+ * The severity of an SDK log message.
  */
 type XmaxLogLevel = "debug" | "info" | "warning" | "error";
 
 /**
- * 各日志模块共用的输出配置。
+ * Output settings shared by all logger categories.
  */
 interface XmaxLoggerState {
 
   /**
-   * 允许输出的日志类别。
+   * The enabled log categories.
    */
   options: XmaxLoggerOption;
 
   /**
-   * 日志内容使用的服务环境和语言。
+   * The service environment selecting the language of log details.
    */
   environment: XmaxEnvironment;
 }
 
 /**
- * 各日志模块共享的输出类别与语言配置。
+ * The output-category and language settings shared by all loggers.
  */
 const state: XmaxLoggerState = {
   options: XmaxLoggerOption.none,
@@ -66,7 +66,7 @@ const state: XmaxLoggerState = {
 };
 
 /**
- * 日志级别对应的浏览器控制台输出方法。
+ * Browser console methods indexed by log severity.
  */
 const CONSOLE_METHOD: Record<XmaxLogLevel, "debug" | "info" | "warn" | "error"> = {
   debug: "debug",
@@ -76,79 +76,79 @@ const CONSOLE_METHOD: Record<XmaxLogLevel, "debug" | "info" | "warn" | "error"> 
 };
 
 /**
- * Xmax 品牌标签：蓝底白字。
+ * The blue-and-white Xmax console badge style.
  */
 const BRAND_BADGE_STYLE = "background:#2563eb;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
 
 /**
- * 业务域标签：使用深灰蓝，与 Xmax 品牌标签明确区分。
+ * The category badge style, visually distinct from the brand badge.
  */
 const CATEGORY_BADGE_STYLE = "background:#475569;color:#fff;border-radius:3px;padding:1px 4px;font-weight:600;";
 
 /**
- * 统一输出带 Xmax 前缀和类别的控制台日志。
+ * Writes categorized console messages with the Xmax prefix.
  *
- * 调用方不得传入 API Key、Token、Secret、Authorization 或完整敏感响应。
+ * Never supply API keys, tokens, secrets, Authorization values, or complete sensitive responses.
  */
 export class XmaxLogger {
 
   /**
-   * 分类日志
+   * The realtime business logger.
    */
   static readonly realtime = new XmaxLogger("Realtime");
 
   /**
-   * RTC 引擎、进退房和媒体传输日志。
+   * The RTC engine, room, and media-transport logger.
    */
   static readonly rtc = new XmaxLogger("RTC");
 
   /**
-   * 本地媒体准备与释放日志。
+   * The local-media preparation and cleanup logger.
    */
   static readonly media = new XmaxLogger("Media");
 
   /**
-   * API 请求及响应日志。
+   * The API request and response logger.
    */
   static readonly api = new XmaxLogger("API");
 
   /**
-   * 文件上传与下载日志。
+   * The file upload and download logger.
    */
   static readonly storage = new XmaxLogger("Storage");
 
   /**
-   * 房间消息和心跳日志。
+   * The room-message and heartbeat logger.
    */
   static readonly room = new XmaxLogger("Room");
 
   /**
-   * 流发布、订阅及生成控制日志。
+   * The publication, subscription, and generation-signaling logger.
    */
   static readonly stream = new XmaxLogger("Stream");
 
   /**
-   * 视频视图与渲染管线日志。
+   * The video-view and rendering-pipeline logger.
    */
   static readonly render = new XmaxLogger("Render");
 
   /**
-   * 触点采样和轨迹交互日志。
+   * The touch-sampling and trajectory logger.
    */
   static readonly interaction = new XmaxLogger("Interaction");
 
   /**
-   * 摄像头和麦克风权限日志。
+   * The camera and microphone permission logger.
    */
   static readonly permission = new XmaxLogger("Permission");
 
   /**
-   * 日志类别
+   * The category displayed in this logger's badge.
    */
   private readonly category: string;
 
   /**
-   * 创建固定业务分类的日志入口，共享全局日志选项和语言配置。
+   * Creates a categorized logger sharing the global output settings.
    */
   private constructor(
     category: string
@@ -157,10 +157,10 @@ export class XmaxLogger {
   }
 
   /**
-   * 更新 SDK 全局日志选项和细项语言，后一次配置覆盖前一次。
+   * Replaces global logging categories and language settings.
    *
-   * @param options 输出的日志类型位掩码。
-   * @param environment 服务环境，决定日志细项语言（国内中文，海外英文）。
+   * @param options - The enabled-category bitmask.
+   * @param environment - The environment selecting Chinese or English log details.
    */
   static configure(
     options: XmaxLoggerOption,
@@ -171,7 +171,7 @@ export class XmaxLogger {
   }
 
   /**
-   * 选择日志细项文案；日志标题保持原有中英双语。
+   * Selects localized details while retaining bilingual log titles.
    */
   static localized(
     chinese: string,
@@ -181,7 +181,7 @@ export class XmaxLogger {
   }
 
   /**
-   * 判断指定日志类型是否已开启。
+   * Checks whether a log category is enabled.
    */
   static isEnabled(
     option: XmaxLoggerOption
@@ -190,47 +190,63 @@ export class XmaxLogger {
   }
 
   /**
-   * 输出调试日志。
+   * Writes a debug message.
    */
   debug(
     message: () => string,
     option: XmaxLoggerOption = XmaxLoggerOption.business
   ): void {
-    this.log("debug", message, option);
+    this.log(
+      "debug",
+      message,
+      option
+    );
   }
 
   /**
-   * 输出信息日志。
+   * Writes an informational message.
    */
   info(
     message: () => string,
     option: XmaxLoggerOption = XmaxLoggerOption.business
   ): void {
-    this.log("info", message, option);
+    this.log(
+      "info",
+      message,
+      option
+    );
   }
 
   /**
-   * 输出警告日志。
+   * Writes a warning.
    */
   warning(
     message: () => string,
     option: XmaxLoggerOption = XmaxLoggerOption.business
   ): void {
-    this.log("warning", message, option);
+    this.log(
+      "warning",
+      message,
+      option
+    );
   }
 
   /**
-   * 输出错误日志。
+   * Writes an error message.
    */
   error(
     message: () => string,
     option: XmaxLoggerOption = XmaxLoggerOption.business
   ): void {
-    this.log("error", message, option);
+    this.log(
+      "error",
+      message,
+      option
+    );
   }
 
   /**
-   * 按日志类型开关输出到控制台；未开启时不求值日志内容。
+   * Writes enabled messages without evaluating disabled message factories.
    */
   private log(
     level: XmaxLogLevel,
@@ -243,7 +259,7 @@ export class XmaxLogger {
 
     const text = message();
     if (typeof window !== "undefined" && typeof document !== "undefined") {
-      // 正文通过 %s 传入，避免其中的 %c / %s 等内容被当作控制台格式指令。
+      // Pass message text through %s so embedded %c or %s sequences are not interpreted as formatting commands.
       console[CONSOLE_METHOD[level]](
         `%c[Xmax]%c %c[${this.category}]%c\n%s`,
         BRAND_BADGE_STYLE,
@@ -255,7 +271,7 @@ export class XmaxLogger {
       return;
     }
 
-    // SSR、Node 和其他非页面环境使用纯文本前缀。
+    // Use a plain-text prefix outside browser documents.
     console[CONSOLE_METHOD[level]](`[Xmax][${this.category}] ${text}`);
   }
 }

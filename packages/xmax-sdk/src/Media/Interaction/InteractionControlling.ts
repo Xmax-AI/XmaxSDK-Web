@@ -13,7 +13,7 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { InteractionFrame } from "./InteractionFrame";
 
 /**
- * 提交当前任务的媒体坐标；由 Core 装配到 Stream 层。
+ * Submits task-relative media coordinates through the stream layer.
  */
 export type InteractionListener = (
   taskID: string,
@@ -21,12 +21,12 @@ export type InteractionListener = (
 ) => Promise<void>;
 
 /**
- * 生成任务的交互上下文及采样入口。
+ * The generation-task interaction context and sampling capabilities.
  */
 export interface InteractionControlling {
 
   /**
-   * 激活任务或更新输入格式；使旧任务的待发送采样失效。
+   * Activates a task or updates its input format, invalidating obsolete pending samples.
    */
   startInteraction(
     taskID: string,
@@ -34,12 +34,12 @@ export interface InteractionControlling {
   ): void;
 
   /**
-   * 停用交互并丢弃待发送采样。
+   * Disables interaction and drops pending samples.
    */
   stopInteraction(): void;
 
   /**
-   * 提交视口采样；无活动任务时忽略。
+   * Submits a viewport sample, ignored without an active task.
    */
   submitInteraction(
     frame: InteractionFrame

@@ -13,48 +13,48 @@ import { XmaxLoggerOption } from "../Foundation/Logging/XmaxLogger";
 import { XmaxEnvironment } from "../Foundation/Runtime/XmaxEnvironment";
 
 /**
- * SDK 的身份、环境和日志选项。
+ * Client authentication, service environment, and logging options.
  */
 export interface XmaxConfigurationInit {
 
   /**
-   * 调用 Xmax 服务使用的 API Key。
+   * The API key used to access Xmax services.
    */
   apiKey: string;
 
   /**
-   * SDK 连接的服务环境；默认为国内环境。
+   * The service environment; defaults to the China environment.
    */
   environment?: XmaxEnvironment;
 
   /**
-   * SDK 输出的日志类型；默认为不输出日志。
+   * The enabled log categories; logging is disabled by default.
    */
   loggerOptions?: XmaxLoggerOption;
 }
 
 /**
- * SDK 全局配置。
+ * The configuration shared by XmaxSDK services.
  */
 export class XmaxConfiguration {
 
   /**
-   * 调用 Xmax 服务使用的 API Key。
+   * The API key used to access Xmax services.
    */
   readonly apiKey: string;
 
   /**
-   * SDK 连接的服务环境，同时决定日志细项语言：国内为中文，海外为英文。
+   * The service environment, which also selects Chinese or English log details.
    */
   readonly environment: XmaxEnvironment;
 
   /**
-   * SDK 输出的日志类型；默认为不输出日志。
+   * The enabled log categories; logging is disabled by default.
    */
   readonly loggerOptions: XmaxLoggerOption;
 
   /**
-   * 清理 API Key 首尾空白并补全环境和日志默认值；有效性检查由 validate 执行。
+   * Creates a client configuration. Call validate() to check its validity.
    */
   constructor(
     init: XmaxConfigurationInit
@@ -65,8 +65,9 @@ export class XmaxConfiguration {
   }
 
   /**
-   * 校验全局配置。
-   * @throws API Key 为空时抛出 `XmaxError`。
+   * Validates the client configuration.
+   *
+   * @throws An XmaxError if the API key is empty.
    */
   validate(): void {
     if (this.apiKey.length === 0) {

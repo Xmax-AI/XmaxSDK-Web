@@ -15,98 +15,100 @@ import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
 /**
- * ordered 逐条等待发送结果；latest 合并待发快照；barrier 额外丢弃此前未发送的快照。
+ * Message delivery policies: ordered awaits each result; latest replaces unsent snapshots; barrier also
+ * discards earlier unsent snapshots.
  */
 export type RtcRoomMessageDelivery = "ordered" | "latest" | "barrier";
 
 /**
- * 摄像头采集参数。
+ * Camera capture settings.
  */
 export interface RtcCameraCaptureOptions {
 
   /**
-   * 期望的采集宽度（按模型规则调整后的尺寸）。
+   * The requested capture width after model sizing, in pixels.
    */
   width: number;
 
   /**
-   * 期望的采集高度。
+   * The requested capture height, in pixels.
    */
   height: number;
 
   /**
-   * 期望的采集帧率。
+   * The requested capture frame rate.
    */
   frameRate: number;
 
   /**
-   * 首次启动时使用的摄像头位置。
+   * The initial camera position.
    */
   position: CameraPosition;
 
   /**
-   * 顺时针校正输入帧；宽高为旋转后的目标尺寸，默认 0。
+   * Clockwise input rotation; dimensions describe the rotated output. Defaults to 0.
    */
   rotation?: CameraRotation;
 }
 
 /**
- * 定义 RTC 引擎生命周期、房间、媒体传输和消息能力。
- *
- * 采集由选定 RTC 提供方完成；采集阶段不发布，建立连接时才发布本地流。
+ * The RTC engine, room, media-transport, and messaging capabilities. Capture does not publish media;
+ * local tracks are published only when connecting.
  */
 export interface RtcManaging {
 
   /**
-   * RTC 引擎是否已初始化。
+   * Whether the RTC engine is initialized.
    */
   readonly isInitialized: boolean;
 
   /**
-   * 初始化 RTC 引擎（不需要凭证，可在本地预览阶段调用）。
+   * Initializes the engine without requiring credentials, including during local preview.
    */
   initialize(): Promise<void>;
 
   /**
-   * 销毁 RTC 引擎并释放资源。
+   * Destroys the engine and releases its resources.
    */
   destroy(): Promise<void>;
 
   /**
-   * 启动摄像头采集（不发布）。
+   * Starts camera capture without publishing.
    *
-   * @returns 采集到的视频轨。
-   * @throws 引擎未初始化、设备不可用或权限被拒绝时抛出错误。
+   * @returns The captured video track.
+   * @throws Rejects if the engine is uninitialized, the device is unavailable, or permission is denied.
    */
   startCameraCapture(
     options: RtcCameraCaptureOptions
   ): Promise<MediaStreamTrack>;
 
   /**
-   * 更新正在预览的摄像头采集规格，返回当前原生输出轨；不切换设备或发布媒体。
+   * Updates preview capture settings and returns the native output track without switching devices or
+   * publishing.
    */
   updateCameraCapture?(
     options: RtcCameraCaptureOptions
   ): Promise<MediaStreamTrack>;
 
   /**
-   * 在前置和后置摄像头之间切换。
+   * Switches between front and rear cameras.
    *
-   * @returns 切换后的视频轨。
-   * @throws 采集未启动或设备切换失败时抛出错误。
+   * @returns The replacement capture track.
+   * @throws Rejects if capture has not started or switching fails.
    */
   switchCameraCapture(
     to: CameraPosition
   ): Promise<MediaStreamTrack>;
 
   /**
-   * 停止摄像头采集。
+   * Stops camera capture.
    */
   stopCameraCapture(): Promise<void>;
 
   /**
-   * 接入外部音视频轨（只准备、不发布）；适配器持有克隆轨，原轨仍归媒体源所有。
-   * 仅支持该能力的提供方实现；无音频轨时不得回退到麦克风。
+   * Prepares external audio/video tracks without publication, retaining clones while the media source
+   * owns the originals. Unsupported providers omit this capability; missing external audio must not fall
+   * back to microphone capture.
    */
   setExternalMediaTracks?(
     tracks: {
@@ -116,27 +118,26 @@ export interface RtcManaging {
   ): Promise<void>;
 
   /**
-   * 配置本地视频编码参数。
+   * Configures uplink video encoding independently of capture.
    *
-   * 采集阶段不发布，编码参数只影响发送端，在发布前配置即可生效。
-   *
-   * @throws 采集未启动或编码参数配置失败时抛出错误。
+   * @throws Rejects if capture has not started or encoding configuration fails.
    */
   configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
   ): Promise<void>;
 
   /**
-   * 加入 RTC 房间。
+   * Joins an RTC room.
    *
-   * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
+   * @throws Rejects if the engine is uninitialized, join parameters are invalid, or joining fails.
    */
   joinRoom(
     configuration: RtcRoomJoinConfiguration
   ): Promise<void>;
 
   /**
-   * 应用当前会话更新的鉴权凭据，不切换房间或提供方；取消信号用于中止凭据恢复。
+   * Applies refreshed credentials without changing the room or provider; cancellation interrupts
+   * credential recovery.
    */
   updateCredentials(
     configuration: RtcRoomJoinConfiguration,
@@ -144,39 +145,39 @@ export interface RtcManaging {
   ): Promise<void>;
 
   /**
-   * 离开当前 RTC 房间；未在房间中时不产生效果。
+   * Leaves the current RTC room, doing nothing when no room is joined.
    */
   leaveRoom(): Promise<void>;
 
   /**
-   * 发布本地视频流。
+   * Publishes local video.
    *
-   * @throws 摄像头采集未启动或发布失败时抛出错误。
+   * @throws Rejects if capture has not started or publication fails.
    */
   publishLocalVideo(): Promise<void>;
 
   /**
-   * 停止发布本地视频流；采集保持运行，本地预览不受影响。
+   * Unpublishes local video while retaining capture and local preview.
    */
   unpublishLocalVideo(): Promise<void>;
 
   /**
-   * 发布本地音频流；首次调用时启动麦克风采集。
+   * Publishes local audio, starting microphone capture on first use when applicable.
    *
-   * @throws 麦克风权限被拒绝或发布失败时抛出错误。
+   * @throws Rejects for denied microphone permission or publication failure.
    */
   publishLocalAudio(): Promise<void>;
 
   /**
-   * 停止发布本地音频流；麦克风采集保持运行。
+   * Unpublishes local audio while retaining microphone capture.
    */
   unpublishLocalAudio(): Promise<void>;
 
   /**
-   * 更新远端视频主流订阅状态。
+   * Changes a remote main-video subscription.
    *
-   * @returns 订阅成功时返回远端视频轨，供渲染层绑定；取消订阅时返回空。
-   * @throws 订阅或停止订阅失败时抛出错误。
+   * @returns The subscribed video track, or undefined after unsubscription.
+   * @throws Rejects if subscription or unsubscription fails.
    */
   subscribeRemoteVideo(
     userID: string,
@@ -184,9 +185,9 @@ export interface RtcManaging {
   ): Promise<MediaStreamTrack | undefined>;
 
   /**
-   * 更新远端音频订阅状态。
+   * Changes a remote audio subscription.
    *
-   * @throws 操作失败时抛出错误。
+   * @throws Rejects if the operation fails.
    */
   subscribeRemoteAudio(
     userID: string,
@@ -194,25 +195,23 @@ export interface RtcManaging {
   ): Promise<void>;
 
   /**
-   * 获取播放音量处理前的远端音轨；尚未订阅到音频时返回空值。
-   * 不支持独立采集与静音播放的平台抛出错误。
+   * Returns the remote audio track before playback volume processing, or undefined before audio
+   * subscription. Throws when independent audio observation and muted playback are unsupported.
    */
   getRemoteAudioTrack(
     userID: string
   ): MediaStreamTrack | undefined;
 
   /**
-   * 当前平台是否支持远端音量控制。
-   *
-   * iOS Safari/WKWebView 不支持，该平台上音量设置降级为播放/静音二值控制，
-   * 订阅远端音频后需要重新应用一次音量状态。
+   * Whether the adapter supports independent remote-volume control. Unsupported platforms may use binary
+   * playback/mute and require volume reapplication after subscription.
    */
   readonly supportsRemoteAudioVolumeControl: boolean;
 
   /**
-   * 设置指定远端用户的音频播放音量。
+   * Sets a remote user's audio playback volume.
    *
-   * @param volume 音量，取值范围为 `0...100`。
+   * @param volume - The volume, from 0 to 100.
    */
   setRemoteAudioVolume(
     volume: number,
@@ -220,11 +219,12 @@ export interface RtcManaging {
   ): void;
 
   /**
-   * 向当前 RTC 房间发送业务文本消息；TRTC 使用 `cmdId = 1`。
+   * Sends a room text message; TRTC uses cmdId 1.
    *
-   * @param message UTF-8 文本消息；最大字节数由各厂商适配器校验。
-   * @param delivery 发送和覆盖策略；latest 可在入队后返回，不保证远端已接收。
-   * @throws 未在房间中或消息超长时抛出错误。
+   * @param message - UTF-8 text subject to the adapter's byte limit.
+   * @param delivery - The ordering and replacement policy. Latest may return after enqueueing, without
+   * confirming remote receipt.
+   * @throws Rejects if no room is joined or the message is oversized.
    */
   sendRoomMessage(
     message: string,
@@ -232,7 +232,7 @@ export interface RtcManaging {
   ): Promise<void>;
 
   /**
-   * 设置 RTC 事件监听器，传入空值时清除监听器。
+   * Sets the RTC event listener; undefined removes it.
    */
   setEventListener(
     listener?: RtcEventListener

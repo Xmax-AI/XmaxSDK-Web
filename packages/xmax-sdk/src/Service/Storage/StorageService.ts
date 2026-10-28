@@ -15,32 +15,32 @@ import { StoredFile } from "./StoredFile";
 import type { StorageServicing, StorageUploadOptions } from "./StorageServicing";
 
 /**
- * `/cos/sts` 返回的临时存储配置。
+ * Temporary object-storage settings returned by /cos/sts.
  */
 interface TemporaryStoragePayload {
 
   /**
-   * 对象存储桶名称。
+   * The object-storage bucket.
    */
   bucket?: string;
 
   /**
-   * 对象存储桶所在区域。
+   * The bucket's region.
    */
   region?: string;
 
   /**
-   * 对象存储访问域名。
+   * The object-storage endpoint.
    */
   endpoint?: string;
 
   /**
-   * 上传对象的键名前缀。
+   * The prefix for uploaded object keys.
    */
   prefix?: string;
 
   /**
-   * 对象存储临时鉴权凭据。
+   * Temporary object-storage authentication credentials.
    */
   credentials?: {
     accessKeyId?: string;
@@ -50,32 +50,32 @@ interface TemporaryStoragePayload {
 }
 
 /**
- * 解析后的临时存储配置。
+ * Validated temporary object-storage configuration.
  */
 interface TemporaryStorageConfiguration {
 
   /**
-   * 对象存储桶名称。
+   * The object-storage bucket.
    */
   bucket: string;
 
   /**
-   * 对象存储桶所在区域。
+   * The bucket's region.
    */
   region: string;
 
   /**
-   * 对象存储访问域名。
+   * The object-storage endpoint.
    */
   endpoint?: string;
 
   /**
-   * 上传对象的键名前缀。
+   * The prefix for uploaded object keys.
    */
   prefix: string;
 
   /**
-   * 对象存储临时鉴权凭据。
+   * Temporary object-storage authentication credentials.
    */
   credentials: {
     accessKeyID: string;
@@ -85,12 +85,13 @@ interface TemporaryStorageConfiguration {
 }
 
 /**
- * 对象存储直传客户端需要的最小接口。
+ * The minimum client capabilities required for direct object uploads.
  */
 export interface StorageObjectClient {
 
   /**
-   * 将文件直传到指定桶和对象键，通过回调报告错误或访问地址，并可上报上传进度。
+   * Uploads to a bucket and object key, reporting errors or the object URL through a callback and
+   * optionally reporting progress.
    */
   putObject(
     params: {
@@ -119,40 +120,40 @@ export interface StorageObjectClient {
 }
 
 /**
- * 对象存储客户端工厂；生产实现按临时凭证创建 COS 客户端。
+ * Creates an object-storage client from temporary credentials.
  */
 export type StorageObjectClientFactory = (
   configuration: TemporaryStorageConfiguration,
 ) => Promise<StorageObjectClient>;
 
 /**
- * 对象存储上传所需的接口与客户端依赖。
+ * API and client dependencies for object-storage uploads.
  */
 export interface StorageServiceOptions {
 
   /**
-   * Xmax API 请求组件。
+   * The Xmax API request service.
    */
   apiService: ApiServicing;
 
   /**
-   * 对象存储客户端工厂（可替换，测试用）。
+   * The replaceable object-storage client factory.
    */
   clientFactory?: StorageObjectClientFactory;
 
   /**
-   * 时间来源（可替换，测试用）。
+   * The replaceable clock used for object keys.
    */
   dateGenerator?: () => Date;
 
   /**
-   * 标识来源（可替换，测试用）。
+   * The replaceable unique-ID source.
    */
   identifierGenerator?: () => string;
 }
 
 /**
- * 文件后缀到内容类型的映射。
+ * Content types indexed by filename extension.
  */
 const CONTENT_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -173,41 +174,35 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /**
- * 管理文件上传和视频下载。
+ * Uploads files directly to object storage and downloads videos.
  *
- * 上传直传不经过 Xmax 服务中转：先通过 `GET /cos/sts` 获取临时凭证，
- * 再用临时凭证创建 COS 客户端直传；访问地址按 `Location`、自定义
- * endpoint 或默认 COS 域名依次解析。
+ * Uploads obtain temporary credentials through GET /cos/sts, then send file bytes directly to COS. URLs
+ * prefer the returned Location, followed by a custom endpoint or the default COS domain.
  */
 export class StorageService implements StorageServicing {
 
   /**
-   * 服务层组件
+   * The API service used to obtain temporary storage credentials.
    */
   private readonly apiService: ApiServicing;
 
   /**
-   * 平台资源
+   * The factory creating an object-storage client.
    */
   private readonly clientFactory: StorageObjectClientFactory;
 
   /**
-   * 标识生成
+   * The clock used in uploaded object keys.
    */
   private readonly dateGenerator: () => Date;
 
   /**
-   * 生成上传对象键名中的唯一标识。
+   * The unique-ID source used in uploaded object keys.
    */
   private readonly identifierGenerator: () => string;
 
   /**
-   * 创建存储 Service。
-   *
-   * @param options.apiService Xmax API 请求组件。
-   * @param options.clientFactory 对象存储客户端工厂（可替换，测试用）。
-   * @param options.dateGenerator 时间来源（可替换，测试用）。
-   * @param options.identifierGenerator 标识来源（可替换，测试用）。
+   * Creates a storage service.
    */
   constructor(
     options: StorageServiceOptions
@@ -220,25 +215,31 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 上传图片并返回访问地址。
+   * Uploads an image and returns its access information.
    */
   async uploadImage(
     options: StorageUploadOptions
   ): Promise<StoredFile> {
-    return this.upload(options, "Image");
+    return this.upload(
+      options,
+      "Image"
+    );
   }
 
   /**
-   * 普通上传原始视频并返回访问地址，不进行转码、压缩或分片。
+   * Uploads an original video without transcoding, compression, or multipart upload.
    */
   async uploadVideo(
     options: StorageUploadOptions
   ): Promise<StoredFile> {
-    return this.upload(options, "Video");
+    return this.upload(
+      options,
+      "Video"
+    );
   }
 
   /**
-   * 下载原始视频文件并交给浏览器保存，支持取消网络下载。
+   * Downloads an original video and requests browser saving, with cancellable network transfer.
    */
   async downloadVideo(
     options: Parameters<StorageServicing["downloadVideo"]>[0]
@@ -248,13 +249,22 @@ export class StorageService implements StorageServicing {
     try {
       url = new URL(options.url.trim());
     } catch {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Invalid video download URL");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Invalid video download URL"
+      );
     }
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video download requires an HTTP(S) URL without embedded credentials");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Video download requires an HTTP(S) URL without embedded credentials"
+      );
     }
     if (typeof document === "undefined" || !document.body) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Video saving requires a browser document");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Video saving requires a browser document"
+      );
     }
 
     let objectURL: string | undefined;
@@ -262,23 +272,42 @@ export class StorageService implements StorageServicing {
     let saveRequested = false;
     try {
       if (options.signal?.aborted) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Video download was cancelled"
+        );
       }
 
-      // 直接读取资源，不向文件地址发送 SDK API Key 或 Cookie。
-      const response = await fetch(options.url.trim(), { credentials: "omit", signal: options.signal });
+      // Fetch the resource directly without sending the SDK API key or cookies.
+      const response = await fetch(
+        options.url.trim(),
+        {
+          credentials: "omit",
+          signal: options.signal
+        }
+      );
       if (!response.ok) {
-        throw new XmaxError(XmaxErrorCode.downloadError, "Video download failed", { httpStatus: response.status });
+        throw new XmaxError(
+          XmaxErrorCode.downloadError,
+          "Video download failed",
+          { httpStatus: response.status }
+        );
       }
       const data = await response.blob();
       if (options.signal?.aborted) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Video download was cancelled"
+        );
       }
       if (data.size === 0) {
-        throw new XmaxError(XmaxErrorCode.downloadError, "Downloaded video is empty");
+        throw new XmaxError(
+          XmaxErrorCode.downloadError,
+          "Downloaded video is empty"
+        );
       }
 
-      // 使用本地 Blob 地址，让浏览器按指定文件名保存跨域资源。
+      // Use a local Blob URL to suggest a filename for a cross-origin resource.
       objectURL = URL.createObjectURL(data);
       link = document.createElement("a");
       link.href = objectURL;
@@ -289,19 +318,28 @@ export class StorageService implements StorageServicing {
       saveRequested = true;
     } catch (error) {
       if (options.signal?.aborted) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "Video download was cancelled");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Video download was cancelled"
+        );
       }
       if (error instanceof XmaxError) {
         throw error;
       }
-      throw new XmaxError(XmaxErrorCode.downloadError, error instanceof Error ? error.message : String(error));
+      throw new XmaxError(
+        XmaxErrorCode.downloadError,
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       link?.remove();
       if (objectURL) {
         const resourceURL = objectURL;
         if (saveRequested) {
-          // 给浏览器时间接管下载，再释放 Blob 地址。
-          setTimeout(() => URL.revokeObjectURL(resourceURL), 60_000);
+          // Allow the browser to take over the download before releasing the Blob URL.
+          setTimeout(
+            () => URL.revokeObjectURL(resourceURL),
+            60_000
+          );
         } else {
           URL.revokeObjectURL(resourceURL);
         }
@@ -310,7 +348,8 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 获取临时凭证并通过 COS putObject 上传文件，统一处理进度、结果和错误。
+   * Obtains temporary credentials and uploads through COS putObject, normalizing progress, results, and
+   * errors.
    */
   private async upload(
     options: StorageUploadOptions,
@@ -321,7 +360,10 @@ export class StorageService implements StorageServicing {
       const safeName = StorageService.validateFileName(options.fileName);
       const contentType =
         options.contentType?.trim() || StorageService.inferContentType(safeName);
-      const body = StorageService.makeBody(options.data, contentType);
+      const body = StorageService.makeBody(
+        options.data,
+        contentType
+      );
       if (body.size === 0) {
         throw new XmaxError(
           XmaxErrorCode.invalidConfiguration,
@@ -330,7 +372,10 @@ export class StorageService implements StorageServicing {
       }
 
       const temporary = await this.fetchStorageConfiguration();
-      const objectKey = this.makeObjectKey(temporary.prefix, safeName);
+      const objectKey = this.makeObjectKey(
+        temporary.prefix,
+        safeName
+      );
       const client = await this.clientFactory(temporary);
 
       XmaxLogger.storage.info(
@@ -340,16 +385,22 @@ export class StorageService implements StorageServicing {
           `└─ ${XmaxLogger.localized("大小：", "Size: ")}${StorageService.formatByteCount(body.size)}`,
       );
 
-      const uploaded = await StorageService.putObject(client, {
-        Bucket: temporary.bucket,
-        Region: temporary.region,
-        Key: objectKey,
-        Body: body,
-        ContentType: contentType,
-        onProgress: options.onProgress
-          ? (info) => options.onProgress?.(info.loaded, info.total)
-          : undefined,
-      });
+      const uploaded = await StorageService.putObject(
+        client,
+        {
+          Bucket: temporary.bucket,
+          Region: temporary.region,
+          Key: objectKey,
+          Body: body,
+          ContentType: contentType,
+          onProgress: options.onProgress
+            ? (info) => options.onProgress?.(
+              info.loaded,
+              info.total
+            )
+            : undefined,
+        }
+      );
 
       const url = StorageService.resolveObjectURL(
         uploaded.Location,
@@ -362,7 +413,11 @@ export class StorageService implements StorageServicing {
           `├─ ${XmaxLogger.localized("地址：", "URL: ")}${url}\n` +
           `└─ ${XmaxLogger.localized("耗时：", "Duration: ")}${Date.now() - startedAt}ms`,
       );
-      return new StoredFile({ url, objectKey, etag: uploaded.ETag });
+      return new StoredFile({
+        url,
+        objectKey,
+        etag: uploaded.ETag
+      });
     } catch (error) {
       if (error instanceof XmaxError) {
         throw error;
@@ -377,7 +432,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 获取临时存储配置；字段不完整时抛出 API 错误。
+   * Returns temporary storage settings, rejecting incomplete credentials with an API error.
    */
   private async fetchStorageConfiguration(): Promise<TemporaryStorageConfiguration> {
     const payload = await this.apiService.get<TemporaryStoragePayload>("/cos/sts");
@@ -390,7 +445,10 @@ export class StorageService implements StorageServicing {
     const secretAccessKey = StorageService.nonEmpty(payload.credentials?.secretAccessKey);
     const sessionToken = StorageService.nonEmpty(payload.credentials?.sessionToken);
     if (!bucket || !region || !prefix || !accessKeyID || !secretAccessKey || !sessionToken) {
-      throw new XmaxError(XmaxErrorCode.apiError, message);
+      throw new XmaxError(
+        XmaxErrorCode.apiError,
+        message
+      );
     }
 
     return {
@@ -398,12 +456,16 @@ export class StorageService implements StorageServicing {
       region,
       endpoint: StorageService.nonEmpty(payload.endpoint),
       prefix,
-      credentials: { accessKeyID, secretAccessKey, sessionToken },
+      credentials: {
+        accessKeyID,
+        secretAccessKey,
+        sessionToken
+      },
     };
   }
 
   /**
-   * 生成对象键：`${prefix}${毫秒时间戳}_${标识}_${文件名}`。
+   * Builds an object key from its prefix, millisecond timestamp, unique ID, and filename.
    */
   private makeObjectKey(
     prefix: string,
@@ -414,7 +476,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 生产环境 COS 客户端工厂：动态加载 cos-js-sdk-v5 并按临时凭证创建客户端。
+   * Dynamically loads cos-js-sdk-v5 and creates a client with temporary credentials.
    */
   private static async cosClientFactory(
     configuration: TemporaryStorageConfiguration,
@@ -429,7 +491,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 调用对象存储上传并包装为 Promise。
+   * Wraps object upload callbacks in a promise.
    */
   private static putObject(
     client: StorageObjectClient,
@@ -438,25 +500,34 @@ export class StorageService implements StorageServicing {
     Location?: string;
     ETag?: string
   }> {
-    return new Promise((resolve, reject) => {
-      client.putObject(params, (error, data) => {
-        if (error) {
-          reject(
-            new XmaxError(
-              XmaxErrorCode.uploadError,
-              error.message?.trim() || "Storage upload failed",
-            ),
-          );
-          return;
+    return new Promise((
+      resolve,
+      reject
+    ) => {
+      client.putObject(
+        params,
+        (
+          error,
+          data
+        ) => {
+          if (error) {
+            reject(
+              new XmaxError(
+                XmaxErrorCode.uploadError,
+                error.message?.trim() || "Storage upload failed",
+              ),
+            );
+            return;
+          }
+          resolve(data ?? {});
         }
-        resolve(data ?? {});
-      });
+      );
     });
   }
 
   /**
-   * 解析对象访问地址：优先使用上传返回的 `Location`（补全协议），
-   * 其次拼接自定义 endpoint，最后回退到默认 COS 域名。
+   * Resolves the object URL from Location with a scheme, a custom endpoint, or the default COS domain,
+   * in that order.
    */
   private static resolveObjectURL(
     location: string | undefined,
@@ -483,7 +554,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 统一构造上传体。
+   * Creates the upload body.
    */
   private static makeBody(
     data: StorageUploadOptions["data"],
@@ -493,11 +564,14 @@ export class StorageService implements StorageServicing {
       return data;
     }
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-    return new Blob([bytes as unknown as BlobPart], { type: contentType });
+    return new Blob(
+      [bytes as unknown as BlobPart],
+      { type: contentType }
+    );
   }
 
   /**
-   * 校验文件名非空且不包含路径分隔符。
+   * Validates a nonempty filename without path separators.
    */
   private static validateFileName(
     fileName: string
@@ -513,7 +587,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 按文件名后缀推断内容类型。
+   * Infers content type from the filename extension.
    */
   private static inferContentType(
     fileName: string
@@ -523,7 +597,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 格式化字节数用于日志输出。
+   * Formats a byte count for logging.
    */
   private static formatByteCount(
     bytes: number
@@ -538,7 +612,7 @@ export class StorageService implements StorageServicing {
   }
 
   /**
-   * 归一化可选字符串：去除首尾空白后为空时返回 `undefined`。
+   * Trims an optional string and returns undefined when empty.
    */
   private static nonEmpty(
     value?: string

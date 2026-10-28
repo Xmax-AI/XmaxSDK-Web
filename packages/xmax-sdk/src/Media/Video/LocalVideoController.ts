@@ -18,96 +18,97 @@ import { StreamID } from "../../Service/Realtime/StreamID";
 import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
 
 /**
- * 单个文件播放器及其音视频输出资源。
+ * One file player and its audio/video output resources.
  */
 interface LocalVideoSource {
 
   /**
-   * 用于读取或预览源画面的视频元素。
+   * The video element decoding the source.
    */
   video: HTMLVideoElement;
 
   /**
-   * 承载媒体帧的画布。
+   * The Canvas holding output video frames.
    */
   canvas: HTMLCanvasElement;
 
   /**
-   * 画布绘制上下文。
+   * The Canvas drawing context.
    */
   context: CanvasRenderingContext2D;
 
   /**
-   * 源视频的浏览器对象 URL，释放源时一并撤销。
+   * The source Blob URL, revoked on release.
    */
   url: string;
 
   /**
-   * 取消当前媒体操作及相关等待。
+   * The controller cancelling media preparation and waits.
    */
   abort: AbortController;
 
   /**
-   * 当前绑定该媒体源的渲染目标。
+   * The rendering targets bound to this source.
    */
   targets: Set<VideoRenderTarget>;
 
   /**
-   * 当前媒体源对应的 SDK 视频轨道。
+   * The SDK video track associated with the source.
    */
   track?: RealtimeVideoTrack;
 
   /**
-   * 由当前媒体源输出的浏览器媒体流。
+   * The browser media stream produced by this source.
    */
   stream?: MediaStream;
 
   /**
-   * 路由媒体音频使用的 Web Audio 上下文。
+   * The audio context routing file audio.
    */
   audioContext?: AudioContext;
 
   /**
-   * 读取源音轨的 Web Audio 节点。
+   * The node reading audio from the source element.
    */
   audioSource?: MediaElementAudioSourceNode;
 
   /**
-   * 将 Web Audio 输出转换为媒体音轨的目标节点。
+   * The destination converting Web Audio output to a media track.
    */
   audioDestination?: MediaStreamAudioDestinationNode;
 
   /**
-   * 下一次文件视频绘制任务的句柄。
+   * The timer drawing subsequent video frames.
    */
   drawTimer?: ReturnType<typeof setInterval>;
 
   /**
-   * 媒体处理失败时通知上层。
+   * The media-processing failure callback.
    */
   onError?: () => void;
 }
 
 /**
- * 将本地文件解码为 Canvas 视频轨和 Web Audio 音频轨，不负责 RTC 发布。
- * 同一个播放器驱动音视频，预览始终静音；准备后停在首帧，生成时按配置播放。
+ * Decodes local files into Canvas video and Web Audio tracks without owning RTC publication. One player
+ * drives both tracks; preview remains muted. Preparation pauses on the first frame until generation
+ * starts.
  */
 export class LocalVideoController {
 
   /**
-   * 当前文件资源与运行期错误通知
+   * The current file source, including preparation state.
    */
   private source?: LocalVideoSource;
 
   /**
-   * 媒体处理失败时通知上层。
+   * The runtime media-failure callback.
    */
   private readonly onError: (
     error: XmaxError
   ) => void;
 
   /**
-   * 保存媒体错误处理器，不创建浏览器资源。
+   * Creates a file-video controller without allocating browser resources.
    */
   constructor(
     onError: (
@@ -118,28 +119,28 @@ export class LocalVideoController {
   }
 
   /**
-   * 是否持有文件资源，包含尚未完成准备的播放器。
+   * Whether a file source exists, including a preparing player.
    */
   get isActive(): boolean {
     return this.source !== undefined;
   }
 
   /**
-   * 准备完成的本地视频轨。
+   * The prepared local video track.
    */
   get currentTrack(): RealtimeVideoTrack | undefined {
     return this.source?.track;
   }
 
   /**
-   * 文件音频输出；禁用音频时为空，无音轨文件的 Web Audio 输出为静音。
+   * The file-audio output, absent when disabled and silent for files without an audio track.
    */
   get audioTrack(): MediaStreamTrack | undefined {
     return this.source?.audioDestination?.stream.getAudioTracks()[0];
   }
 
   /**
-   * 校验文件和格式，准备首帧与音频输出；应从用户点击事件直接调用以解锁播放。
+   * Validates and prepares file media; call directly from a user gesture to unlock playback.
    */
   async create(
     options: {
@@ -152,28 +153,44 @@ export class LocalVideoController {
     signal: AbortSignal
   ): Promise<RealtimeMediaStream> {
     if (this.source) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local video before creating another one");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Close the current local video before creating another one"
+      );
     }
     if (!(options.file instanceof Blob) || options.file.size === 0) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video requires a non-empty File or Blob");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Local video requires a non-empty File or Blob"
+      );
     }
     options.videoFormat.validate();
     if (signal.aborted) {
       throw this.cancelled();
     }
     if (typeof document === "undefined") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Local video requires a browser");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Local video requires a browser"
+      );
     }
 
     const video = document.createElement("video");
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
     if (!context || typeof canvas.captureStream !== "function") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Canvas video capture is unavailable");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Canvas video capture is unavailable"
+      );
     }
     const source: LocalVideoSource = {
-      video, canvas, context, url: URL.createObjectURL(options.file),
-      abort: new AbortController(), targets: new Set(),
+      video,
+      canvas,
+      context,
+      url: URL.createObjectURL(options.file),
+      abort: new AbortController(),
+      targets: new Set(),
     };
     this.source = source;
 
@@ -185,67 +202,110 @@ export class LocalVideoController {
       video.muted = options.includeAudio === false;
       if (options.includeAudio !== false) {
         if (typeof AudioContext === "undefined") {
-          throw new XmaxError(XmaxErrorCode.mediaError, "Web Audio is unavailable; disable file audio or use a supported browser");
+          throw new XmaxError(
+            XmaxErrorCode.mediaError,
+            "Web Audio is unavailable; disable file audio or use a supported browser"
+          );
         }
         const audio = new AudioContext();
         source.audioContext = audio;
         source.audioSource = audio.createMediaElementSource(video);
         source.audioDestination = audio.createMediaStreamDestination();
         source.audioSource.connect(source.audioDestination);
-        // 不连接扬声器节点；静音预览不会改变送往 RTC 的原始音频。
+        // Do not connect speakers; muted preview must not change the original audio sent to RTC.
       }
       video.src = source.url;
 
-      // 在调用方点击的同一轮事件内解锁播放器和音频上下文，然后回到首帧等待生成。
+      // Unlock the player and audio context within the user gesture, then return to the first frame until generation starts.
       const resume = source.audioContext?.resume();
-      const playing = this.play(source, signal);
-      await this.wait(source, Promise.all([resume, playing]), signal);
+      const playing = this.play(
+        source,
+        signal
+      );
+      await this.wait(
+        source,
+        Promise.all([resume, playing]),
+        signal
+      );
       video.pause();
       if (!video.videoWidth || !video.videoHeight || !Number.isFinite(video.duration) || video.duration <= 0) {
-        throw new XmaxError(XmaxErrorCode.mediaError, "The file has no playable finite video stream");
+        throw new XmaxError(
+          XmaxErrorCode.mediaError,
+          "The file has no playable finite video stream"
+        );
       }
-      const size = mediaService.resolveMediaSize({ width: video.videoWidth, height: video.videoHeight }, "video");
-      const format = options.videoFormat.resized(size.width, size.height);
+      const size = mediaService.resolveMediaSize(
+        {
+          width: video.videoWidth,
+          height: video.videoHeight
+        },
+        "video"
+      );
+      const format = options.videoFormat.resized(
+        size.width,
+        size.height
+      );
       canvas.width = size.width;
       canvas.height = size.height;
-      await this.rewind(source, signal);
+      await this.rewind(
+        source,
+        signal
+      );
 
       this.draw(source);
       source.stream = canvas.captureStream(format.fps);
       const nativeTrack = source.stream.getVideoTracks()[0];
       if (!nativeTrack) {
-        throw new XmaxError(XmaxErrorCode.mediaError, "Canvas did not provide a video track");
+        throw new XmaxError(
+          XmaxErrorCode.mediaError,
+          "Canvas did not provide a video track"
+        );
       }
-      const track = new RealtimeVideoTrack({ id: "local-video", videoFormat: format });
+      const track = new RealtimeVideoTrack({
+        id: "local-video",
+        videoFormat: format
+      });
       track.mediaStreamTrack = nativeTrack;
       source.track = track;
       this.draw(source);
-      // 暂停和播放结束后继续输出静止画面，避免发布后必须等待文件播放才能协商视频。
-      source.drawTimer = setInterval(() => {
-        if (this.source !== source) {
-          return;
-        }
-        try {
-          this.draw(source);
-        } catch {
-          this.handleError(source);
-        }
-      }, 1000 / format.fps);
+      // Continue emitting the still frame while paused or ended so publication can negotiate video before playback starts.
+      source.drawTimer = setInterval(
+        () => {
+          if (this.source !== source) {
+            return;
+          }
+          try {
+            this.draw(source);
+          } catch {
+            this.handleError(source);
+          }
+        },
+        1000 / format.fps
+      );
       source.onError = () => this.handleError(source);
-      video.addEventListener("error", source.onError);
+      video.addEventListener(
+        "error",
+        source.onError
+      );
 
-      VideoRenderRegistry.register(track, {
-        attachHandler: (view) => {
-          view.isMirrored = false;
-          view.setMediaStream(source.stream!);
-          source.targets.add(view);
-        },
-        detachHandler: (view) => {
-          source.targets.delete(view);
-          view.setMediaStream(null);
-        },
+      VideoRenderRegistry.register(
+        track,
+        {
+          attachHandler: (view) => {
+            view.isMirrored = false;
+            view.setMediaStream(source.stream!);
+            source.targets.add(view);
+          },
+          detachHandler: (view) => {
+            source.targets.delete(view);
+            view.setMediaStream(null);
+          },
+        }
+      );
+      return new RealtimeMediaStream({
+        id: StreamID.local,
+        videoTrack: track
       });
-      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     } catch (error) {
       await this.stop();
       throw XmaxError.from(error);
@@ -253,21 +313,35 @@ export class LocalVideoController {
   }
 
   /**
-   * 开始信令发送成功后，从文件开头同步启动音视频；不等待远端首帧。
+   * Starts both tracks from the file beginning after start signaling, without waiting for a remote
+   * frame.
    */
   async start(
     signal: AbortSignal
   ): Promise<void> {
     const source = this.source;
     if (!source?.track) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video is not prepared");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Local video is not prepared"
+      );
     }
     if (signal.aborted) {
       throw this.cancelled();
     }
     try {
-      await this.rewind(source, signal);
-      await this.wait(source, Promise.all([source.audioContext?.resume(), this.play(source, signal)]), signal);
+      await this.rewind(
+        source,
+        signal
+      );
+      await this.wait(
+        source,
+        Promise.all([source.audioContext?.resume(), this.play(
+          source,
+          signal
+        )]),
+        signal
+      );
     } catch (error) {
       source.video.pause();
       throw error;
@@ -275,14 +349,14 @@ export class LocalVideoController {
   }
 
   /**
-   * 暂停文件音视频，保留当前预览；重新开始生成时回到文件开头。
+   * Pauses file audio/video while retaining preview; restarting generation rewinds the file.
    */
   pause(): void {
     this.source?.video.pause();
   }
 
   /**
-   * 释放播放器、预览、定时器、轨道、音频上下文和对象 URL。
+   * Releases the player, preview, timer, tracks, audio context, and Blob URL.
    */
   async stop(): Promise<void> {
     const source = this.source;
@@ -293,7 +367,10 @@ export class LocalVideoController {
     source.abort.abort();
     clearInterval(source.drawTimer);
     if (source.onError) {
-      source.video.removeEventListener("error", source.onError);
+      source.video.removeEventListener(
+        "error",
+        source.onError
+      );
     }
     if (source.track) {
       VideoRenderRegistry.unregister(source.track);
@@ -303,7 +380,7 @@ export class LocalVideoController {
       try {
         view.setMediaStream(null);
       } catch {
-        // 单个视图解绑失败不阻断其他资源释放。
+        // One failed view detachment must not prevent other resource cleanup.
       }
     }
     source.targets.clear();
@@ -319,7 +396,7 @@ export class LocalVideoController {
   }
 
   /**
-   * 播放被浏览器拒绝时给出可操作错误；关闭后的迟到播放立即暂停。
+   * Reports actionable playback rejection and pauses obsolete playback that completes after closure.
    */
   private play(
     source: LocalVideoSource,
@@ -334,12 +411,15 @@ export class LocalVideoController {
       if (error instanceof XmaxError) {
         throw error;
       }
-      throw new XmaxError(XmaxErrorCode.mediaError, "Cannot play local video; call from a user click and use a browser-supported video codec");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Cannot play local video; call from a user click and use a browser-supported video codec"
+      );
     });
   }
 
   /**
-   * 等待 seek 完成，确保重新生成从首帧开始，而非使用旧缓存画面。
+   * Waits for rewind so restarted generation begins with the first frame rather than cached video.
    */
   private async rewind(
     source: LocalVideoSource,
@@ -352,29 +432,53 @@ export class LocalVideoController {
     const ready = new Promise<void>(resolve => {
       seeked = resolve;
     });
-    source.video.addEventListener("seeked", seeked, { once: true });
+    source.video.addEventListener(
+      "seeked",
+      seeked,
+      { once: true }
+    );
     try {
       source.video.currentTime = 0;
-      await this.wait(source, ready, signal);
+      await this.wait(
+        source,
+        ready,
+        signal
+      );
     } finally {
-      source.video.removeEventListener("seeked", seeked);
+      source.video.removeEventListener(
+        "seeked",
+        seeked
+      );
     }
   }
 
   /**
-   * 给浏览器准备和播放操作设置 10 秒上限，同时响应关闭、取消和解码错误。
+   * Bounds browser preparation and playback to ten seconds while observing closure, cancellation, and
+   * decode failure.
    */
   private wait(
     source: LocalVideoSource,
     operation: Promise<unknown>,
     signal: AbortSignal
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((
+      resolve,
+      reject
+    ) => {
       const finish = (error?: unknown) => {
         clearTimeout(timer);
-        signal.removeEventListener("abort", abort);
-        source.abort.signal.removeEventListener("abort", abort);
-        source.video.removeEventListener("error", failed);
+        signal.removeEventListener(
+          "abort",
+          abort
+        );
+        source.abort.signal.removeEventListener(
+          "abort",
+          abort
+        );
+        source.video.removeEventListener(
+          "error",
+          failed
+        );
         if (error) {
           reject(error);
         } else {
@@ -382,12 +486,36 @@ export class LocalVideoController {
         }
       };
       const abort = () => finish(this.cancelled());
-      const failed = () => finish(new XmaxError(XmaxErrorCode.mediaError, "The browser cannot decode this video file"));
-      const timer = setTimeout(() => finish(new XmaxError(XmaxErrorCode.timeout, "Local video preparation timed out; start from a user click and check the video codec")), 10_000);
-      signal.addEventListener("abort", abort, { once: true });
-      source.abort.signal.addEventListener("abort", abort, { once: true });
-      source.video.addEventListener("error", failed, { once: true });
-      operation.then(() => finish(), finish);
+      const failed = () => finish(new XmaxError(
+        XmaxErrorCode.mediaError,
+        "The browser cannot decode this video file"
+      ));
+      const timer = setTimeout(
+        () => finish(new XmaxError(
+          XmaxErrorCode.timeout,
+          "Local video preparation timed out; start from a user click and check the video codec"
+        )),
+        10_000
+      );
+      signal.addEventListener(
+        "abort",
+        abort,
+        { once: true }
+      );
+      source.abort.signal.addEventListener(
+        "abort",
+        abort,
+        { once: true }
+      );
+      source.video.addEventListener(
+        "error",
+        failed,
+        { once: true }
+      );
+      operation.then(
+        () => finish(),
+        finish
+      );
       if (signal.aborted || source.abort.signal.aborted) {
         abort();
       }
@@ -395,7 +523,8 @@ export class LocalVideoController {
   }
 
   /**
-   * 将完整画面缩放到已解析的媒体尺寸，不补模型画布、不按设备方向转置文件尺寸。
+   * Scales the entire image to resolved media dimensions without generation padding or
+   * device-orientation transposition.
    */
   private draw(
     source: LocalVideoSource
@@ -405,12 +534,23 @@ export class LocalVideoController {
       return;
     }
     context.fillStyle = "black";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.fillRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+    context.drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
   }
 
   /**
-   * 解码或绘制失败时停止媒体推进，并报告一次运行期错误。
+   * Stops media advancement and reports one runtime decode or drawing failure.
    */
   private handleError(
     source: LocalVideoSource
@@ -422,13 +562,19 @@ export class LocalVideoController {
     source.drawTimer = undefined;
     source.video.pause();
     XmaxLogger.realtime.warning(() => "本地视频解码失败 (Local Video Decode Failed)");
-    this.onError(new XmaxError(XmaxErrorCode.mediaError, "Local video decoding failed"));
+    this.onError(new XmaxError(
+      XmaxErrorCode.mediaError,
+      "Local video decoding failed"
+    ));
   }
 
   /**
-   * 构造统一的媒体操作取消错误。
+   * Creates the standard file-media cancellation error.
    */
   private cancelled(): XmaxError {
-    return new XmaxError(XmaxErrorCode.cancelled, "Local video operation was cancelled");
+    return new XmaxError(
+      XmaxErrorCode.cancelled,
+      "Local video operation was cancelled"
+    );
   }
 }

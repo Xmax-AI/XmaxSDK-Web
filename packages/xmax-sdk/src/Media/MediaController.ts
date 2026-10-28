@@ -24,42 +24,43 @@ import type { InteractionFrame } from "./Interaction/InteractionFrame";
 import type { MediaControlling } from "./MediaControlling";
 
 /**
- * 统一持有本地媒体及交互组件；Core 负责串行业务操作，本层管理源和 RTC 资源。
+ * Owns local media and interaction controllers; Core serializes business operations while this layer
+ * manages sources and RTC resources.
  */
 export class MediaController implements MediaControlling {
 
   /**
-   * 本地媒体与交互组件
+   * The camera capture and preview controller.
    */
   private readonly camera: CameraControlling;
 
   /**
-   * 本地文件视频的播放与音视频输出组件。
+   * The local-file playback and audio/video output controller.
    */
   private readonly video: LocalVideoController;
 
   /**
-   * 本地静止图片的视频输出组件。
+   * The still-image video-output controller.
    */
   private readonly image: LocalImageController;
 
   /**
-   * 外部视频轨的所有权和结束事件管理组件。
+   * The external-track ownership and termination controller.
    */
   private readonly external: ExternalVideoController;
 
   /**
-   * 外部帧源的绑定、可选音频和预览组件。
+   * The external-frame-source, audio, and preview controller.
    */
   private readonly externalFrames: ExternalFrameSourceController;
 
   /**
-   * 交互坐标转换与串行发送组件。
+   * The coordinate-mapping and serialized interaction sender.
    */
   private readonly interaction: InteractionController;
 
   /**
-   * 注入基础能力与错误、交互输出，不自行创建跨层业务组件。
+   * Creates a media controller from foundational services and failure/interaction callbacks.
    */
   constructor(
     private readonly dependencies: {
@@ -94,14 +95,18 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 当前可发布的轨道。
+   * The current publishable source track.
    */
   get currentTrack() {
-    return this.externalFrames.currentTrack ?? this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack ?? this.camera.currentTrack;
+    return this.externalFrames.currentTrack
+      ?? this.external.currentTrack
+      ?? this.video.currentTrack
+      ?? this.image.currentTrack
+      ?? this.camera.currentTrack;
   }
 
   /**
-   * 从实际资源推导来源，不维护另一份媒体状态。
+   * The source kind derived from actual resources without duplicate media state.
    */
   get source(): MediaControlling["source"] {
     if (this.externalFrames.isActive || this.external.currentTrack) {
@@ -121,7 +126,7 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 当前源需要发布的音频能力。
+   * Whether the active source supplies publishable audio.
    */
   get hasAudio() {
     if (this.externalFrames.isActive) {
@@ -131,34 +136,40 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 非相机源不等待相机预热。
+   * Whether this camera source requires pre-publication warmup.
    */
   get isFrameValidationEnabled() {
     return this.source === "camera" && this.camera.isFrameValidationEnabled;
   }
 
   /**
-   * 创建前拒绝覆盖活动源或尚未完成的文件准备。
+   * Rejects creation over an active source or pending media preparation.
    */
   ensureNoLocalSource(): void {
     if (this.currentTrack || this.externalFrames.isActive || this.video.isActive || this.image.isActive) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local stream before creating another one");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Close the current local stream before creating another one"
+      );
     }
   }
 
   /**
-   * 保持现有外部轨道能力校验与错误语义。
+   * Validates the adapter's external-media capability.
    */
   validateExternalMediaSupport(
     kind: "local" | "external" | "image"
   ): void {
     if (!this.dependencies.rtcManager.setExternalMediaTracks) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, `The RTC provider does not support ${kind} video streams`);
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        `The RTC provider does not support ${kind} video streams`
+      );
     }
   }
 
   /**
-   * 创建相机流，由相机组件管理 RTC 和预览。
+   * Creates camera media using the camera controller's RTC and preview resources.
    */
   createLocalCameraStream(
     options: Parameters<MediaControlling["createLocalCameraStream"]>[0]
@@ -168,41 +179,52 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 更新活动摄像头规格，保留预览与其他媒体资源。
+   * Updates the active camera format without replacing preview or other media resources.
    */
   updateCameraFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void> {
     if (this.source !== "camera") {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera preview is not started");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Camera preview is not started"
+      );
     }
     return this.camera.updateVideoFormat(videoFormat);
   }
 
   /**
-   * 先解锁用户触发的播放，再由 prepareSource 初始化 RTC。
+   * Unlocks user-initiated playback before prepareSource initializes RTC.
    */
   createLocalVideoStream(
     options: Parameters<MediaControlling["createLocalVideoStream"]>[0],
     signal: AbortSignal
   ) {
     this.ensureNoLocalSource();
-    return this.video.create(options, this.dependencies.mediaService, signal);
+    return this.video.create(
+      options,
+      this.dependencies.mediaService,
+      signal
+    );
   }
 
   /**
-   * 解码本地图片并准备静止视频轨，不申请设备权限。
+   * Decodes an image into a still-video track without requesting device permission.
    */
   createLocalImageStream(
     options: Parameters<MediaControlling["createLocalImageStream"]>[0],
     signal: AbortSignal
   ) {
     this.ensureNoLocalSource();
-    return this.image.create(options, this.dependencies.mediaService, signal);
+    return this.image.create(
+      options,
+      this.dependencies.mediaService,
+      signal
+    );
   }
 
   /**
-   * 绑定帧源或接管兼容视频轨副本，不停止调用方原始采集。
+   * Binds a frame source or compatibility-track clone without stopping app-owned capture.
    */
   async createExternalVideoStream(
     options: Parameters<MediaControlling["createExternalVideoStream"]>[0],
@@ -211,22 +233,35 @@ export class MediaController implements MediaControlling {
     this.ensureNoLocalSource();
     if (options.source !== undefined) {
       if (options.videoTrack !== undefined || options.videoFormat !== undefined) {
-        throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External source and video track options cannot be combined");
+        throw new XmaxError(
+          XmaxErrorCode.invalidConfiguration,
+          "External source and video track options cannot be combined"
+        );
       }
-      return this.externalFrames.create(options.source, this.dependencies.mediaService, signal);
+      return this.externalFrames.create(
+        options.source,
+        this.dependencies.mediaService,
+        signal
+      );
     }
-    return this.external.create(options, this.dependencies.mediaService);
+    return this.external.create(
+      options,
+      this.dependencies.mediaService
+    );
   }
 
   /**
-   * 将连接发布状态传给外部音频，不影响相机或文件源。
+   * Passes publication state to external audio without affecting camera or file sources.
    */
-  setExternalAudioPublished(published: boolean): void {
+  setExternalAudioPublished(
+    published: boolean
+  ): void {
     this.externalFrames.setAudioPublished(published);
   }
 
   /**
-   * 初始化 RTC 并绑定非相机轨道；取消后不继续安装轨道。
+   * Initializes RTC and installs non-camera tracks, validating operation ownership across asynchronous
+   * boundaries.
    */
   async prepareSource(
     ensureCurrent: () => void
@@ -235,16 +270,21 @@ export class MediaController implements MediaControlling {
     await rtc.initialize();
     ensureCurrent();
 
-    const track = this.externalFrames.currentTrack ?? this.external.currentTrack ?? this.video.currentTrack ?? this.image.currentTrack;
+    const track = this.externalFrames.currentTrack
+      ?? this.external.currentTrack
+      ?? this.video.currentTrack
+      ?? this.image.currentTrack;
     if (track?.mediaStreamTrack) {
-      await rtc.setExternalMediaTracks!({ videoTrack: track.mediaStreamTrack,
-        audioTrack: this.externalFrames.isActive ? this.externalFrames.audioTrack : this.video.audioTrack });
+      await rtc.setExternalMediaTracks!({
+        videoTrack: track.mediaStreamTrack,
+        audioTrack: this.externalFrames.isActive ? this.externalFrames.audioTrack : this.video.audioTrack
+      });
       ensureCurrent();
     }
   }
 
   /**
-   * 设置相机预览就绪通知。
+   * Sets the camera-preview readiness callback.
    */
   setCameraPreviewReadyHandler(
     handler?: CameraPreviewReadyHandler
@@ -253,7 +293,7 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 等待相机预热。
+   * Waits for camera warmup.
    */
   waitForValidCameraFrame(
     signal: AbortSignal
@@ -262,24 +302,27 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 切换相机；外部采集不由 SDK 控制。
+   * Switches camera capture; external devices remain controlled by your app.
    */
   switchCamera() {
     if (this.externalFrames.isActive || this.external.currentTrack) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External video capture is managed by the caller");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "External video capture is managed by the caller"
+      );
     }
     return this.camera.switchCamera();
   }
 
   /**
-   * 停止相机资源。
+   * Stops camera resources.
    */
   stopLocalCameraStream(): Promise<void> {
     return this.camera.stopLocalCameraStream();
   }
 
   /**
-   * 生成开始后启动文件播放。
+   * Starts file playback after generation signaling.
    */
   startLocalVideo(
     signal: AbortSignal
@@ -288,14 +331,15 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 断开时保留文件预览资源但暂停时间线。
+   * Pauses the file timeline while retaining preview resources during disconnection.
    */
   pauseLocalVideo(): void {
     this.video.pause();
   }
 
   /**
-   * 释放当前源，RTC 销毁失败也释放外部轨和解码器。
+   * Releases the current source, ensuring RTC teardown failure does not skip external-track or decoder
+   * cleanup.
    */
   async stopLocalStream(): Promise<void> {
     this.stopInteraction();
@@ -321,25 +365,28 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * 使用固定媒体基准启用交互，外部视频轨也发送归一化坐标。
-   * 不读取调档后的编码规格或生成画布。
+   * Enables interaction against the fixed media baseline, including normalized external-video
+   * coordinates. Adapted encoding dimensions and generation canvases do not affect this mapping.
    */
   startInteraction(
     taskID: string,
     format: RealtimeVideoFormat
   ): void {
-    this.interaction.startInteraction(taskID, format);
+    this.interaction.startInteraction(
+      taskID,
+      format
+    );
   }
 
   /**
-   * 结束任务时立即清除待发采样。
+   * Drops pending interaction samples immediately when a task ends.
    */
   stopInteraction(): void {
     this.interaction.stopInteraction();
   }
 
   /**
-   * 接收渲染层快照并交给坐标与发送队列处理。
+   * Routes a render-layer snapshot through coordinate mapping and message submission.
    */
   submitInteraction(
     frame: InteractionFrame

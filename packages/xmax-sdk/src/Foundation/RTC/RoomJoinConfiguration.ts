@@ -11,73 +11,73 @@
 import { RtcProvider } from "./RtcProvider";
 
 /**
- * TRTC 进房身份和鉴权参数。
+ * The TRTC room identity and authentication settings.
  */
 export interface RoomJoinConfigurationInit {
 
   /**
-   * TRTC 房间号（字符串房间号）。
+   * The string TRTC room ID.
    */
   roomID: string;
 
   /**
-   * TRTC 登录身份（`rtc_user_id`）。
+   * The TRTC login identity from rtc_user_id.
    */
   userID: string;
 
   /**
-   * TRTC SDKAppID（字符串形式，进房时转换为数值）。
+   * The SDKAppID as a string, converted to a number when joining.
    */
   sdkAppID: string;
 
   /**
-   * TRTC 登录签名。
+   * The TRTC login signature.
    */
   userSig: string;
 
   /**
-   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   * The TRTC privateMapKey authorizing entry into a string-ID room.
    */
   privateMapKey: string;
 }
 
 /**
- * RTC 房间加入参数。
+ * The TRTC room-join configuration.
  */
 export class RoomJoinConfiguration {
 
   /**
-   * RTC 提供方。
+   * The RTC provider.
    */
   readonly provider = RtcProvider.trtc;
 
   /**
-   * TRTC 房间号（字符串房间号）。
+   * The string TRTC room ID.
    */
   readonly roomID: string;
 
   /**
-   * TRTC 登录身份（`rtc_user_id`）。
+   * The TRTC login identity from rtc_user_id.
    */
   readonly userID: string;
 
   /**
-   * TRTC SDKAppID（字符串形式，进房时转换为数值）。
+   * The SDKAppID as a string, converted to a number when joining.
    */
   readonly sdkAppID: string;
 
   /**
-   * TRTC 登录签名。
+   * The TRTC login signature.
    */
   readonly userSig: string;
 
   /**
-   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   * The TRTC privateMapKey authorizing entry into a string-ID room.
    */
   readonly privateMapKey: string;
 
   /**
-   * 创建房间加入参数。
+   * Creates room-join parameters.
    */
   constructor(
     init: RoomJoinConfigurationInit
@@ -91,68 +91,68 @@ export class RoomJoinConfiguration {
 }
 
 /**
- * 声网进房参数；App ID、频道、用户和 Token 必须来自同一会话。
+ * Agora join parameters whose application, channel, user, and token must belong to the same session.
  */
 export interface AgoraRoomJoinConfiguration {
 
   /**
-   * RTC 提供方，决定进房参数和凭据的解析方式。
+   * The RTC credential discriminator.
    */
   readonly provider: RtcProvider.agora;
 
   /**
-   * RTC 房间标识。
+   * The RTC room ID.
    */
   readonly roomID: string;
 
   /**
-   * RTC 用户标识。
+   * The RTC user ID.
    */
   readonly userID: string;
 
   /**
-   * RTC 应用标识。
+   * The RTC application ID.
    */
   readonly appID: string;
 
   /**
-   * 进房及续期使用的鉴权令牌。
+   * The authentication token used for joining and renewal.
    */
   readonly roomToken: string;
 }
 
 /**
- * 火山引擎进房参数，不混用不同厂商的鉴权字段。
+ * VeRTC join parameters, kept separate from other providers' credentials.
  */
 export interface VeRtcRoomJoinConfiguration {
 
   /**
-   * RTC 提供方，决定进房参数和凭据的解析方式。
+   * The RTC credential discriminator.
    */
   readonly provider: RtcProvider.vertc;
 
   /**
-   * RTC 房间标识。
+   * The RTC room ID.
    */
   readonly roomID: string;
 
   /**
-   * RTC 用户标识。
+   * The RTC user ID.
    */
   readonly userID: string;
 
   /**
-   * RTC 应用标识。
+   * The RTC application ID.
    */
   readonly appID: string;
 
   /**
-   * 进房及续期使用的鉴权令牌。
+   * The authentication token used for joining and renewal.
    */
   readonly roomToken: string;
 }
 
 /**
- * 按 RTC 提供方区分的进房参数。
+ * Room-join parameters discriminated by RTC provider.
  */
 export type RtcRoomJoinConfiguration = RoomJoinConfiguration | AgoraRoomJoinConfiguration | VeRtcRoomJoinConfiguration;

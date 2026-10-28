@@ -22,38 +22,38 @@ import { EncodingBitratePolicy } from "./EncodingBitratePolicy";
 import type { EncodingControlling } from "./EncodingControlling";
 
 /**
- * 业务编码偏好与 RTC 编码策略的对应关系。
+ * The mapping from public encoding preferences to RTC preferences.
  */
 const ENCODER_PREFERENCE_MAP: Record<
   RealtimeVideoEncoderPreference,
   RtcVideoEncoderPreference
 > = {
-  [RealtimeVideoEncoderPreference.maintainFramerate]:
-    RtcVideoEncoderPreference.maintainFramerate,
-  [RealtimeVideoEncoderPreference.maintainQuality]:
-    RtcVideoEncoderPreference.maintainQuality,
-};
+    [RealtimeVideoEncoderPreference.maintainFramerate]:
+      RtcVideoEncoderPreference.maintainFramerate,
+    [RealtimeVideoEncoderPreference.maintainQuality]:
+      RtcVideoEncoderPreference.maintainQuality,
+  };
 
 /**
- * 根据实时视频格式配置 RTC 视频编码参数。
+ * Configures RTC encoding from a realtime video format.
  *
- * 默认最低码率为 500 kbps，且不超过当前最高码率；最高码率由共享预算策略计算。
- * 格式显式指定码率时以显式值为准。
+ * The default minimum is the lower of 500 kbps and the resolved maximum. The shared budget computes the
+ * maximum unless explicit format bounds override defaults.
  */
 export class EncodingController implements EncodingControlling {
 
   /**
-   * 基础层组件
+   * The RTC adapter receiving encoding settings.
    */
   private readonly rtcManager: RtcManaging;
 
   /**
-   * 最近成功应用到 RTC 的编码配置。
+   * The last encoding settings successfully applied to RTC.
    */
   private lastAppliedConfiguration?: VideoEncodingConfiguration;
 
   /**
-   * 创建编码控制器。
+   * Creates an encoding controller.
    */
   constructor(
     options: {
@@ -64,7 +64,7 @@ export class EncodingController implements EncodingControlling {
   }
 
   /**
-   * 校验视频格式，解析显式或推荐码率范围后配置 RTC 编码器；参数或配置失败时抛错。
+   * Validates the format, resolves explicit or default bitrate bounds, and configures RTC.
    */
   async configure(
     videoFormat: RealtimeVideoFormat
@@ -81,7 +81,9 @@ export class EncodingController implements EncodingControlling {
       maximum = videoFormat.maximumBitrate;
     } else {
       const defaults = EncodingBitratePolicy.resolve(
-        videoFormat.width, videoFormat.height, videoFormat.fps,
+        videoFormat.width,
+        videoFormat.height,
+        videoFormat.fps,
       );
       maximum = videoFormat.maximumBitrate ?? defaults.maximum;
       minimum = videoFormat.minimumBitrate ?? Math.min(500, maximum);
@@ -107,24 +109,34 @@ export class EncodingController implements EncodingControlling {
   }
 
   /**
-   * 只替换目标帧率，保留最近成功应用的尺寸、已解析码率区间和偏好。
+   * Replaces only frame rate while retaining the last successful dimensions, resolved bitrate range, and
+   * preference.
    */
   async updateFrameRate(
     fps: number
   ): Promise<RealtimeVideoFormat> {
     const previous = this.lastAppliedConfiguration;
     if (!previous) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Apply an encoder configuration before updating frame rate");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Apply an encoder configuration before updating frame rate"
+      );
     }
     const format = new RealtimeVideoFormat({
-      width: previous.width, height: previous.height, fps,
-      minimumBitrate: previous.minimumBitrate, maximumBitrate: previous.maximumBitrate,
+      width: previous.width,
+      height: previous.height,
+      fps,
+      minimumBitrate: previous.minimumBitrate,
+      maximumBitrate: previous.maximumBitrate,
       encoderPreference: previous.encoderPreference === RtcVideoEncoderPreference.maintainFramerate
         ? RealtimeVideoEncoderPreference.maintainFramerate : RealtimeVideoEncoderPreference.maintainQuality,
     });
     format.validate();
     if (fps !== previous.frameRate) {
-      const next = { ...previous, frameRate: fps };
+      const next = {
+        ...previous,
+        frameRate: fps
+      };
       await this.rtcManager.configureVideoEncoding(next);
       this.lastAppliedConfiguration = next;
     }

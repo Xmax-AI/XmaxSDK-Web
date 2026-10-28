@@ -11,94 +11,96 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 实时视频的编码策略偏好。
+ * Encoding preferences for realtime video.
  */
 export enum RealtimeVideoEncoderPreference {
 
   /**
-   * 优先保障帧率（弱网降分辨率）。
+   * Prioritizes frame rate by reducing resolution on constrained networks.
    */
   maintainFramerate = "maintainFramerate",
 
   /**
-   * 优先保障分辨率（弱网降帧率）。
+   * Prioritizes resolution by reducing frame rate on constrained networks.
    */
   maintainQuality = "maintainQuality",
 }
 
 /**
- * 视频尺寸、帧率和上传编码选项。
+ * Video dimensions, frame rate, and uplink encoding options.
  */
 export interface RealtimeVideoFormatInit {
 
   /**
-   * 视频宽度，单位为像素。
+   * The video width, in pixels.
    */
   width: number;
 
   /**
-   * 视频高度，单位为像素。
+   * The video height, in pixels.
    */
   height: number;
 
   /**
-   * 视频帧率，必须大于 0。
+   * The video frame rate, which must be positive.
    */
   fps: number;
 
   /**
-   * 最低上传码率，单位为 kbps；缺省取 500 与最高码率的较小值，0 表示不设下限。
+   * The minimum uplink bitrate, in kbps; defaults to the lower of 500 and the maximum bitrate. Zero
+   * disables the lower bound.
    */
   minimumBitrate?: number;
 
   /**
-   * 最高上传码率，单位为 kbps；缺省使用 SDK 默认值，指定时必须大于 0。
+   * The maximum uplink bitrate, in kbps; must be positive when supplied. Omission uses the SDK default.
    */
   maximumBitrate?: number;
 
   /**
-   * 上传编码策略偏好，默认优先保障帧率。
+   * The uplink encoding preference; defaults to maintaining frame rate.
    */
   encoderPreference?: RealtimeVideoEncoderPreference;
 }
 
 /**
- * 实时视频的尺寸、帧率和上传编码配置。
+ * The dimensions, frame rate, and uplink encoding configuration for realtime video.
  */
 export class RealtimeVideoFormat {
 
   /**
-   * 视频宽度，单位为像素。
+   * The video width, in pixels.
    */
   readonly width: number;
 
   /**
-   * 视频高度，单位为像素。
+   * The video height, in pixels.
    */
   readonly height: number;
 
   /**
-   * 视频帧率，单位为 fps。
+   * The video frame rate, in fps.
    */
   readonly fps: number;
 
   /**
-   * 最低上传码率，单位为 kbps；缺省取 500 与最高码率的较小值，0 表示不设下限；仅支持该参数的 RTC 链路生效。
+   * The minimum uplink bitrate, in kbps, for providers that support it. Defaults to the lower of 500 and
+   * the maximum bitrate; zero disables the lower bound.
    */
   readonly minimumBitrate?: number;
 
   /**
-   * 最高上传码率，单位为 kbps；未指定时由 SDK 计算。
+   * The maximum uplink bitrate, in kbps; calculated by XmaxSDK when omitted.
    */
   readonly maximumBitrate?: number;
 
   /**
-   * 弱网下优先保障帧率或分辨率的编码策略。
+   * The preference for retaining frame rate or resolution on constrained networks.
    */
   readonly encoderPreference: RealtimeVideoEncoderPreference;
 
   /**
-   * 创建实时视频格式。
+   * Creates a realtime video format.
    */
   constructor(
     init: RealtimeVideoFormatInit
@@ -114,8 +116,9 @@ export class RealtimeVideoFormat {
   }
 
   /**
-   * 校验尺寸、帧率和显式指定的码率范围。
-   * @throws 尺寸、帧率或码率配置无效时抛出错误。
+   * Validates dimensions, frame rate, and explicit bitrate bounds.
+   *
+   * @throws An error if the dimensions, frame rate, or bitrate configuration is invalid.
    */
   validate(): void {
     if (
@@ -159,7 +162,7 @@ export class RealtimeVideoFormat {
   }
 
   /**
-   * 调整尺寸，保留帧率和上传编码配置。
+   * Returns a resized format, preserving frame rate and uplink encoding options.
    */
   resized(
     width: number,

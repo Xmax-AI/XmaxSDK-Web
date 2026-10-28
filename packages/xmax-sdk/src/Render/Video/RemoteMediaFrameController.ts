@@ -17,59 +17,63 @@ import type { RealtimeMediaFrameListener } from "../../Service/Realtime/Realtime
 import { RealtimeMediaFrameDispatcher } from "./RealtimeMediaFrameDispatcher";
 
 /**
- * 编排原始远端音视频观察与有界交付，不持有录制器、文件或时长限制。
+ * Coordinates original remote-media observation and bounded delivery without owning recording, files, or
+ * duration limits.
  */
 export class RemoteMediaFrameController {
 
   /**
-   * 监听器与准备操作
+   * The app's original-media listener.
    */
   private listener?: RealtimeMediaFrameListener;
 
   /**
-   * 取消尚未完成的音频初始化。
+   * The controller cancelling unfinished audio initialization.
    */
   private setup?: AbortController;
 
   /**
-   * 已准备的音频线程。
+   * The prepared audio observation source.
    */
   private audio?: RemoteAudioFrameSource;
 
   /**
-   * 原始视频观察器与交付队列
+   * The original-video observer.
    */
   private readonly video = new RemoteVideoFrameSource();
 
   /**
-   * 限制尚未交付的媒体占用。
+   * The bounded media delivery queue.
    */
   private readonly dispatcher = new RealtimeMediaFrameDispatcher();
 
   /**
-   * RTC 当前结果流与已经安装的绑定。
+   * The RTC result-track binding currently supplied by transport.
    */
   private source?: RemoteMediaTracks;
 
   /**
-   * 当前取帧绑定。
+   * The installed frame-observation binding.
    */
   private bound?: RemoteMediaTracks;
 
   /**
-   * 同一结果流的音视频共享标识。
+   * The shared audio/video ID for the current result stream.
    */
   private streamID?: string;
 
   /**
-   * 同一绑定只报告一次运行期取帧错误。
+   * Whether this binding has reported an observation failure.
    */
   private reportedError = false;
 
   /**
-   * 替换或取消观察；准备失败仅拒绝本次设置，不终止实时生成。
+   * Replaces or cancels observation; preparation failure rejects only this setup without terminating
+   * generation.
    */
-  async setListener(listener?: RealtimeMediaFrameListener): Promise<void> {
+  async setListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void> {
     this.setup?.abort();
     const setup = new AbortController();
     this.setup = setup;
@@ -79,41 +83,66 @@ export class RemoteMediaFrameController {
     const previous = this.audio;
     this.audio = undefined;
     await previous?.close();
-    if (setup.signal.aborted) throw new XmaxError(XmaxErrorCode.cancelled, "Remote media listener replaced");
-    if (!listener) return;
+    if (setup.signal.aborted) {
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "Remote media listener replaced"
+      );
+    }
+    if (!listener) {
+      return;
+    }
 
     if (typeof VideoFrame === "undefined" || typeof HTMLVideoElement === "undefined" ||
       typeof HTMLVideoElement.prototype.requestVideoFrameCallback !== "function") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "This browser cannot provide remote video frames");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "This browser cannot provide remote video frames"
+      );
     }
     const audio = new RemoteAudioFrameSource();
     this.audio = audio;
     try {
       await audio.prepare(setup.signal);
-      if (setup.signal.aborted) throw new XmaxError(XmaxErrorCode.cancelled, "Remote media listener replaced");
+      if (setup.signal.aborted) {
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Remote media listener replaced"
+        );
+      }
       this.listener = listener;
       this.dispatcher.setListener(listener);
       this.bind(true);
     } catch (error) {
-      if (this.audio === audio) this.audio = undefined;
+      if (this.audio === audio) {
+        this.audio = undefined;
+      }
       await audio.close();
       throw error;
     }
   }
 
   /**
-   * 结果流、任务或原始音轨变化时更新取帧；未设置监听器时只记录绑定，不分配资源。
+   * Updates observation after stream, task, or audio-track changes; without a listener, records only the
+   * binding.
    */
-  setSource(source?: RemoteMediaTracks): void {
+  setSource(
+    source?: RemoteMediaTracks
+  ): void {
     this.source = source;
-    if (!this.listener || !this.audio) return;
+    if (!this.listener || !this.audio) {
+      return;
+    }
     this.bind();
   }
 
   /**
-   * 安装当前结果流；只换音轨时保持视频和共享标识。
+   * Installs the current stream, preserving video observation and stream identity when only audio
+   * changes.
    */
-  private bind(strict = false): void {
+  private bind(
+    strict = false
+  ): void {
     const source = this.source;
     const previous = this.bound;
     if (!source) {
@@ -122,7 +151,9 @@ export class RemoteMediaFrameController {
     }
     const sameStream = previous?.bindingID === source.bindingID && previous.userID === source.userID &&
       previous.videoTrack === source.videoTrack;
-    if (sameStream && previous.audioTrack === source.audioTrack) return;
+    if (sameStream && previous.audioTrack === source.audioTrack) {
+      return;
+    }
     if (!sameStream) {
       this.stopBinding();
       this.streamID = crypto.randomUUID();
@@ -132,45 +163,90 @@ export class RemoteMediaFrameController {
     const streamID = this.streamID!;
     try {
       if (!sameStream) {
-        this.video.start(source.videoTrack, packet => {
-          if (this.streamID !== streamID) { packet.frame.close(); return; }
-          const frame = Object.freeze({ frame: packet.frame, presentationTimeStamp: packet.frame.timestamp,
-            duration: packet.frame.duration ?? undefined });
-          this.dispatcher.dispatch({ streamID, isDiscontinuous: packet.discontinuous,
-            content: { type: "video", frame }, presentationTimeStamp: frame.presentationTimeStamp, duration: frame.duration });
-        }, error => this.report(error));
+        this.video.start(
+          source.videoTrack,
+          packet => {
+            if (this.streamID !== streamID) {
+              packet.frame.close();
+              return;
+            }
+            const frame = Object.freeze({
+              frame: packet.frame,
+              presentationTimeStamp: packet.frame.timestamp,
+              duration: packet.frame.duration ?? undefined
+            });
+            this.dispatcher.dispatch({
+              streamID,
+              isDiscontinuous: packet.discontinuous,
+              content: {
+                type: "video",
+                frame
+              },
+              presentationTimeStamp: frame.presentationTimeStamp,
+              duration: frame.duration
+            });
+          },
+          error => this.report(error)
+        );
       }
-      this.audio!.setTrack(source.audioTrack, packet => {
-        if (this.streamID !== streamID) return;
-        const frame = Object.freeze({ data: packet.data, sampleRate: packet.sampleRate, channels: packet.channels,
-          samplesPerChannel: packet.samplesPerChannel, presentationTimeStamp: packet.presentationTimeStamp,
-          duration: packet.samplesPerChannel * 1_000_000 / packet.sampleRate });
-        this.dispatcher.dispatch({ streamID, isDiscontinuous: packet.discontinuous,
-          content: { type: "audio", frame }, presentationTimeStamp: frame.presentationTimeStamp, duration: frame.duration });
-      });
+      this.audio!.setTrack(
+        source.audioTrack,
+        packet => {
+          if (this.streamID !== streamID) {
+            return;
+          }
+          const frame = Object.freeze({
+            data: packet.data,
+            sampleRate: packet.sampleRate,
+            channels: packet.channels,
+            samplesPerChannel: packet.samplesPerChannel,
+            presentationTimeStamp: packet.presentationTimeStamp,
+            duration: packet.samplesPerChannel * 1_000_000 / packet.sampleRate
+          });
+          this.dispatcher.dispatch({
+            streamID,
+            isDiscontinuous: packet.discontinuous,
+            content: {
+              type: "audio",
+              frame
+            },
+            presentationTimeStamp: frame.presentationTimeStamp,
+            duration: frame.duration
+          });
+        }
+      );
     } catch (error) {
       this.stopBinding();
-      if (strict) throw error;
+      if (strict) {
+        throw error;
+      }
       this.report(error);
     }
   }
 
   /**
-   * 停止旧绑定和待交付帧，借用的 RTC 轨道保持原状。
+   * Stops obsolete observation and queued packets without changing borrowed RTC tracks.
    */
   private stopBinding(): void {
     this.streamID = undefined;
     this.bound = undefined;
     this.video.stop();
-    this.audio?.setTrack(undefined, () => {});
+    this.audio?.setTrack(
+      undefined,
+      () => { }
+    );
     this.dispatcher.reset();
   }
 
   /**
-   * 运行期观察失败不终止媒体播放或生成；记录明确的诊断原因。
+   * Logs an observation failure without terminating playback or generation.
    */
-  private report(error: unknown): void {
-    if (this.reportedError) return;
+  private report(
+    error: unknown
+  ): void {
+    if (this.reportedError) {
+      return;
+    }
     this.reportedError = true;
     XmaxLogger.render.warning(() => `Remote media frame observation failed: ${XmaxError.from(error).message}`);
   }

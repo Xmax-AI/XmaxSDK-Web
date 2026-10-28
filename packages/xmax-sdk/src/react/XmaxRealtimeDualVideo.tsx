@@ -21,53 +21,54 @@ import {
 } from "react";
 
 /**
- * 双轨实时视频 React 组件的本地、远端轨道及显示选项。
+ * Local and remote tracks and presentation options for the dual-track React component.
  */
 export interface XmaxRealtimeDualVideoProps {
 
   /**
-   * 当前显示的本地视频轨道。
+   * The displayed local track.
    */
   localTrack?: RealtimeVideoTrack;
 
   /**
-   * 当前显示的远端生成视频轨道；首帧提交后自动渐入。
+   * The generated remote track, faded in after first-frame readiness.
    */
   remoteTrack?: RealtimeVideoTrack;
 
   /**
-   * 远端画面的渐入时长，单位为秒，默认 0.3；非正数或非有限值关闭动画，不跳过渲染预热。
+   * The remote fade duration in seconds, defaulting to 0.3. Nonpositive or nonfinite values disable
+   * animation without skipping warmup.
    */
   remoteVideoFadeInDuration?: number;
 
   /**
-   * 视频内容在容器中的显示模式，默认 fill。
+   * The video layout mode; defaults to fill.
    */
   videoContentMode?: VideoContentMode;
 
   /**
-   * 容器类名。
+   * The container class name.
    */
   className?: string;
 
   /**
-   * 是否允许远端轨迹交互，默认 true；本地轨道不参与。
+   * Whether remote interaction is permitted; defaults to true and does not affect local tracks.
    */
   isInteractionEnabled?: boolean;
 
   /**
-   * 自定义轨迹视觉效果，不传时使用默认效果；一个实例仅供一个视图使用。
+   * The custom trajectory effect, or the default when omitted. Use one renderer per view.
    */
   trajectoryRenderer?: TrajectoryEffectRendering;
 
   /**
-   * 容器样式。
+   * The container style.
    */
   style?: CSSProperties;
 }
 
 /**
- * 本地预览和远端生成画面自动切换的 React 组件。
+ * A React component switching automatically between local preview and remote generation.
  */
 export function XmaxRealtimeDualVideo(
   props: XmaxRealtimeDualVideoProps
@@ -75,69 +76,94 @@ export function XmaxRealtimeDualVideo(
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<XmaxRealtimeDualVideoView | undefined>(undefined);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
+  useEffect(
+    () => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
 
-    const view = new XmaxRealtimeDualVideoView({ remoteVideoFadeInDuration: props.remoteVideoFadeInDuration });
-    view.element.style.width = "100%";
-    view.element.style.height = "100%";
-    view.attach(container);
-    viewRef.current = view;
-    return () => {
-      viewRef.current = undefined;
-      view.localTrack = undefined;
-      view.remoteTrack = undefined;
-      view.detach();
-    };
-  }, []);
+      const view = new XmaxRealtimeDualVideoView({ remoteVideoFadeInDuration: props.remoteVideoFadeInDuration });
+      view.element.style.width = "100%";
+      view.element.style.height = "100%";
+      view.attach(container);
+      viewRef.current = view;
+      return () => {
+        viewRef.current = undefined;
+        view.localTrack = undefined;
+        view.remoteTrack = undefined;
+        view.detach();
+      };
+    },
+    []
+  );
 
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.remoteVideoFadeInDuration = props.remoteVideoFadeInDuration ?? 0.3;
-    }
-  }, [props.remoteVideoFadeInDuration]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.remoteVideoFadeInDuration = props.remoteVideoFadeInDuration ?? 0.3;
+      }
+    },
+    [props.remoteVideoFadeInDuration]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view) {
-      view.localTrack = props.localTrack;
-    }
-  }, [props.localTrack]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view) {
+        view.localTrack = props.localTrack;
+      }
+    },
+    [props.localTrack]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view) {
-      view.remoteTrack = props.remoteTrack;
-    }
-  }, [props.remoteTrack]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view) {
+        view.remoteTrack = props.remoteTrack;
+      }
+    },
+    [props.remoteTrack]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view && props.videoContentMode) {
-      view.videoContentMode = props.videoContentMode;
-    }
-  }, [props.videoContentMode]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view && props.videoContentMode) {
+        view.videoContentMode = props.videoContentMode;
+      }
+    },
+    [props.videoContentMode]
+  );
 
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.isInteractionEnabled = props.isInteractionEnabled ?? true;
-    }
-  }, [props.isInteractionEnabled]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.isInteractionEnabled = props.isInteractionEnabled ?? true;
+      }
+    },
+    [props.isInteractionEnabled]
+  );
 
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.trajectoryRenderer = props.trajectoryRenderer;
-    }
-  }, [props.trajectoryRenderer]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.trajectoryRenderer = props.trajectoryRenderer;
+      }
+    },
+    [props.trajectoryRenderer]
+  );
 
   return (
     <div
       ref={containerRef}
       className={props.className}
-      style={{ position: "relative", overflow: "hidden", ...props.style }}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        ...props.style
+      }}
     />
   );
 }

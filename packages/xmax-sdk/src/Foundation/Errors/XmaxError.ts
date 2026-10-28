@@ -9,124 +9,124 @@
 //
 
 /**
- * SDK 向接入方暴露的统一错误码。
+ * The error codes exposed by XmaxSDK.
  */
 export enum XmaxErrorCode {
 
   /**
-   * API Key 未配置或为空。
+   * The API key is missing or empty.
    */
   invalidAPIKey = "INVALID_API_KEY",
 
   /**
-   * 调用参数、配置或当前生命周期状态不符合操作要求。
+   * Arguments, configuration, or lifecycle state do not permit the operation.
    */
   invalidConfiguration = "INVALID_CONFIGURATION",
 
   /**
-   * SDK 内部发生无法归类的非预期错误。
+   * An unexpected SDK failure without a more specific category.
    */
   internalError = "INTERNAL_ERROR",
 
   /**
-   * 网络不可用、连接失败或 HTTP 请求无法完成。
+   * The network is unavailable, connection failed, or an HTTP request could not complete.
    */
   networkError = "NETWORK_ERROR",
 
   /**
-   * Xmax API 返回业务失败，或者响应数据无法正确解析。
+   * The API reported a business failure or its response could not be parsed.
    */
   apiError = "API_ERROR",
 
   /**
-   * 实时生成会话数据缺失、会话关闭或心跳状态异常。
+   * Session information is missing, the session closed, or its heartbeat is invalid.
    */
   sessionError = "SESSION_ERROR",
 
   /**
-   * RTC Engine、房间、媒体传输或渲染绑定发生错误。
+   * An RTC engine, room, transport, or rendering-binding failure.
    */
   rtcError = "RTC_ERROR",
 
   /**
-   * 本地媒体读取、解码、同步或帧处理发生错误。
+   * A local-media read, decode, synchronization, or frame-processing failure.
    */
   mediaError = "MEDIA_ERROR",
 
   /**
-   * 接入方未授予相机权限。
+   * Camera permission was not granted.
    */
   cameraPermissionDenied = "CAMERA_PERMISSION_DENIED",
 
   /**
-   * @deprecated 为兼容保留；相机预热改为固定等待，不再抛出此错误。
+   * @deprecated Retained for compatibility. Fixed camera warmup no longer throws this error.
    */
   cameraExposureTimeout = "CAMERA_EXPOSURE_TIMEOUT",
 
   /**
-   * 接入方未授予麦克风权限。
+   * Microphone permission was not granted.
    */
   microphonePermissionDenied = "MICROPHONE_PERMISSION_DENIED",
 
   /**
-   * 文件或二进制数据上传失败。
+   * A file or binary upload failed.
    */
   uploadError = "UPLOAD_ERROR",
 
   /**
-   * 远端文件下载失败。
+   * A remote-file download failed.
    */
   downloadError = "DOWNLOAD_ERROR",
 
   /**
-   * 图片未通过内容安全检查。
+   * The image failed content-safety checks.
    */
   unsafeImage = "UNSAFE_IMAGE",
 
   /**
-   * 操作因生命周期切换或接入方主动终止而正常取消。
+   * The operation was cancelled by a lifecycle transition or your app.
    */
   cancelled = "CANCELLED",
 
   /**
-   * 等待连接、房间事件或生成结果超过规定时间。
+   * The connection, room event, or generation result exceeded its wait limit.
    */
   timeout = "TIMEOUT",
 }
 
 /**
- * SDK 内部组件上报统一错误时使用的监听器。
+ * Receives normalized errors reported by internal SDK components.
  */
 export type XmaxErrorListener = (
   error: XmaxError
 ) => void;
 
 /**
- * 表示 SDK 抛出或回调给接入方的统一错误。
+ * A normalized error thrown or delivered by XmaxSDK.
  */
 export class XmaxError extends Error {
 
   /**
-   * SDK 统一错误码。
+   * The SDK error category.
    */
   readonly code: XmaxErrorCode;
 
   /**
-   * Xmax API 返回的业务错误码；非 API 业务错误时为空。
+   * The API business error code, when supplied by an API failure.
    */
   readonly apiCode?: number;
 
   /**
-   * HTTP 响应状态码；请求未获得响应时为空。
+   * The HTTP status code, when a response was received.
    */
   readonly httpStatus?: number;
 
   /**
-   * 创建 SDK 错误。
+   * Creates an SDK error.
    *
-   * @param code SDK 统一错误码。
-   * @param message 面向接入方的可读错误说明。
-   * @param options Xmax API 业务错误码与 HTTP 状态码（可选）。
+   * @param code - The SDK error category.
+   * @param message - The readable error description.
+   * @param options - Optional API business and HTTP status codes.
    */
   constructor(
     code: XmaxErrorCode,
@@ -144,10 +144,10 @@ export class XmaxError extends Error {
   }
 
   /**
-   * 将未知错误转换为 SDK 内部错误，已有 `XmaxError` 原样返回。
+   * Normalizes an unknown error, returning existing XmaxError instances unchanged.
    *
-   * @param error 待转换的错误。
-   * @returns 可向接入方抛出或回调的统一错误。
+   * @param error - The error to normalize.
+   * @returns An SDK error suitable for rejection or callback delivery.
    */
   static from(
     error: unknown
@@ -159,6 +159,9 @@ export class XmaxError extends Error {
       error instanceof Error && error.message.trim().length > 0
         ? error.message.trim()
         : String(error);
-    return new XmaxError(XmaxErrorCode.internalError, message);
+    return new XmaxError(
+      XmaxErrorCode.internalError,
+      message
+    );
   }
 }

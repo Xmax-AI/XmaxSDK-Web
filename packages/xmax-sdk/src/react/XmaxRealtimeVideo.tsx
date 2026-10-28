@@ -22,56 +22,57 @@ import {
 } from "react";
 
 /**
- * 单轨实时视频 React 组件的轨道、显示和交互选项。
+ * Track, presentation, and interaction options for the single-track React component.
  */
 export interface XmaxRealtimeVideoProps {
 
   /**
-   * 当前显示的视频轨道；置空时清空画面。
+   * The displayed track; undefined clears video.
    */
   track?: RealtimeVideoTrack;
 
   /**
-   * 视频内容在容器中的显示模式，默认 fill。
+   * The video layout mode; defaults to fill.
    */
   videoContentMode?: VideoContentMode;
 
   /**
-   * 是否镜像显示（仅影响显示，不影响发布流）。
+   * Whether display is mirrored without affecting publication.
    */
   mirrored?: boolean;
 
   /**
-   * 当前视图的呈现帧率统计；换流或卸载时清空，不受统计面板显示开关影响。
+   * The current view's presentation statistics, cleared on replacement or detachment and independent of
+   * statistics-panel visibility.
    */
   onRenderStatistics?: (
     statistics?: VideoRenderStatistics
   ) => void;
 
   /**
-   * 容器类名。
+   * The container class name.
    */
   className?: string;
 
   /**
-   * 是否允许远端轨迹交互，默认 true；本地轨道不参与。
+   * Whether remote interaction is permitted; defaults to true and does not affect local tracks.
    */
   isInteractionEnabled?: boolean;
 
   /**
-   * 自定义轨迹视觉效果，不传时使用默认效果；一个实例仅供一个视图使用。
+   * The custom trajectory effect, or the default when omitted. Use one renderer per view.
    */
   trajectoryRenderer?: TrajectoryEffectRendering;
 
   /**
-   * 容器样式。
+   * The container style.
    */
   style?: CSSProperties;
 }
 
 /**
- * 单轨视频 React 组件：把一路视频轨渲染到容器。
- * SDK 远端轨道自动预热 1000 ms 后渐入，本地预览直接显示。
+ * A React component rendering one video track. SDK remote tracks warm up before fading in; local preview
+ * displays immediately.
  */
 export function XmaxRealtimeVideo(
   props: XmaxRealtimeVideoProps
@@ -79,67 +80,93 @@ export function XmaxRealtimeVideo(
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<XmaxRealtimeVideoView | undefined>(undefined);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
+  useEffect(
+    () => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
 
-    const view = new XmaxRealtimeVideoView();
-    view.element.style.width = "100%";
-    view.element.style.height = "100%";
-    view.attach(container);
-    viewRef.current = view;
-    return () => {
-      viewRef.current = undefined;
-      view.track = undefined;
-      view.detach();
-    };
-  }, []);
+      const view = new XmaxRealtimeVideoView();
+      view.element.style.width = "100%";
+      view.element.style.height = "100%";
+      view.attach(container);
+      viewRef.current = view;
+      return () => {
+        viewRef.current = undefined;
+        view.track = undefined;
+        view.detach();
+      };
+    },
+    []
+  );
 
-  useEffect(() => {
-    if (viewRef.current)
-      viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
-  }, [props.onRenderStatistics]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.renderStatisticsHandler = props.onRenderStatistics;
+      }
+    },
+    [props.onRenderStatistics]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view) {
-      view.track = props.track;
-    }
-  }, [props.track]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view) {
+        view.track = props.track;
+      }
+    },
+    [props.track]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view && props.videoContentMode) {
-      view.videoContentMode = props.videoContentMode;
-    }
-  }, [props.videoContentMode]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view && props.videoContentMode) {
+        view.videoContentMode = props.videoContentMode;
+      }
+    },
+    [props.videoContentMode]
+  );
 
-  useEffect(() => {
-    const view = viewRef.current;
-    if (view && props.mirrored !== undefined) {
-      view.isMirrored = props.mirrored;
-    }
-  }, [props.mirrored]);
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view && props.mirrored !== undefined) {
+        view.isMirrored = props.mirrored;
+      }
+    },
+    [props.mirrored]
+  );
 
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.isInteractionEnabled = props.isInteractionEnabled ?? true;
-    }
-  }, [props.isInteractionEnabled]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.isInteractionEnabled = props.isInteractionEnabled ?? true;
+      }
+    },
+    [props.isInteractionEnabled]
+  );
 
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.trajectoryRenderer = props.trajectoryRenderer;
-    }
-  }, [props.trajectoryRenderer]);
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.trajectoryRenderer = props.trajectoryRenderer;
+      }
+    },
+    [props.trajectoryRenderer]
+  );
 
   return (
     <div
       ref={containerRef}
       className={props.className}
-      style={{ position: "relative", overflow: "hidden", ...props.style }}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        ...props.style
+      }}
     />
   );
 }

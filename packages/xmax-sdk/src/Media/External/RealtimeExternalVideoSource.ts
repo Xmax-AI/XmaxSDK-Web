@@ -12,72 +12,121 @@ import type { RealtimeExternalAudioFrame } from "../../Foundation/Media/Audio/Re
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
 /**
- * 外部帧源与兼容视频轨入口二选一，禁止混用两套所有权和生命周期。
+ * Mutually exclusive external-frame-source and compatibility-track inputs with separate ownership
+ * contracts.
  */
 export type RealtimeExternalVideoStreamOptions =
-  | { source: RealtimeExternalVideoSource; videoTrack?: never; videoFormat?: never }
-  | { videoTrack: MediaStreamTrack; videoFormat: RealtimeVideoFormat; source?: never };
+  | {
+
+    /**
+     * The app-owned source that submits video and optional audio frames.
+     */
+    source: RealtimeExternalVideoSource;
+
+    /**
+     * Excludes a compatibility track when a frame source is supplied.
+     */
+    videoTrack?: never;
+
+    /**
+     * Uses the frame source's format instead of a separate format.
+     */
+    videoFormat?: never
+  }
+  | {
+
+    /**
+     * The app-owned video track used by the compatibility input path.
+     */
+    videoTrack: MediaStreamTrack;
+
+    /**
+     * The compatibility track's declared video format.
+     */
+    videoFormat: RealtimeVideoFormat;
+
+    /**
+     * Excludes a frame source when a compatibility track is supplied.
+     */
+    source?: never
+  };
 
 /**
- * 接入方拥有的外部采集、解码或处理源；SDK 不申请设备权限，也不播放输入音频。
- * videoFormat 和 hasAudio 在一次绑定内保持不变，音视频时间戳使用同一单调时间轴。
+ * An app-owned capture, decoding, or processing source that does not request SDK device access or play
+ * input audio. videoFormat and hasAudio stay fixed for one binding. Audio and video timestamps share one
+ * monotonic timeline.
  */
 export interface RealtimeExternalVideoSource {
 
   /**
-   * 原始视频尺寸、帧率及编码配置；方向和镜像由接入方处理到像素中。
+   * The original dimensions, frame rate, and encoding settings; your app applies orientation and
+   * mirroring to the pixels.
    */
   readonly videoFormat: RealtimeVideoFormat;
 
   /**
-   * 是否通过 sink 提交音频，默认 false。
+   * Whether audio is submitted through the sink; defaults to false.
    */
   readonly hasAudio?: boolean;
 
   /**
-   * 安装帧回调并在源可交付后返回；不要等待首帧或生成开始。
-   * 接入方按实时节奏提交，断开连接时可继续送视频以维持预览。
+   * Installs the sink and resolves when delivery is possible, without waiting for a frame or generation.
+   * Submit at realtime pace; disconnected video input may continue for preview.
    */
-  start(sink: RealtimeExternalFrameSink): Promise<void>;
+  start(
+    sink: RealtimeExternalFrameSink
+  ): Promise<void>;
 
   /**
-   * 停止交付并解除 sink 引用，须可重复调用；采集设备及播放器仍归接入方管理。
+   * Stops delivery and drops the sink reference idempotently. Your app retains capture-device and player
+   * ownership.
    */
   stop(): Promise<void>;
 }
 
 /**
- * 一次外部源绑定的输入端；可在提交返回后 close 原帧，SDK 不接管原帧所有权。
- * VideoFrame.timestamp 和 AudioData.timestamp 均为非负微秒时间，不能跨循环或 seek 回退。
+ * The input sink for one source binding. Your app may close original frames after submission returns.
+ * VideoFrame and AudioData timestamps are nonnegative microseconds and must remain increasing across
+ * loops and seeks.
  */
 export interface RealtimeExternalFrameSink {
 
   /**
-   * 经过像素面积约束和 4 对齐的固定媒体规格；提交时仍使用 source.videoFormat 的尺寸。
+   * The fixed area-limited, four-pixel-aligned media format; submitted frames still use
+   * source.videoFormat dimensions.
    */
   readonly videoFormat: RealtimeVideoFormat;
 
   /**
-   * 是否接受输入；断开时仍为 true，解绑或源失败后永久变为 false。
+   * Whether input is accepted. Disconnect retains acceptance; unbinding or failure permanently disables
+   * it.
    */
   readonly isRequestingFrames: boolean;
 
   /**
-   * 提交原始尺寸的视频帧；SDK 保留副本并缩放到媒体规格，不保证交付每个输入帧。
-   * 重复、回退或无效时间戳被忽略。输入需按实时节奏送达，提前量不得超过两秒。
+   * Submits a source-sized frame, retaining a copy and scaling it to the media format without
+   * guaranteeing every frame is delivered. Invalid, duplicate, or decreasing timestamps are ignored.
+   * Submit at realtime pace, no more than two seconds ahead.
    */
-  pushVideo(frame: VideoFrame): void;
+  pushVideo(
+    frame: VideoFrame
+  ): void;
 
   /**
-   * 提交解码后的 PCM，仅 hasAudio=true 时接受；不接收压缩音频。
-   * 支持 8–192 kHz、1–8 声道，单包不超过一秒；格式在一次绑定内保持不变。
-   * SDK 复制并混成单声道，经 AudioWorklet 重采样和调度；仅发布期间上传，不缓存待重连。
-   * 音频重叠或无效时间戳被忽略，间断在浏览器连续音轨中输出静音，不压缩时间轴。
+   * Submits decoded PCM only when hasAudio is true; compressed audio is unsupported. Accepts 8–192 kHz,
+   * 1–8 channels, and packets no longer than one second, with a fixed format per binding. Samples are
+   * copied, mixed to mono, resampled, and scheduled by AudioWorklet. Only published audio is uploaded;
+   * no backlog is retained for reconnection. Invalid or overlapping timestamps are ignored and gaps
+   * produce silence without timeline compression.
    */
-  pushAudio(frame: RealtimeExternalAudioFrame): void;
+  pushAudio(
+    frame: RealtimeExternalAudioFrame
+  ): void;
 
   /**
-   * 上报不可恢复的采集或处理错误；SDK 结束连接并释放本地流。
+   * Reports an unrecoverable source failure, ending the connection and releasing local media.
    */
-  reportError(error: Error): void;
+  reportError(
+    error: Error
+  ): void;
 }

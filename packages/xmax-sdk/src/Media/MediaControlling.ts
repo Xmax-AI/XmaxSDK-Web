@@ -18,58 +18,58 @@ import type { RealtimeMediaStream } from "../Service/Realtime/RealtimeMediaStrea
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 
 /**
- * 媒体层统一入口，不向 Core 暴露内部媒体控制器。
+ * The unified media capability boundary, keeping internal source controllers hidden from Core.
  */
 export interface MediaControlling extends InteractionControlling {
 
   /**
-   * 当前活动媒体源的可发布视频轨道。
+   * The active source's publishable video track.
    */
   readonly currentTrack?: RealtimeVideoTrack;
 
   /**
-   * 当前活动媒体源类型。
+   * The active media source kind.
    */
   readonly source?: "camera" | "localVideo" | "localImage" | "externalVideo";
 
   /**
-   * 当前媒体源是否提供可发布的音频轨。
+   * Whether the source provides publishable audio.
    */
   readonly hasAudio: boolean;
 
   /**
-   * 是否在摄像头发布前等待亮度合格的帧。
+   * Whether camera publication waits for startup warmup.
    */
   readonly isFrameValidationEnabled: boolean;
 
   /**
-   * 验证没有活动或正在准备的本地媒体。
+   * Requires no active or preparing local source.
    */
   ensureNoLocalSource(): void;
 
   /**
-   * 验证 RTC 支持外部媒体输入。
+   * Validates RTC support for external media input.
    */
   validateExternalMediaSupport(
     kind: "local" | "external" | "image"
   ): void;
 
   /**
-   * 创建相机采集及预览。
+   * Creates camera capture and preview.
    */
   createLocalCameraStream(
     options: Parameters<CameraControlling["createLocalCameraStream"]>[0]
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 更新当前摄像头媒体规格，其他媒体源不支持。
+   * Updates the camera format; other source kinds are unsupported.
    */
   updateCameraFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
 
   /**
-   * 创建文件视频源并解锁播放，RTC 初始化由 prepareSource 完成。
+   * Creates and unlocks file-video playback; prepareSource initializes RTC.
    */
   createLocalVideoStream(
     options: Parameters<LocalVideoController["create"]>[0],
@@ -77,7 +77,7 @@ export interface MediaControlling extends InteractionControlling {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 创建本地图片静止视频源，RTC 初始化由 prepareSource 完成。
+   * Creates still-image video output; prepareSource initializes RTC.
    */
   createLocalImageStream(
     options: Parameters<LocalImageController["create"]>[0],
@@ -85,7 +85,7 @@ export interface MediaControlling extends InteractionControlling {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 绑定外部帧源或克隆外部轨道，RTC 初始化由 prepareSource 完成。
+   * Binds an external frame source or cloned track; prepareSource initializes RTC.
    */
   createExternalVideoStream(
     options: RealtimeExternalVideoStreamOptions,
@@ -93,55 +93,59 @@ export interface MediaControlling extends InteractionControlling {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 外部音频仅在 RTC 发布完成后开始调度；断开立即清空待发送音频。
+   * Schedules external audio only after publication and clears pending audio immediately on
+   * disconnection.
    */
-  setExternalAudioPublished(published: boolean): void;
+  setExternalAudioPublished(
+    published: boolean
+  ): void;
 
   /**
-   * 初始化当前非相机源的 RTC 并安装外部轨道，每个异步边界检查操作有效性。
+   * Prepares RTC and installs non-camera tracks, checking operation ownership at each asynchronous
+   * boundary.
    */
   prepareSource(
     ensureCurrent: () => void
   ): Promise<void>;
 
   /**
-   * 设置相机预览就绪通知。
+   * Sets camera-preview readiness notification.
    */
   setCameraPreviewReadyHandler(
     handler?: CameraPreviewReadyHandler
   ): void;
 
   /**
-   * 等待相机预热，可随连接取消。
+   * Waits for camera warmup with connection cancellation.
    */
   waitForValidCameraFrame(
     signal: AbortSignal
   ): Promise<void>;
 
   /**
-   * 切换相机，外部轨道由调用方管理。
+   * Switches camera capture without taking ownership of external devices.
    */
   switchCamera(): Promise<RealtimeMediaStream>;
 
   /**
-   * 停止相机并释放其资源。
+   * Stops camera capture and releases its resources.
    */
   stopLocalCameraStream(): Promise<void>;
 
   /**
-   * 生成开始后启动文件视频播放。
+   * Starts local video playback after generation signaling.
    */
   startLocalVideo(
     signal: AbortSignal
   ): Promise<void>;
 
   /**
-   * 暂停文件视频，保留本地资源。
+   * Pauses file playback while retaining local resources.
    */
   pauseLocalVideo(): void;
 
   /**
-   * 释放当前源和 RTC，任何失败都不跳过本地轨道清理。
+   * Releases the source and RTC, preserving local-track cleanup even when another release step fails.
    */
   stopLocalStream(): Promise<void>;
 }

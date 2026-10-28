@@ -11,94 +11,99 @@
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { XmaxError } from "../../Foundation/Errors/XmaxError";
 import type { RealtimeSession } from "./RealtimeSession";
-import { RoomJoinConfiguration, type RtcRoomJoinConfiguration, type VeRtcRoomJoinConfiguration } from "../../Foundation/RTC/RoomJoinConfiguration";
+import {
+  RoomJoinConfiguration,
+  type RtcRoomJoinConfiguration,
+  type VeRtcRoomJoinConfiguration
+} from "../../Foundation/RTC/RoomJoinConfiguration";
 
 /**
- * TRTC 会话对应的房间身份和鉴权凭据。
+ * The room identity and authentication credentials for a TRTC session.
  */
 export interface RealtimeSessionConnectionInit {
 
   /**
-   * TRTC 凭据的提供方判别字段。
+   * The discriminator for TRTC credentials.
    */
   provider: RtcProvider.trtc;
 
   /**
-   * TRTC 房间号（字符串房间号）。
+   * The string TRTC room ID.
    */
   roomID: string;
 
   /**
-   * TRTC SDKAppID（按字符串处理）。
+   * The TRTC SDKAppID represented as a string.
    */
   sdkAppID: string;
 
   /**
-   * TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。
+   * The TRTC login identity from rtc_user_id, not the business user_id.
    */
   userID: string;
 
   /**
-   * TRTC 登录签名。
+   * The TRTC login signature.
    */
   userSig: string;
 
   /**
-   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   * The TRTC privateMapKey used to authorize entry into a string-ID room.
    */
   privateMapKey: string;
 
   /**
-   * 房间内生成 Bot 的用户标识，用于匹配远端结果流。
+   * The generation bot's user ID, used to match the remote result stream.
    */
   botID?: string;
 }
 
 /**
- * 实时会话对应的 RTC 连接参数（TRTC）。
+ * TRTC connection credentials for a realtime session.
  *
- * 凭据来自会话接口 `data.modelExtra`，provider 由接入配置决定；心跳成功后服务端可能
- * 下发新的 `userSig` / `privateMapKey`，使用方应覆盖本地缓存。
+ * Credentials come from data.modelExtra; the configured provider selects their interpretation.
+ * Successful heartbeats may supply updated userSig and privateMapKey values that replace cached
+ * credentials.
  */
 export class RealtimeSessionConnection {
 
   /**
-   * TRTC 凭据的提供方判别字段。
+   * The discriminator for TRTC credentials.
    */
   readonly provider: RtcProvider.trtc;
 
   /**
-   * TRTC 房间号（字符串房间号）。
+   * The string TRTC room ID.
    */
   readonly roomID: string;
 
   /**
-   * TRTC SDKAppID（按字符串处理）。
+   * The TRTC SDKAppID represented as a string.
    */
   readonly sdkAppID: string;
 
   /**
-   * TRTC 登录身份（`rtc_user_id`，不是业务 `user_id`）。
+   * The TRTC login identity from rtc_user_id, not the business user_id.
    */
   readonly userID: string;
 
   /**
-   * TRTC 登录签名。
+   * The TRTC login signature.
    */
   readonly userSig: string;
 
   /**
-   * TRTC 进房鉴权字段（字符串房间号对应的 privateMapKey）。
+   * The TRTC privateMapKey used to authorize entry into a string-ID room.
    */
   readonly privateMapKey: string;
 
   /**
-   * 房间内生成 Bot 的用户标识，用于匹配远端结果流。
+   * The generation bot's user ID, used to match the remote result stream.
    */
   readonly botID?: string;
 
   /**
-   * 创建 RTC 连接参数。
+   * Creates RTC connection credentials.
    */
   constructor(
     init: RealtimeSessionConnectionInit
@@ -114,7 +119,7 @@ export class RealtimeSessionConnection {
 }
 
 /**
- * 实时会话心跳失败回调。
+ * Receives a realtime session heartbeat failure.
  */
 export type RealtimeSessionHeartbeatFailureHandler = (
   sessionID: string,
@@ -122,66 +127,66 @@ export type RealtimeSessionHeartbeatFailureHandler = (
 ) => void | Promise<void>;
 
 /**
- * 实时会话心跳刷新回调；心跳成功且会话仍活跃时携带最新会话数据。
+ * Receives the refreshed session after a successful heartbeat while the session remains active.
  */
 export type RealtimeSessionHeartbeatRefreshHandler = (
   session: RealtimeSession,
 ) => void | Promise<void>;
 
 /**
- * 声网会话凭证；频道与 UID 原样用于 RTC 入房和房间信令。
+ * Agora credentials whose channel and UID are used unchanged for joining and room signaling.
  */
 export interface AgoraSessionConnection {
 
   /**
-   * 提供方与房间身份
+   * The discriminator for Agora credentials.
    */
   readonly provider: RtcProvider.agora;
 
   /**
-   * RTC 房间标识。
+   * The RTC room ID.
    */
   readonly roomID: string;
 
   /**
-   * RTC 应用标识。
+   * The RTC application ID.
    */
   readonly appID: string;
 
   /**
-   * RTC 用户标识。
+   * The RTC user ID.
    */
   readonly userID: string;
 
   /**
-   * 生成结果流对应的房间用户标识。
+   * The room user ID associated with the generation result stream.
    */
   readonly botID?: string;
 
   /**
-   * RTC 入房与续期凭证，不写入日志。
+   * The token for joining the RTC room and renewing credentials. It must not be logged.
    */
   readonly roomToken: string;
 }
 
 /**
- * RTC 会话连接参数，按 provider 区分厂商凭证。
+ * VeRTC connection credentials for a realtime session.
  */
 export interface VeRtcSessionConnection extends VeRtcRoomJoinConfiguration {
 
   /**
-   * 生成结果流对应的房间用户标识。
+   * The room user ID associated with the generation result stream.
    */
   readonly botID?: string;
 }
 
 /**
- * 按 RTC 提供方区分的会话连接凭据。
+ * Session credentials discriminated by RTC provider.
  */
 export type RtcSessionConnection = RealtimeSessionConnection | AgoraSessionConnection | VeRtcSessionConnection;
 
 /**
- * provider 由接入配置赋值，只在 SDK 内部区分凭据类型。
+ * Converts session credentials to room-join parameters using the configured provider discriminator.
  */
 export function toRoomJoinConfiguration(
   connection: RtcSessionConnection
@@ -190,7 +195,7 @@ export function toRoomJoinConfiguration(
 }
 
 /**
- * 从对应 RTC 类型的会话凭据中读取应用标识。
+ * Returns the application ID from provider-specific credentials.
  */
 export function connectionAppID(
   connection: RtcSessionConnection

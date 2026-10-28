@@ -8,41 +8,40 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-/**
- * Core
- */
+// Core
 export { XmaxClient } from "./Core/XmaxClient";
 export { XmaxConfiguration } from "./Core/XmaxConfiguration";
 export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
 
-/**
- * Core / Realtime
- */
+// Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export { RealtimeCameraPreset, cameraPresetSize } from "./Core/Realtime/RealtimeCameraPreset";
 export { RealtimeQualityLevel } from "./Core/Realtime/RealtimeQualityLevel";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
-/**
- * Core / NonRealtime
- */
-export type { XmaxNonRealtimeManaging, NonRealtimeWaitOptions } from "./Core/NonRealtime/XmaxNonRealtimeManaging";
+// Core / NonRealtime
+export type {
+  XmaxNonRealtimeManaging,
+  NonRealtimeWaitOptions
+} from "./Core/NonRealtime/XmaxNonRealtimeManaging";
 
-/**
- * Service / NonRealtime
- */
+// Service / NonRealtime
 export { NonRealtimeQuality, NonRealtimeTaskStatus } from "./Service/NonRealtime/NonRealtimeTask";
 export type {
-  NonRealtimeTask, NonRealtimeResult, NonRealtimeTaskOptions,
-  NonRealtimeTaskListOptions, NonRealtimeTaskPage,
+  NonRealtimeTask,
+  NonRealtimeResult,
+  NonRealtimeTaskOptions,
+  NonRealtimeTaskListOptions,
+  NonRealtimeTaskPage,
 } from "./Service/NonRealtime/NonRealtimeTask";
 export { NonRealtimeTaskError } from "./Service/NonRealtime/NonRealtimeTaskError";
 
-/**
- * Foundation
- */
+// Foundation
 export { RealtimeNetworkQualityLevel } from "./Foundation/RTC/NetworkStatistics";
-export type { RealtimeNetworkQuality, RealtimeNetworkQualityListener } from "./Foundation/RTC/NetworkStatistics";
+export type {
+  RealtimeNetworkQuality,
+  RealtimeNetworkQualityListener
+} from "./Foundation/RTC/NetworkStatistics";
 export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
@@ -58,9 +57,7 @@ export type {
 } from "./Foundation/RTC/VideoStatistics";
 export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
 
-/**
- * Service / Realtime
- */
+// Service / Realtime
 export type {
   RealtimeTiming,
   RealtimeTimingListener,
@@ -90,24 +87,27 @@ export {
 export type { RealtimeVideoFormatInit } from "./Service/Realtime/RealtimeVideoFormat";
 export { RealtimeVideoTrack } from "./Service/Realtime/RealtimeVideoTrack";
 export type { JsonValue, RealtimeExtraParams } from "./Service/Realtime/RealtimeExtraParams";
-export type { RealtimeAudioFrame, RealtimeVideoFrame, RealtimeMediaFrame, RealtimeMediaFrameListener } from "./Service/Realtime/RealtimeMediaFrame";
+export type {
+  RealtimeAudioFrame,
+  RealtimeVideoFrame,
+  RealtimeMediaFrame,
+  RealtimeMediaFrameListener
+} from "./Service/Realtime/RealtimeMediaFrame";
 export type { RemoteMediaTracks } from "./Foundation/Media/RemoteMediaTracks";
 
-/**
- * Media / External
- */
-export type { RealtimeExternalVideoSource, RealtimeExternalFrameSink, RealtimeExternalVideoStreamOptions } from "./Media/External/RealtimeExternalVideoSource";
+// Media / External
+export type {
+  RealtimeExternalVideoSource,
+  RealtimeExternalFrameSink,
+  RealtimeExternalVideoStreamOptions
+} from "./Media/External/RealtimeExternalVideoSource";
 export type { RealtimeExternalAudioFrame } from "./Foundation/Media/Audio/RealtimeExternalAudioFrame";
 
-/**
- * Service / Media
- */
+// Service / Media
 export { MediaService } from "./Service/Media/MediaService";
 export type { MediaServicing } from "./Service/Media/MediaServicing";
 
-/**
- * Service / Storage
- */
+// Service / Storage
 export { StorageService } from "./Service/Storage/StorageService";
 export type {
   StorageServicing,
@@ -115,9 +115,7 @@ export type {
 } from "./Service/Storage/StorageServicing";
 export { StoredFile } from "./Service/Storage/StoredFile";
 
-/**
- * Render
- */
+// Render
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
 export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeDualVideoView } from "./Render/Video/XmaxRealtimeDualVideoView";

@@ -9,284 +9,285 @@
 //
 
 /**
- * 非实时视频的输出质量。
+ * The output quality for non-realtime video.
  */
 export enum NonRealtimeQuality {
 
   /**
-   * 标准清晰度输出。
+   * Standard-definition output.
    */
   sd = "sd",
 
   /**
-   * 高清输出。
+   * High-definition output.
    */
   hd = "hd",
 }
 
 /**
- * 服务端任务状态；上传进度不属于任务状态。
+ * Server-side task states, independent of upload progress.
  */
 export enum NonRealtimeTaskStatus {
 
   /**
-   * 任务已提交，等待服务端处理。
+   * The task is submitted and awaiting server processing.
    */
   submitted = "submitted",
 
   /**
-   * 服务端正在处理任务。
+   * The server is processing the task.
    */
   processing = "processing",
 
   /**
-   * 任务处理完成。
+   * Task processing is complete.
    */
   completed = "completed",
 
   /**
-   * 任务处理失败。
+   * Task processing failed.
    */
   error = "error",
 }
 
 /**
- * 提交非实时任务的参数；资源必须来自 Xmax 上传流程，不能使用 blob URL 或本地路径。
+ * Non-realtime submission options. Media must come from Xmax uploads, not local paths or Blob URLs.
  */
 export interface NonRealtimeTaskOptions {
 
   /**
-   * 模型标识。
+   * The model ID.
    */
   model: string;
 
   /**
-   * 已上传源视频的 URL。
+   * The uploaded source video's URL.
    */
   videoPath: string;
 
   /**
-   * 生成指令；去除首尾空白后为 1–1024 个字符。
+   * The generation prompt, containing 1–1024 characters after trimming.
    */
   prompt: string;
 
   /**
-   * 已上传参考图片的 URL；省略表示不使用参考图。
+   * The uploaded reference image URL; omission disables reference-image input.
    */
   referencePath?: string;
 
   /**
-   * 输出质量。
+   * The output quality.
    */
   quality: NonRealtimeQuality;
 
   /**
-   * 可选的处理帧率；仅接受协议支持的整数，省略时沿用源视频帧率（含小数）。
+   * An explicitly supported integer processing frame rate; omission retains the source rate, including
+   * fractional values.
    */
   fps?: number;
 }
 
 /**
- * 非实时生成结果；缺失或 null 的服务端字段规范化为 undefined。
+ * Non-realtime generation results. Missing and null server fields normalize to undefined.
  */
 export interface NonRealtimeResult {
 
   /**
-   * 生成结果文件的访问 URL。
+   * The generated file's access URL.
    */
   readonly url?: string;
 
   /**
-   * 服务端上传生成结果时返回的错误说明。
+   * The error reported while the server uploads the result.
    */
   readonly uploadError?: string;
 
   /**
-   * 生成结果的上传状态。
+   * The result upload status.
    */
   readonly uploadStatus?: string;
 
   /**
-   * 服务端结果收尾耗时，单位为毫秒。
+   * The server's finalization duration, in milliseconds.
    */
   readonly finalizeDurationMs?: number;
 
   /**
-   * 服务端使用的压缩等级。
+   * The compression level used by the server.
    */
   readonly compressionLevel?: string;
 
   /**
-   * 结果视频的帧数。
+   * The result video's frame count.
    */
   readonly frameCount?: number;
 
   /**
-   * 结果视频帧率，单位为 fps。
+   * The result video's frame rate, in fps.
    */
   readonly fps?: number;
 
   /**
-   * 结果视频时长，单位为毫秒。
+   * The result video's duration, in milliseconds.
    */
   readonly durationMs?: number;
 
   /**
-   * 结果文件大小，单位为字节。
+   * The result file size, in bytes.
    */
   readonly fileSizeBytes?: number;
 
   /**
-   * 服务端处理时丢弃的帧数。
+   * The number of frames dropped during server processing.
    */
   readonly droppedFrameCount?: number;
 
   /**
-   * 结果压缩前的文件大小，单位为字节。
+   * The result size before compression, in bytes.
    */
   readonly originalFileSizeBytes?: number;
 }
 
 /**
- * 非实时任务快照；uid 和 status 为 SDK 查询、恢复及轮询所需字段。
- * 时间戳保持服务端原始字符串，不推断时区。
+ * A task snapshot whose ID and state support querying, recovery, and polling. Timestamp strings retain
+ * the server representation without inferring a time zone.
  */
 export interface NonRealtimeTask {
 
   /**
-   * 非实时任务标识，用于查询和恢复任务。
+   * The task ID used for queries and recovery.
    */
   readonly uid: string;
 
   /**
-   * 服务端返回的运行状态。
+   * The state returned by the server.
    */
   readonly status: NonRealtimeTaskStatus;
 
   /**
-   * 业务用户标识。
+   * The business user ID.
    */
   readonly userUid?: string;
 
   /**
-   * 本次视频生成使用的文字指令。
+   * The prompt used for this video generation.
    */
   readonly prompt?: string;
 
   /**
-   * 已上传源视频的 URL。
+   * The uploaded source video's URL.
    */
   readonly videoPath?: string;
 
   /**
-   * 已上传参考图片的 URL。
+   * The uploaded reference image's URL.
    */
   readonly referencePath?: string;
 
   /**
-   * 服务端任务处理器标识。
+   * The server task processor ID.
    */
   readonly processorId?: string;
 
   /**
-   * 生成结果使用的输出质量。
+   * The generated result's output quality.
    */
   readonly quality?: NonRealtimeQuality;
 
   /**
-   * 提交任务时指定的处理帧率，单位为 fps。
+   * The requested processing frame rate, in fps.
    */
   readonly requestedFps?: number;
 
   /**
-   * 服务端最终使用的处理帧率，单位为 fps。
+   * The processing frame rate resolved by the server, in fps.
    */
   readonly resolvedFps?: number;
 
   /**
-   * 服务端已执行的重试次数。
+   * The number of retries performed by the server.
    */
   readonly retryCount?: number;
 
   /**
-   * 源视频时长，单位为秒。
+   * The source video's duration, in seconds.
    */
   readonly videoDurationSeconds?: number;
 
   /**
-   * 服务端报告的计费时长，单位为秒。
+   * The billable duration reported by the server, in seconds.
    */
   readonly billableDurationSeconds?: number;
 
   /**
-   * 服务端报告的任务消耗点数。
+   * The task's consumed points reported by the server.
    */
   readonly chargePoints?: number;
 
   /**
-   * 生成结果的文件和处理信息。
+   * The generated file and processing information.
    */
   readonly result?: NonRealtimeResult;
 
   /**
-   * 服务端开始处理任务的时间。
+   * The server's task-processing start time.
    */
   readonly processStartTime?: string;
 
   /**
-   * 任务创建时间。
+   * The task creation time.
    */
   readonly createTimestamp?: string;
 
   /**
-   * 任务最近更新时间。
+   * The task's latest update time.
    */
   readonly updateTimestamp?: string;
 }
 
 /**
- * 分页查询选项。
+ * Task pagination options.
  */
 export interface NonRealtimeTaskListOptions {
 
   /**
-   * 从 1 开始的页码，默认 1。
+   * The one-based page number; defaults to 1.
    */
   pageNumber?: number;
 
   /**
-   * 每页数量，1–100，默认 10。
+   * The page capacity, from 1 to 100; defaults to 10.
    */
   pageSize?: number;
 
   /**
-   * 可选的任务状态筛选。
+   * An optional task-state filter.
    */
   status?: NonRealtimeTaskStatus;
 }
 
 /**
- * 按创建时间从新到旧排列的任务页。
+ * A page of tasks ordered newest first by creation time.
  */
 export interface NonRealtimeTaskPage {
 
   /**
-   * 当前页码，从 1 开始。
+   * The one-based current page number.
    */
   readonly pageNumber: number;
 
   /**
-   * 当前页的容量。
+   * The current page capacity.
    */
   readonly pageSize: number;
 
   /**
-   * 符合查询条件的任务总数。
+   * The total number of matching tasks.
    */
   readonly total: number;
 
   /**
-   * 当前页中的任务，按创建时间从新到旧排列。
+   * The current page's tasks, ordered newest first by creation time.
    */
   readonly list: readonly NonRealtimeTask[];
 }

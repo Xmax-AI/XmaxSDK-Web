@@ -9,27 +9,27 @@
 //
 
 /**
- * 上传完成后返回的已存储文件信息。
+ * Information returned after a successful file upload.
  */
 export class StoredFile {
 
   /**
-   * 文件的访问地址。
+   * The URL used to access the file.
    */
   readonly url: string;
 
   /**
-   * 对象存储中的对象键。
+   * The key identifying the object in storage.
    */
   readonly objectKey: string;
 
   /**
-   * 对象存储返回的 ETag；未返回时为空。
+   * The storage ETag, when returned.
    */
   readonly etag?: string;
 
   /**
-   * 创建已存储文件信息。
+   * Creates stored-file information.
    */
   constructor(
     init: {

@@ -26,25 +26,25 @@ import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
 import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";
 
 /**
- * SDK 的统一入口，负责创建实时、非实时和媒体服务组件。
+ * The entry point for realtime generation, non-realtime tasks, and media services.
  */
 export class XmaxClient {
 
   /**
-   * 客户端使用的全局配置。
+   * The configuration shared by this client's services.
    */
   readonly configuration: XmaxConfiguration;
 
   /**
-   * 服务层组件
+   * The API service used for authenticated server requests.
    */
   private readonly apiService: ApiServicing;
 
   /**
-   * 创建 SDK 客户端。
+   * Creates an XmaxSDK client.
    *
-   * 本地相机预览不依赖 API Key 校验；连接与生成等涉及服务端的操作
-   * 在实际调用时校验 API Key。
+   * Local camera preview does not require a validated API key. Server operations validate the key when
+   * called.
    */
   constructor(
     configuration: XmaxConfiguration
@@ -61,27 +61,37 @@ export class XmaxClient {
   }
 
   /**
-   * 创建实时媒体 Manager。
-   * 已知模型按环境选择实时会话地址；自定义模型使用测试地址，覆盖整个会话生命周期。
+   * Creates a realtime media manager.
    *
-   * @param options 实时生成模型等业务配置。
-   * @returns 可用于本地相机预览、实时连接与生成的实时 Manager。
+   * Built-in models use the environment's realtime endpoint. Custom model IDs use the development
+   * endpoint for the entire session lifecycle.
+   *
+   * @param options - The model and realtime generation configuration.
+   * @returns A manager for local preview, realtime connections, and generation.
    */
   createRealtimeManager(
     options: RealtimeConfiguration
   ): XmaxRealtimeManaging {
     const baseURL = modelBaseURL(options.model) ?? realtimeApiBaseURL(this.configuration.environment);
-    const apiService = new ApiService({ apiKey: this.configuration.apiKey, baseURL });
-
-    return new XmaxRealtimeManager(options, {
-      apiService,
-      environment: this.configuration.environment,
+    const apiService = new ApiService({
+      apiKey: this.configuration.apiKey,
+      baseURL
     });
+
+    return new XmaxRealtimeManager(
+      options,
+      {
+        apiService,
+        environment: this.configuration.environment,
+      }
+    );
   }
 
   /**
-   * 创建非实时视频任务 Manager，使用全局 API Key 和当前环境的非实时任务服务地址。
-   * 本方法不发起网络请求或加载 RTC，任务由服务端持久化，可按 ID 恢复查询。
+   * Creates a non-realtime task manager using the client's API key and task endpoint.
+   *
+   * Creation does not send requests or load an RTC SDK. Server-persisted tasks can be queried again by
+   * ID.
    */
   createNonRealtimeManager(): XmaxNonRealtimeManaging {
     const apiService = new ApiService({
@@ -93,9 +103,9 @@ export class XmaxClient {
   }
 
   /**
-   * 创建媒体处理与能力查询 Service。
+   * Creates a media-processing and capability-query service.
    *
-   * @param model 媒体输入规则使用的模型，默认为 `x2.1`。
+   * @param model - The model whose input rules apply; defaults to x2.1.
    */
   createMediaService(
     model: RealtimeModelName = RealtimeModel.x2_1
@@ -104,9 +114,7 @@ export class XmaxClient {
   }
 
   /**
-   * 创建文件存储 Service。
-   *
-   * @returns 可上传图片和视频到对象存储的存储 Service。
+   * Creates a storage service for uploading images and videos.
    */
   createStorageService(): StorageServicing {
     return new StorageService({ apiService: this.apiService });

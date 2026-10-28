@@ -9,22 +9,22 @@
 //
 
 /**
- * 实时媒体使用的 RTC 提供方；一个 Manager 生命周期内保持不变。
+ * The RTC provider, fixed for one realtime manager's lifetime.
  */
 export enum RtcProvider {
 
   /**
-   * 腾讯实时音视频。
+   * Tencent TRTC.
    */
   trtc = "trtc",
 
   /**
-   * 声网实时音视频。
+   * Agora RTC.
    */
   agora = "agora",
 
   /**
-   * 火山引擎实时音视频。
+   * Volcengine RTC.
    */
   vertc = "vertc",
 }

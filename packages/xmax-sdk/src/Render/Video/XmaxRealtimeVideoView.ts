@@ -21,7 +21,7 @@ import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectory
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 /**
- * SDK 视频显示模式与浏览器缩放样式的对应关系。
+ * The mapping from SDK layout modes to browser object-fit values.
  */
 const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
   [VideoContentMode.fit]: "contain",
@@ -29,124 +29,124 @@ const OBJECT_FIT: Record<VideoContentMode, "contain" | "cover"> = {
 };
 
 /**
- * 显示一路本地或远端视频轨道的实时视频视图（框架无关）。
+ * A framework-independent view for one local or remote video track.
  *
- * 通过 `attach(to:)` 挂载到任意容器元素；设置 `track` 后自动渲染。
- * 轨道注册了渲染绑定时走绑定管线，否则按 `mediaStreamTrack` 直接渲染。
- * SDK 远端轨道在首帧后按绑定配置预热，再按视图配置渐入；本地预览不延迟。
+ * Attach to a container and set track to render. Registered bindings supply custom rendering; other
+ * tracks render directly through mediaStreamTrack. SDK remote tracks warm up and fade in according to
+ * their binding and view settings; local preview is immediate.
  */
 export class XmaxRealtimeVideoView {
 
   /**
-   * 视图根元素（div，内含一个 video 元素）。
+   * The root element containing the video player.
    */
   readonly element: HTMLDivElement;
 
   /**
-   * @internal 渲染视频帧的元素，供绑定管线使用。
+   * The player element used by rendering bindings.
+   *
+   * @internal
    */
   readonly videoElement: HTMLVideoElement;
 
   /**
-   * 视频显示层，与触控轨迹层独立。
+   * The video-presentation layer, independent of trajectory interaction.
    */
   private readonly videoLayer: HTMLDivElement;
 
   /**
-   * 首帧预热只影响媒体内容，不影响轨迹交互层。
+   * The media-only warmup layer, which leaves interaction unaffected.
    */
   private readonly warmupLayer: HTMLDivElement;
 
   /**
-   * 视频画面是否可见。
+   * Whether video content is visible.
    */
   private videoVisible = true;
 
   /**
-   * 首帧实际提交显示时调用（一次性；换轨后重新武装）。
+   * The one-shot callback after first-frame submission, rearmed when the track changes.
    */
   frameDisplayHandler?: () => void;
 
   /**
-   * 渲染状态
+   * The currently rendered track.
    */
   private currentTrack?: RealtimeVideoTrack;
 
   /**
-   * 画面在视口中的缩放与裁剪方式。
+   * The image scaling and cropping mode.
    */
   private contentMode: VideoContentMode;
 
   /**
-   * 是否对显示画面应用水平镜像。
+   * Whether video display is mirrored horizontally.
    */
   private mirrored = false;
 
   /**
-   * 首帧显示通知与异步回调版本
+   * Whether the current stream has reported its first frame.
    */
   private hasNotifiedFrameDisplay = false;
 
   /**
-   * 视频开始播放时尝试通知首帧就绪。
+   * The fallback playing-event callback for first-frame readiness.
    */
   private onPlaying?: () => void;
 
   /**
-   * 首帧观察回调的取消句柄。
+   * The pending first-frame observation handle.
    */
   private videoFrameCallbackID?: number;
 
   /**
-   * 首帧通知版本，避免旧流回调影响新流。
+   * The revision preventing old-stream frame callbacks from affecting replacements.
    */
   private frameNotificationSequence = 0;
 
   /**
-   * 呈现统计组件
+   * The presentation-statistics controller.
    */
   private readonly statisticsController: RenderStatisticsController;
 
   /**
-   * 远端画面预热与渐入组件
+   * The remote warmup and fade-in controller.
    */
   private readonly warmupController: RenderWarmupController;
 
   /**
-   * DOM 挂载状态
+   * Whether the view has been detached.
    */
   private detached = false;
 
   /**
-   * 轨迹交互配置与懒加载视图
+   * Whether trajectory interaction is requested.
    */
   private interactionEnabled = true;
 
   /**
-   * 接入方提供的轨迹视觉效果实现。
+   * The app-supplied trajectory renderer.
    */
   private customTrajectoryRenderer?: TrajectoryEffectRendering;
 
   /**
-   * 视口触点采样与轨迹效果覆盖层。
+   * The viewport sampling and trajectory-effect overlay.
    */
   private trajectoryOverlay?: TrajectoryOverlayView;
 
   /**
-   * 创建单轨视频视图。
+   * Creates a single-track realtime view.
    *
-   * @param options.videoContentMode 视频内容显示模式，默认 fill。
-   * @param options.isInteractionEnabled 是否允许远端轨迹交互，默认 true。
-   * @param options.fadeInDurationMs 远端画面预热完成后的渐入时长，单位为毫秒，默认 300；0 表示直接显示，不跳过预热。
-   * @throws 渐入时长为负数或非有限数值时抛出 invalidConfiguration。
+   * @param options.videoContentMode - The layout mode; defaults to fill.
+   * @param options.isInteractionEnabled - Whether remote interaction is permitted; defaults to true.
+   * @param options.fadeInDurationMs - Fade duration after warmup, in milliseconds; defaults to 300. Zero
+   * displays immediately without skipping warmup.
+   * @throws An invalidConfiguration error for negative or nonfinite fade durations.
    */
   constructor(
     options?: {
       videoContentMode?: VideoContentMode;
       isInteractionEnabled?: boolean;
-      /**
-       * 远端画面的渐入时长，单位为毫秒，默认 300；0 表示预热完成后直接显示。
-       */
       fadeInDurationMs?: number;
     }
   ) {
@@ -159,15 +159,30 @@ export class XmaxRealtimeVideoView {
     this.element.style.backgroundColor = "black";
 
     this.videoLayer = document.createElement("div");
-    Object.assign(this.videoLayer.style, {
-      position: "absolute", inset: "0", pointerEvents: "none", opacity: "1",
-    });
+    Object.assign(
+      this.videoLayer.style,
+      {
+        position: "absolute",
+        inset: "0",
+        pointerEvents: "none",
+        opacity: "1",
+      }
+    );
     this.element.appendChild(this.videoLayer);
 
     this.warmupLayer = document.createElement("div");
-    Object.assign(this.warmupLayer.style, { position: "absolute", inset: "0" });
+    Object.assign(
+      this.warmupLayer.style,
+      {
+        position: "absolute",
+        inset: "0"
+      }
+    );
     this.videoLayer.appendChild(this.warmupLayer);
-    this.warmupController = new RenderWarmupController(this.warmupLayer, options?.fadeInDurationMs);
+    this.warmupController = new RenderWarmupController(
+      this.warmupLayer,
+      options?.fadeInDurationMs
+    );
 
     this.videoElement = document.createElement("video");
     this.statisticsController = new RenderStatisticsController(this.videoElement);
@@ -186,14 +201,14 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 远端画面预热完成后的渐入时长，单位为毫秒。
+   * The fade duration after remote warmup, in milliseconds.
    */
   get fadeInDurationMs(): number {
     return this.warmupController.fadeInDurationMs;
   }
 
   /**
-   * 更新下一次渐入时长，0 表示直接显示，不跳过渲染预热。
+   * Sets the next fade duration; zero skips animation but not warmup.
    */
   set fadeInDurationMs(
     durationMs: number
@@ -202,14 +217,15 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 是否显示视频画面，默认 true；隐藏时保留播放、解码和触控轨迹。
+   * Whether video is visible; defaults to true. Hidden video retains playback, decoding, and trajectory
+   * interaction.
    */
   get isVideoVisible(): boolean {
     return this.videoVisible;
   }
 
   /**
-   * 即时切换视频的显隐，不改变触控配置或媒体流。
+   * Changes video visibility without changing media or interaction settings.
    */
   set isVideoVisible(
     visible: boolean
@@ -222,31 +238,37 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 是否允许远端轨迹交互；本地轨道没有交互绑定，不受此开关影响。
+   * Whether remote interaction is permitted. Local tracks have no interaction binding.
    */
   get isInteractionEnabled(): boolean {
     return this.interactionEnabled;
   }
 
   /**
-   * 关闭时立即取消当前手势，不影响视频播放。
+   * Enables or disables interaction, cancelling current gestures immediately when disabled without
+   * interrupting playback.
    */
   set isInteractionEnabled(
     enabled: boolean
   ) {
     this.interactionEnabled = enabled;
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, enabled);
+    this.trajectoryOverlay?.configure(
+      this.contentMode,
+      this.mirrored,
+      enabled
+    );
   }
 
   /**
-   * 自定义轨迹视觉效果；undefined 表示使用 SDK 默认效果。
+   * The custom trajectory effect, or undefined for the SDK default.
    */
   get trajectoryRenderer(): TrajectoryEffectRendering | undefined {
     return this.customTrajectoryRenderer;
   }
 
   /**
-   * 替换效果前释放旧动画，采样及网络发送仍由 SDK 管理。
+   * Replaces visual effects after releasing old animation; the SDK retains sampling and message
+   * delivery.
    */
   set trajectoryRenderer(
     renderer: TrajectoryEffectRendering | undefined
@@ -260,14 +282,15 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 当前显示的视频轨道；切换时自动解绑旧轨道。
+   * The currently displayed track, with old bindings removed on replacement.
    */
   get track(): RealtimeVideoTrack | undefined {
     return this.currentTrack;
   }
 
   /**
-   * 每秒接收当前视图的呈现统计；换流、卸载或不可统计时返回 undefined。
+   * The presentation-statistics callback, invoked once per second; replacement, detachment, or
+   * unavailable measurements report undefined.
    */
   get renderStatisticsHandler(): ((
     statistics?: VideoRenderStatistics
@@ -276,7 +299,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 更新统计回调，不影响播放；移除回调时停止采集。
+   * Updates observation independently of playback, stopping statistics collection when removed.
    */
   set renderStatisticsHandler(
     handler: ((
@@ -289,7 +312,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 解绑旧轨道后接入新轨道，并为新内容重新启用一次性首帧通知。
+   * Unbinds the old track, installs the replacement, and rearms one-shot first-frame notification.
    */
   set track(
     track: RealtimeVideoTrack | undefined
@@ -306,14 +329,14 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 视频内容在容器中的显示模式。
+   * The image layout mode.
    */
   get videoContentMode(): VideoContentMode {
     return this.contentMode;
   }
 
   /**
-   * 更新视频的内容缩放方式；相同配置不重复应用。
+   * Changes layout without reapplying unchanged settings.
    */
   set videoContentMode(
     mode: VideoContentMode
@@ -326,14 +349,14 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 本地预览是否镜像显示（仅影响显示，不影响发布流）。
+   * Whether display is mirrored, without affecting publication.
    */
   get isMirrored(): boolean {
     return this.mirrored;
   }
 
   /**
-   * 更新视图镜像变换，仅改变呈现方式，不改动媒体流。
+   * Updates the display transform without modifying media.
    */
   set isMirrored(
     mirrored: boolean
@@ -346,7 +369,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 挂载到容器元素。
+   * Attaches the view to a container.
    */
   attach(
     to: HTMLElement
@@ -355,8 +378,11 @@ export class XmaxRealtimeVideoView {
     to.appendChild(this.element);
     this.attachTrajectory();
 
-    // 浏览器可能在移出 DOM 时暂停 MediaStream video；重新挂载要恢复解码回调。
-    if (this.videoElement.srcObject && this.videoElement.autoplay && !this.videoElement.ended && this.videoElement.paused && typeof this.videoElement.play === "function") {
+    // Reattaching a MediaStream player may require resuming playback to restore frame callbacks.
+    if (
+      this.videoElement.srcObject && this.videoElement.autoplay &&
+      !this.videoElement.ended && this.videoElement.paused && typeof this.videoElement.play === "function"
+    ) {
       void this.videoElement.play().catch((error) => {
         XmaxLogger.render.warning(() => `恢复视频播放失败 (Failed to Resume Video Playback)\n└─ ${String(error)}`);
       });
@@ -370,7 +396,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 从容器元素移除。
+   * Removes the view from its container.
    */
   detach(): void {
     this.detached = true;
@@ -383,7 +409,9 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 直接设置渲染用的媒体流（绑定管线和直接渲染共用）。 @internal
+   * Sets rendered media for custom bindings and direct playback.
+   *
+   * @internal
    */
   setMediaStream(
     stream: MediaStream | null
@@ -407,7 +435,9 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 新生成任务重新等待首帧和预热，不替换正在播放的媒体流。 @internal
+   * Restarts first-frame and warmup observation without replacing playing media.
+   *
+   * @internal
    */
   prepareForGeneration(): void {
     this.cancelFrameDisplayNotification();
@@ -420,14 +450,17 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 接入轨道画面：优先走注册的渲染绑定，否则按媒体轨直接渲染。
+   * Uses a registered rendering binding or attaches the native media track directly.
    */
   private attachTrack(
     track: RealtimeVideoTrack
   ): void {
     const binding = VideoRenderRegistry.binding(track);
     if (binding) {
-      binding.attachHandler(this, this.contentMode);
+      binding.attachHandler(
+        this,
+        this.contentMode
+      );
       this.attachTrajectory();
       return;
     }
@@ -443,7 +476,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 解绑当前轨道并清空渲染内容。
+   * Unbinds the current track and clears presentation.
    */
   private detachCurrentTrack(): void {
     this.warmupController.reset();
@@ -458,7 +491,7 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 首帧提交合成器时通知；旧浏览器回退到 playing 近似判断。
+   * Observes compositor submission, approximating readiness with playing on unsupported browsers.
    */
   private armFrameDisplayNotification(): void {
     this.cancelFrameDisplayNotification();
@@ -490,16 +523,21 @@ export class XmaxRealtimeVideoView {
     }
 
     this.onPlaying = notify;
-    this.videoElement.addEventListener("playing", this.onPlaying, {
-      once: true,
-    });
+    this.videoElement.addEventListener(
+      "playing",
+      this.onPlaying,
+      {
+        once: true,
+      }
+    );
     if (!this.videoElement.paused && this.videoElement.readyState >= 2) {
       queueMicrotask(notify);
     }
   }
 
   /**
-   * 换流、解绑或卸载时取消观察，防止迟到的首帧归入下一条流。
+   * Cancels first-frame observation on replacement, unbinding, or detachment so stale callbacks cannot
+   * count toward a new stream.
    */
   private cancelFrameDisplayNotification(): void {
     this.frameNotificationSequence += 1;
@@ -508,13 +546,16 @@ export class XmaxRealtimeVideoView {
       this.videoFrameCallbackID = undefined;
     }
     if (this.onPlaying) {
-      this.videoElement.removeEventListener("playing", this.onPlaying);
+      this.videoElement.removeEventListener(
+        "playing",
+        this.onPlaying
+      );
       this.onPlaying = undefined;
     }
   }
 
   /**
-   * 仅远端渲染绑定启用预热，本地预览和普通媒体直接显示。
+   * Enables warmup only for configured remote bindings; local and ordinary media display immediately.
    */
   private prepareRenderWarmup(): void {
     const binding = this.currentTrack ? VideoRenderRegistry.binding(this.currentTrack) : undefined;
@@ -523,24 +564,31 @@ export class XmaxRealtimeVideoView {
   }
 
   /**
-   * 应用显示模式与镜像样式。
+   * Applies layout and mirroring styles.
    */
   private applyContentMode(): void {
-    this.trajectoryOverlay?.configure(this.contentMode, this.mirrored, this.interactionEnabled);
+    this.trajectoryOverlay?.configure(
+      this.contentMode,
+      this.mirrored,
+      this.interactionEnabled
+    );
     this.videoElement.style.objectFit = OBJECT_FIT[this.contentMode];
     this.videoElement.style.transform = this.mirrored ? "scaleX(-1)" : "";
   }
 
   /**
-   * 视图未卸载时启动呈现统计，采样及媒体就绪检查由统计组件负责。
+   * Starts presentation statistics while attached, delegating readiness and sampling to the statistics
+   * controller.
    */
   private startRenderStatistics(): void {
-    if (!this.detached)
+    if (!this.detached) {
       this.statisticsController.start();
+    }
   }
 
   /**
-   * 仅为具备交互能力的轨道创建覆盖层，普通视频和本地预览不分配 Canvas。
+   * Creates an overlay only for interactive tracks, avoiding Canvas allocation for ordinary video and
+   * local preview.
    */
   private attachTrajectory(): void {
     if (this.detached || this.trajectoryOverlay || !this.currentTrack) {
@@ -552,13 +600,17 @@ export class XmaxRealtimeVideoView {
     }
     const overlay = new TrajectoryOverlayView(this.customTrajectoryRenderer ?? new DefaultTrajectoryEffectRenderer());
     this.trajectoryOverlay = overlay;
-    overlay.configure(this.contentMode, this.mirrored, this.interactionEnabled);
+    overlay.configure(
+      this.contentMode,
+      this.mirrored,
+      this.interactionEnabled
+    );
     this.element.appendChild(overlay.element);
     binding.attach(overlay);
   }
 
   /**
-   * 换轨或卸载时移除全部交互资源；再次挂载时重新建立绑定。
+   * Releases interaction resources on replacement or detachment; reattachment creates a fresh binding.
    */
   private disposeTrajectory(): void {
     this.trajectoryOverlay?.dispose();

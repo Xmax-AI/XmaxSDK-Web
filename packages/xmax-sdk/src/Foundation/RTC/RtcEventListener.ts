@@ -12,58 +12,61 @@ import type { DownlinkVideoStatistics, UplinkVideoStatisticsListener } from "./V
 import type { RealtimeNetworkQualityListener } from "./NetworkStatistics";
 
 /**
- * 接收 RTC 媒体和数据信令事件。
- *
- * 房间信令走 TRTC 自定义消息、Agora DataStream 或 VeRTC 房间文本消息，不使用 SEI。
+ * Receives RTC media events and room signaling. Room messages use TRTC custom messages, Agora
+ * DataStream, or VeRTC text messages, not SEI.
  */
 export interface RtcEventListener {
 
   /**
-   * 指定用户的原始音轨已安装、替换或移除，供媒体观察者刷新绑定。
+   * Notifies observers that a user's original audio track was installed, replaced, or removed.
    */
-  onRemoteAudioTrackChanged?: (userID: string) => void;
+  onRemoteAudioTrackChanged?: (
+    userID: string
+  ) => void;
 
   /**
-   * RTC 凭据即将过期，请求新凭据进行在线续期。
+   * Requests refreshed credentials before the RTC token expires.
    */
   onTokenWillExpire?: () => void;
 
   /**
-   * RTC 凭据已经过期，请求新凭据以恢复房间连接。
+   * Requests refreshed credentials after token expiration to recover the room connection.
    */
   onTokenExpired?: () => void;
 
   /**
-   * 原房间正在重新加入；清除旧订阅绑定，但保留当前生成任务与音量配置。
+   * Reports rejoining the same room, clearing old subscription bindings while retaining the task and
+   * volume settings.
    */
   onRoomRejoining?: () => void;
 
   /**
-   * RTC 运行期错误，不包含鉴权凭据。
+   * Reports an RTC runtime error without credentials.
    */
   onError?: (
     error: import("../Errors/XmaxError").XmaxError
   ) => void;
 
   /**
-   * 本端上下行网络质量和 RTT，独立于性能日志开关。
+   * Reports local uplink and downlink quality independently of performance logging.
    */
   onNetworkStatistics?: RealtimeNetworkQualityListener;
 
   /**
-   * 本地主视频流运行统计；独立于性能日志开关。
+   * Reports local main-stream video statistics independently of performance logging.
    */
   onLocalVideoStatistics?: UplinkVideoStatisticsListener;
 
   /**
-   * 本次采样所有远端主视频流的完整列表，空列表表示当前无可用统计。
+   * Reports all remote main-stream statistics for one sample; an empty list means no available
+   * statistics.
    */
   onRemoteVideoStatistics?: (
     statistics: readonly DownlinkVideoStatistics[]
   ) => void;
 
   /**
-   * 处理远端用户的视频发布状态变化（仅主流）。
+   * Reports main-video publication changes for a remote user.
    */
   onRemoteVideoPublished(
     userID: string,
@@ -71,7 +74,7 @@ export interface RtcEventListener {
   ): void;
 
   /**
-   * 处理房间自定义消息（TRTC 已按 `cmdId = 1` 过滤，统一为 UTF-8 文本）。
+   * Receives UTF-8 room messages, with TRTC messages already filtered to cmdId 1.
    */
   onCustomMessageReceived(
     userID: string,

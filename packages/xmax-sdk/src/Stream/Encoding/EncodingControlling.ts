@@ -11,21 +11,22 @@
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
 /**
- * 定义按实时视频格式配置 RTC 视频编码参数的能力。
+ * RTC video-encoding configuration from realtime formats.
  */
 export interface EncodingControlling {
 
   /**
-   * 按视频格式配置 RTC 视频编码参数。
+   * Configures encoding from a video format.
    *
-   * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
+   * @throws Rejects for an invalid format or bitrate range, or RTC configuration failure.
    */
   configure(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
 
   /**
-   * 保留已解析的其他编码配置，仅更新帧率，返回成功应用的完整格式。
+   * Updates frame rate while retaining other resolved settings and returns the successfully applied
+   * complete format.
    */
   updateFrameRate(
     fps: number

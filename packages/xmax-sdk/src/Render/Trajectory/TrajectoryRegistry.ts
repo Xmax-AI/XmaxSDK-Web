@@ -12,28 +12,31 @@ import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTra
 import type { TrajectoryBinding } from "./TrajectoryBinding";
 
 /**
- * 按 Track 对象身份查找交互能力；不以可能重复的轨道字符串 ID 为索引。
+ * Finds interaction bindings by track-object identity, not potentially duplicated track-ID strings.
  */
 export class TrajectoryRegistry {
 
   /**
-   * 媒体轨道与渲染视图的绑定索引。
+   * The interaction bindings indexed by media-track identity.
    */
   private static readonly bindings = new WeakMap<RealtimeVideoTrack, TrajectoryBinding>();
 
   /**
-   * 替换绑定前先使旧绑定失效。
+   * Invalidates an existing binding before replacing it.
    */
   static register(
     track: RealtimeVideoTrack,
     binding: TrajectoryBinding
   ): void {
     this.unregister(track);
-    this.bindings.set(track, binding);
+    this.bindings.set(
+      track,
+      binding
+    );
   }
 
   /**
-   * 查询交互能力，本地轨道不注册该能力。
+   * Returns a track's interaction binding; local tracks do not register one.
    */
   static binding(
     track: RealtimeVideoTrack
@@ -42,7 +45,7 @@ export class TrajectoryRegistry {
   }
 
   /**
-   * 主动清理视图资源，不能仅依赖 WeakMap 垃圾回收。
+   * Actively releases view resources rather than relying only on WeakMap collection.
    */
   static unregister(
     track: RealtimeVideoTrack

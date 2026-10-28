@@ -14,28 +14,28 @@ import { XMAX_SDK_VERSION } from "../../Foundation/Runtime/RuntimeInfo";
 import { ApiMethod, type ApiServicing, type ApiRequestOptions } from "./ApiServicing";
 
 /**
- * Xmax API 统一响应信封中的公共元数据。
+ * Shared metadata in the Xmax API response envelope.
  */
 interface EnvelopeMetadata {
 
   /**
-   * 服务端响应中的业务成功标记。
+   * The server's business-success indicator.
    */
   success?: boolean;
 
   /**
-   * 服务端返回的业务状态码。
+   * The server's business status code.
    */
   code?: number;
 
   /**
-   * 服务端返回的状态说明。
+   * The server's status message.
    */
   message?: string;
 }
 
 /**
- * 请求 fetch 时使用的签名，便于测试替换。
+ * The replaceable fetch contract used by API requests.
  */
 export type ApiFetch = (
   url: string,
@@ -48,19 +48,20 @@ export type ApiFetch = (
   },
 ) => Promise<{
   status: number;
+
   /**
-   * 读取响应正文文本，供统一响应解析使用。
+   * Reads response text for envelope parsing.
    */
   text(): Promise<string>;
 }>;
 
 /**
- * API 请求身份、地址和传输选项。
+ * API authentication, endpoint, and transport configuration.
  */
 export interface ApiServiceOptions {
 
   /**
-   * 调用 Xmax 服务使用的 API Key。
+   * The API key used to access Xmax services.
    */
   apiKey: string;
 
@@ -70,53 +71,48 @@ export interface ApiServiceOptions {
   baseURL: string;
 
   /**
-   * 请求超时时间（毫秒）；默认 15 秒。
+   * The request timeout, in milliseconds; defaults to 15000.
    */
   timeoutMs?: number;
 
   /**
-   * fetch 实现（可替换，测试用）。
+   * The replaceable fetch implementation.
    */
   fetchImpl?: ApiFetch;
 }
 
 /**
- * 负责发送 Xmax API 请求并统一处理响应、日志和错误。
+ * Sends Xmax API requests and normalizes responses, logs, and errors.
  */
 export class ApiService implements ApiServicing {
 
   /**
-   * 默认请求超时时间（毫秒）。
+   * The default request timeout, in milliseconds.
    */
   static readonly defaultTimeoutMs = 15_000;
 
   /**
-   * 请求身份、地址与超时配置
+   * The key authenticating API requests.
    */
   private readonly apiKey: string;
 
   /**
-   * API 请求使用的基础地址。
+   * The base URL for API requests.
    */
   private readonly baseURL: string;
 
   /**
-   * 单次请求的超时上限，单位为毫秒。
+   * The timeout for each request, in milliseconds.
    */
   private readonly timeoutMs: number;
 
   /**
-   * 网络传输依赖
+   * The HTTP transport implementation.
    */
   private readonly fetchImpl: ApiFetch;
 
   /**
-   * 创建 API Service。
-   *
-   * @param options.apiKey 调用 Xmax 服务使用的 API Key。
-   * @param options.baseURL Xmax API Base URL。
-   * @param options.timeoutMs 请求超时时间（毫秒）；默认 15 秒。
-   * @param options.fetchImpl fetch 实现（可替换，测试用）。
+   * Creates an API service.
    */
   constructor(
     options: ApiServiceOptions
@@ -125,13 +121,19 @@ export class ApiService implements ApiServicing {
     this.baseURL = options.baseURL;
     this.timeoutMs = options.timeoutMs ?? ApiService.defaultTimeoutMs;
 
-    this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
+    this.fetchImpl = options.fetchImpl ?? ((
+      url,
+      init
+    ) => fetch(
+      url,
+      init
+    ));
   }
 
   /**
-   * 发送请求并返回统一响应中的数据。
+   * Sends a request and returns the envelope's data.
    *
-   * @param options.keepalive 为 true 时请求可存活于页面卸载之后。
+   * @param options.keepalive - Whether the browser may complete this request after page unload.
    */
   async request<T>(
     method: ApiMethod,
@@ -141,19 +143,38 @@ export class ApiService implements ApiServicing {
   ): Promise<T> {
     this.validateConfiguration();
     if (options?.signal?.aborted) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "API request was cancelled");
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "API request was cancelled"
+      );
     }
 
-    const request = this.makeRequest(method, path, body, options);
+    const request = this.makeRequest(
+      method,
+      path,
+      body,
+      options
+    );
     const startedAt = Date.now();
 
-    // 同时保留单次请求超时与调用方取消，不依赖较新的 AbortSignal.any。
+    // Combine request timeout and caller cancellation without requiring AbortSignal.any.
     const timeoutSignal = request.init.signal!;
     const controller = new AbortController();
     const abortTimeout = () => controller.abort(timeoutSignal.reason);
-    const abortCaller = () => controller.abort(new DOMException("Cancelled", "AbortError"));
-    timeoutSignal.addEventListener("abort", abortTimeout, { once: true });
-    options?.signal?.addEventListener("abort", abortCaller, { once: true });
+    const abortCaller = () => controller.abort(new DOMException(
+      "Cancelled",
+      "AbortError"
+    ));
+    timeoutSignal.addEventListener(
+      "abort",
+      abortTimeout,
+      { once: true }
+    );
+    options?.signal?.addEventListener(
+      "abort",
+      abortCaller,
+      { once: true }
+    );
     request.init.signal = controller.signal;
     if (timeoutSignal.aborted) {
       abortTimeout();
@@ -165,20 +186,37 @@ export class ApiService implements ApiServicing {
     let status: number;
     let text: string;
     try {
-      const response = await this.fetchImpl(request.url, request.init);
+      const response = await this.fetchImpl(
+        request.url,
+        request.init
+      );
       status = response.status;
       text = await response.text();
     } catch (error) {
       const mapped = ApiService.transportError(error);
-      this.logFailure(method, path, mapped, startedAt);
+      this.logFailure(
+        method,
+        path,
+        mapped,
+        startedAt
+      );
       throw mapped;
     } finally {
-      timeoutSignal.removeEventListener("abort", abortTimeout);
-      options?.signal?.removeEventListener("abort", abortCaller);
+      timeoutSignal.removeEventListener(
+        "abort",
+        abortTimeout
+      );
+      options?.signal?.removeEventListener(
+        "abort",
+        abortCaller
+      );
     }
 
     try {
-      const value = ApiService.parseResponse<T>(text, status);
+      const value = ApiService.parseResponse<T>(
+        text,
+        status
+      );
       XmaxLogger.api.debug(
         () =>
           `API 请求成功 (API Request Succeeded)\n` +
@@ -187,43 +225,61 @@ export class ApiService implements ApiServicing {
       return value;
     } catch (error) {
       const mapped = XmaxError.from(error);
-      this.logFailure(method, path, mapped, startedAt);
+      this.logFailure(
+        method,
+        path,
+        mapped,
+        startedAt
+      );
       throw mapped;
     }
   }
 
   /**
-   * 发送 GET 请求。
+   * Sends a GET request.
    */
   get<T>(
     path: string,
     options?: ApiRequestOptions
   ): Promise<T> {
-    return this.request<T>(ApiMethod.get, path, undefined, options);
+    return this.request<T>(
+      ApiMethod.get,
+      path,
+      undefined,
+      options
+    );
   }
 
   /**
-   * 发送 POST 请求。
+   * Sends a POST request.
    */
   post<T>(
     path: string,
     body?: unknown
   ): Promise<T> {
-    return this.request<T>(ApiMethod.post, path, body);
+    return this.request<T>(
+      ApiMethod.post,
+      path,
+      body
+    );
   }
 
   /**
-   * 发送 PUT 请求。
+   * Sends a PUT request.
    */
   put<T>(
     path: string,
     body?: unknown
   ): Promise<T> {
-    return this.request<T>(ApiMethod.put, path, body);
+    return this.request<T>(
+      ApiMethod.put,
+      path,
+      body
+    );
   }
 
   /**
-   * 发送 DELETE 请求。
+   * Sends a DELETE request.
    */
   delete<T>(
     path: string,
@@ -231,15 +287,23 @@ export class ApiService implements ApiServicing {
       keepalive?: boolean
     }
   ): Promise<T> {
-    return this.request<T>(ApiMethod.delete, path, undefined, options);
+    return this.request<T>(
+      ApiMethod.delete,
+      path,
+      undefined,
+      options
+    );
   }
 
   /**
-   * 校验 API Key 与 Base URL 配置。
+   * Validates API key and base URL configuration.
    */
   private validateConfiguration(): void {
     if (this.apiKey.length === 0) {
-      throw new XmaxError(XmaxErrorCode.invalidAPIKey, "API key cannot be empty");
+      throw new XmaxError(
+        XmaxErrorCode.invalidAPIKey,
+        "API key cannot be empty"
+      );
     }
 
     let url: URL;
@@ -265,7 +329,7 @@ export class ApiService implements ApiServicing {
   }
 
   /**
-   * 构造请求地址、请求头与请求体；路径必须相对且与 Base URL 同源。
+   * Builds the URL, headers, and body, accepting only relative paths on the base URL's origin.
    */
   private makeRequest(
     method: ApiMethod,
@@ -296,7 +360,10 @@ export class ApiService implements ApiServicing {
       );
     }
 
-    const base = this.baseURL.endsWith("/") ? this.baseURL.slice(0, -1) : this.baseURL;
+    const base = this.baseURL.endsWith("/") ? this.baseURL.slice(
+      0,
+      -1
+    ) : this.baseURL;
     const relativePath = normalizedPath.startsWith("/")
       ? normalizedPath
       : `/${normalizedPath}`;
@@ -343,7 +410,7 @@ export class ApiService implements ApiServicing {
   }
 
   /**
-   * 解析统一响应信封并返回数据；业务失败或数据缺失时抛出错误。
+   * Parses envelope data, rejecting business failures and missing payloads.
    */
   private static parseResponse<T>(
     text: string,
@@ -355,9 +422,13 @@ export class ApiService implements ApiServicing {
     try {
       envelope = JSON.parse(text);
     } catch {
-      throw new XmaxError(XmaxErrorCode.apiError, "Server returned invalid JSON", {
-        httpStatus: status,
-      });
+      throw new XmaxError(
+        XmaxErrorCode.apiError,
+        "Server returned invalid JSON",
+        {
+          httpStatus: status,
+        }
+      );
     }
 
     const ok = status >= 200 && status < 300;
@@ -367,7 +438,10 @@ export class ApiService implements ApiServicing {
       throw new XmaxError(
         XmaxErrorCode.apiError,
         message || "Xmax API request failed",
-        { apiCode: envelope.code, httpStatus: status },
+        {
+          apiCode: envelope.code,
+          httpStatus: status
+        },
       );
     }
 
@@ -383,7 +457,7 @@ export class ApiService implements ApiServicing {
   }
 
   /**
-   * 将传输层异常映射为 SDK 统一错误。
+   * Converts transport failures to SDK errors.
    */
   private static transportError(
     error: unknown
@@ -392,10 +466,16 @@ export class ApiService implements ApiServicing {
       return error;
     }
     if (error instanceof DOMException && error.name === "TimeoutError") {
-      return new XmaxError(XmaxErrorCode.timeout, "API request timed out");
+      return new XmaxError(
+        XmaxErrorCode.timeout,
+        "API request timed out"
+      );
     }
     if (error instanceof DOMException && error.name === "AbortError") {
-      return new XmaxError(XmaxErrorCode.cancelled, "API request was cancelled");
+      return new XmaxError(
+        XmaxErrorCode.cancelled,
+        "API request was cancelled"
+      );
     }
 
     const message =
@@ -409,7 +489,7 @@ export class ApiService implements ApiServicing {
   }
 
   /**
-   * 输出失败日志。
+   * Logs a failed API request.
    */
   private logFailure(
     method: ApiMethod,

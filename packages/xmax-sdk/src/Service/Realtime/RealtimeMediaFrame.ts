@@ -9,97 +9,126 @@
 //
 
 /**
- * 已复制的远端 PCM 音频包，格式为有符号、小端、交错排列的 16 位样本。
+ * A copied PCM audio packet containing interleaved signed 16-bit little-endian samples.
  */
 export interface RealtimeAudioFrame {
 
   /**
-   * 音频字节；回调返回后仍可持有。
+   * The sample bytes, which your app may retain after the callback returns.
    */
   readonly data: Uint8Array;
 
   /**
-   * 每个声道每秒的样本数。
+   * The sample rate per channel, in hertz.
    */
   readonly sampleRate: number;
 
   /**
-   * 交错排列的声道数。
+   * The number of interleaved channels.
    */
   readonly channels: number;
 
   /**
-   * 本包每个声道的样本数。
+   * The number of samples per channel in this packet.
    */
   readonly samplesPerChannel: number;
 
   /**
-   * 首个样本在接收端呈现时间轴上的时间，单位为微秒，不保证从零开始。
+   * The first sample's time on the receiver presentation timeline, in microseconds; it need not start at
+   * zero.
    */
   readonly presentationTimeStamp: number;
 
   /**
-   * 按样本数和采样率计算的时长，单位为微秒。
+   * The duration derived from the sample count and sample rate, in microseconds.
    */
   readonly duration: number;
 }
 
 /**
- * 原始远端解码视频帧，不包含镜像、裁剪或界面叠层。
+ * An original decoded remote video frame without mirroring, cropping, or UI overlays.
  */
 export interface RealtimeVideoFrame {
 
   /**
-   * 由接入方持有的只读帧；使用或异步编码完成后必须调用 close()。
+   * The frame owned by your app. Close it after use or asynchronous encoding completes.
    */
   readonly frame: VideoFrame;
 
   /**
-   * 接收端呈现时间轴上的时间，单位为微秒，与音频使用相同时间基准。
+   * The receiver presentation time, in microseconds, using the same time base as audio.
    */
   readonly presentationTimeStamp: number;
 
   /**
-   * 建议呈现时长，单位为微秒；无法确定时为空。
+   * The suggested presentation duration, in microseconds; omitted when unknown.
    */
   readonly duration?: number;
 }
 
 /**
- * 一包远端媒体，不表示一对音视频帧；按同一个录制起点和时间戳进行同步。
+ * One remote media packet, not a paired audio/video sample. Synchronize packets using their timestamps
+ * relative to a common recording origin.
  */
 export interface RealtimeMediaFrame {
 
   /**
-   * 同一结果流绑定的音视频共享标识；换流或重连后更新。
+   * The identifier shared by audio and video in one result-stream binding; changes on stream replacement
+   * or reconnection.
    */
   readonly streamID: string;
 
   /**
-   * 当前轨首次输出、格式/时钟变化或丢弃输出后为 true；SDK 不压缩时间轴。
+   * Whether this is the track's first output or follows a format, clock, or output-drop discontinuity.
+   * XmaxSDK does not compress the timeline.
    */
   readonly isDiscontinuous: boolean;
 
   /**
-   * 音频包或视频帧。
+   * The audio packet or video frame.
    */
   readonly content:
-    | { readonly type: "audio"; readonly frame: RealtimeAudioFrame }
-    | { readonly type: "video"; readonly frame: RealtimeVideoFrame };
+  | {
+
+    /**
+     * Identifies a copied PCM audio packet.
+     */
+    readonly type: "audio";
+
+    /**
+     * The audio samples and their receiver presentation timestamp.
+     */
+    readonly frame: RealtimeAudioFrame
+  }
+  | {
+
+    /**
+     * Identifies a decoded video frame.
+     */
+    readonly type: "video";
+
+    /**
+     * The video frame whose ownership is transferred to your app.
+     */
+    readonly frame: RealtimeVideoFrame
+  };
 
   /**
-   * 媒体时间戳，单位为微秒，与 content.frame.presentationTimeStamp 一致。
+   * The timestamp in microseconds, equal to content.frame.presentationTimeStamp.
    */
   readonly presentationTimeStamp: number;
 
   /**
-   * 包时长，单位为微秒；视频无法确定时为空。
+   * The packet duration, in microseconds; omitted for video when unknown.
    */
   readonly duration?: number;
 }
 
 /**
- * 按交付顺序接收媒体，不保证跨音视频轨的时间戳顺序。
- * 回调须保持轻量，异步处理请自行排队；视频帧所有权转移给接入方，音频可直接保留。
+ * Receives packets in delivery order, without guaranteeing timestamp order across tracks. Keep callbacks
+ * lightweight and queue asynchronous work in your app. Your app owns delivered video frames and may
+ * retain audio data.
  */
-export type RealtimeMediaFrameListener = (frame: RealtimeMediaFrame) => void;
+export type RealtimeMediaFrameListener = (
+  frame: RealtimeMediaFrame
+) => void;

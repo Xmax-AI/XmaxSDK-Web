@@ -16,89 +16,89 @@ import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 
 /**
- * 生成或回传使用的整数像素尺寸。
+ * Integer pixel dimensions for generated or returned video.
  */
 export interface RoomEventTargetSize {
 
   /**
-   * 视频宽度，单位为像素。
+   * The video width, in pixels.
    */
   width: number;
 
   /**
-   * 视频高度，单位为像素。
+   * The video height, in pixels.
    */
   height: number;
 }
 
 /**
- * 生成条件类信令的公共参数。
+ * Shared parameters for generation-condition messages.
  */
 export interface RoomEventGenerationOptions {
 
   /**
-   * 业务用户标识。
+   * The application user identifier.
    */
   userID: string;
 
   /**
-   * 当前生成任务标识。
+   * The current generation task identifier.
    */
   taskID: string;
 
   /**
-   * 模型生成使用的视频规格。
+   * The generation video format.
    */
   videoFormat: RealtimeVideoFormat;
 
   /**
-   * 当前生成条件。
+   * The current generation conditions.
    */
   context: RealtimeContext;
 
   /**
-   * 服务端生成后的回传尺寸，缺省时不发送。
+   * The returned video dimensions, omitted when unset.
    */
   targetSize?: RoomEventTargetSize;
 
   /**
-   * 是否回贴原始人脸，默认 false。
+   * Whether to restore the original face; defaults to false.
    */
   faceRestoration?: boolean;
 
   /**
-   * 是否由服务端保留媒体比例并填充生成画布。
+   * Whether the server preserves the media aspect ratio and pads the generation canvas.
    */
   paddingContain?: boolean;
 
   /**
-   * 合并到本次生成信令的 params，不缓存。
+   * Parameters merged into this message without being retained.
    */
   extraParams?: RealtimeExtraParams;
 }
 
 /**
- * 生成 SDK 与 RTC 房间之间传输的结构化事件消息。
+ * Builds structured messages exchanged with the RTC room.
  *
- * 控制消息附带 `runtime` 运行环境信息，轨迹快照仅发送交互字段；
- * 编码失败时抛出 `internalError`。
+ * Control messages include runtime information; trajectory snapshots contain interaction fields only.
+ * Encoding failures throw internalError.
  */
 export class RoomEvent {
 
   /**
-   * 生成开始信令。
+   * Encodes a generation-start message.
    *
-   * @param options.userID 业务用户标识。
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.minimumBitrate 服务端回传的最低码率，单位为 kbps。
-   * @param options.maximumBitrate 服务端回传的最高码率，单位为 kbps。
-   * @param options.mirror 是否由后端镜像输入画面，默认 false。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 已校验的本次扩展参数，合并到 params。
-   * @returns 序列化后的 start 房间消息。
+   * @param options.userID - The application user identifier.
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.minimumBitrate - The minimum returned bitrate, in kbps.
+   * @param options.maximumBitrate - The maximum returned bitrate, in kbps.
+   * @param options.mirror - Whether the server mirrors the input; defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Validated extensions merged into params.
+   * @returns The serialized start message.
    */
   static start(
     options: {
@@ -129,16 +129,16 @@ export class RoomEvent {
   }
 
   /**
-   * 生成条件变更信令。
+   * Encodes updated generation conditions.
    *
-   * @param options.userID 业务用户标识。
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 已校验的本次扩展参数，合并到 params。
-   * @returns 序列化后的 change_condition 房间消息。
+   * @param options.userID - The application user identifier.
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Validated extensions merged into params.
+   * @returns The serialized change_condition message.
    */
   static changeCondition(
     options: RoomEventGenerationOptions
@@ -152,7 +152,7 @@ export class RoomEvent {
   }
 
   /**
-   * 回传尺寸和码率范围调整信令，码率单位为 kbps。
+   * Encodes an update to returned dimensions and the bitrate range, in kbps.
    */
   static changeTargetSize(
     options: {
@@ -179,7 +179,7 @@ export class RoomEvent {
   }
 
   /**
-   * 生成停止信令。
+   * Encodes a generation-stop message.
    */
   static stop(
     options: {
@@ -195,7 +195,7 @@ export class RoomEvent {
   }
 
   /**
-   * 交互轨迹信令。
+   * Encodes an interaction trajectory message.
    */
   static tracks(
     options: {
@@ -204,16 +204,19 @@ export class RoomEvent {
       points: RealtimePoint[];
     }
   ): string {
-    return RoomEvent.encode({
-      event: "tracks",
-      tracks: options.points.map((point) => [point.x, point.y]),
-      user_id: options.userID,
-      uid: options.taskID,
-    }, false);
+    return RoomEvent.encode(
+      {
+        event: "tracks",
+        tracks: options.points.map((point) => [point.x, point.y]),
+        user_id: options.userID,
+        uid: options.taskID,
+      },
+      false
+    );
   }
 
   /**
-   * 房间心跳信令。
+   * Encodes a room heartbeat.
    */
   static heartbeat(
     options: {
@@ -227,10 +230,10 @@ export class RoomEvent {
   }
 
   /**
-   * 组装生成条件参数，包含人脸回贴配置及本次扩展参数。
+   * Builds shared generation parameters, including face restoration and message extensions.
    *
-   * @param options 本次生成条件类信令的参数。
-   * @returns start 与 change_condition 共用的 params 字段。
+   * @param options - The generation message parameters.
+   * @returns The params shared by start and change_condition messages.
    */
   private static generationParameters(
     options: RoomEventGenerationOptions,
@@ -253,14 +256,18 @@ export class RoomEvent {
   }
 
   /**
-   * 序列化业务字段；高频轨迹不重复附带运行环境信息。
+   * Serializes business fields, omitting repeated runtime information from frequent trajectory
+   * snapshots.
    */
   private static encode(
     payload: Record<string, unknown>,
     includeRuntime = true,
   ): string {
     try {
-      return JSON.stringify(includeRuntime ? { ...payload, runtime: RuntimeInfo.toJSON() } : payload);
+      return JSON.stringify(includeRuntime ? {
+        ...payload,
+        runtime: RuntimeInfo.toJSON()
+      } : payload);
     } catch {
       throw new XmaxError(
         XmaxErrorCode.internalError,

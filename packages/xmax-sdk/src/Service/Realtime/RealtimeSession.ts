@@ -11,68 +11,68 @@
 import type { RtcSessionConnection } from "./RealtimeSessionConnection";
 
 /**
- * 实时会话身份、状态和连接凭据。
+ * The identity, status, and RTC credentials for a realtime session.
  */
 export interface RealtimeSessionInit {
 
   /**
-   * 会话标识（sessionUid）。
+   * The session ID returned as sessionUid.
    */
   id: string;
 
   /**
-   * 业务用户标识。
+   * The business user ID.
    */
   userID?: string;
 
   /**
-   * 会话状态（如 ACTIVE）。
+   * The session status, such as ACTIVE.
    */
   status?: string;
 
   /**
-   * RTC 连接参数。
+   * The RTC connection parameters.
    */
   connection?: RtcSessionConnection;
 
   /**
-   * 会话关闭原因。
+   * The session closure reason.
    */
   closeReason?: string;
 }
 
 /**
- * Xmax 实时生成会话。
+ * An Xmax realtime generation session.
  */
 export class RealtimeSession {
 
   /**
-   * 会话标识（sessionUid）。
+   * The session ID returned as sessionUid.
    */
   readonly id: string;
 
   /**
-   * 业务用户标识。
+   * The business user ID.
    */
   readonly userID?: string;
 
   /**
-   * 会话状态（如 ACTIVE）；响应未携带时为空。
+   * The session status, such as ACTIVE, when supplied by the response.
    */
   readonly status?: string;
 
   /**
-   * 会话关闭原因。
+   * The session closure reason.
    */
   readonly closeReason?: string;
 
   /**
-   * RTC 连接参数；心跳等响应未携带完整参数时为空。
+   * The RTC connection parameters; omitted from responses without complete credentials.
    */
   readonly connection?: RtcSessionConnection;
 
   /**
-   * 创建实时会话。
+   * Creates a realtime session.
    */
   constructor(
     init: RealtimeSessionInit

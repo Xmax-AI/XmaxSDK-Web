@@ -12,27 +12,27 @@ import type TRTC from "trtc-sdk-v5";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
- * TRTC 引擎实例类型。
+ * The TRTC engine instance type.
  */
 export type RtcEngine = TRTC;
 
 /**
- * 表示对共享 TRTC Engine 的独占使用权。
+ * An exclusive lease on a shared TRTC engine.
  */
 export class RtcEngineLease {
 
   /**
-   * 租约持有的 TRTC 引擎实例。
+   * The leased TRTC engine.
    */
   readonly engine: RtcEngine;
 
   /**
-   * 租约标识。
+   * The lease ID.
    */
   readonly id: string;
 
   /**
-   * 为已创建的引擎生成独占租约标识，供引擎管理器核对释放请求。
+   * Creates an exclusive lease identifying the engine for release validation.
    */
   constructor(
     engine: RtcEngine
@@ -43,24 +43,24 @@ export class RtcEngineLease {
 }
 
 /**
- * 等待独占租用 TRTC 引擎的请求。
+ * A queued request for an exclusive engine lease.
  */
 interface EngineRequest {
 
   /**
-   * 当前引擎租用请求的唯一标识。
+   * The unique lease-request ID.
    */
   id: string;
 
   /**
-   * 结束当前等待并交付结果。
+   * The callback delivering the acquired lease.
    */
   resolve: (
     lease: RtcEngineLease
   ) => void;
 
   /**
-   * 结束当前等待并传递错误。
+   * The callback rejecting the pending request.
    */
   reject: (
     error: unknown
@@ -68,39 +68,35 @@ interface EngineRequest {
 }
 
 /**
- * 管理共享 TRTC Engine 的独占创建、排队租用和销毁。
+ * Creates, leases, queues, and destroys shared TRTC engines exclusively.
  *
- * `TRTC.create()` 不需要任何凭证（sdkAppId 在进房时才使用），
- * 因此引擎可以在本地预览阶段提前创建，不依赖会话接口返回。
- *
- * TRTC SDK 在模块加载时会访问浏览器环境，这里通过动态导入
- * 延迟到首次创建引擎时才加载，保证 SDK 包本身可以在非浏览器
- * 环境（如 SSR、测试）中正常导入。
+ * Engine creation does not require session credentials, so local preview can initialize it early. Lazy
+ * importing defers TRTC browser access and permits SDK imports during SSR and tests.
  */
 export class RtcEngineManager {
 
   /**
-   * 共享实例。
+   * The shared engine manager.
    */
   static readonly shared = new RtcEngineManager();
 
   /**
-   * 依赖
+   * The factory creating a TRTC engine.
    */
   private readonly makeEngine: () => Promise<RtcEngine>;
 
   /**
-   * RTC 资源
+   * The currently held engine lease.
    */
   private activeLease?: RtcEngineLease;
 
   /**
-   * 运行状态
+   * The pending exclusive-lease requests.
    */
   private requests: EngineRequest[] = [];
 
   /**
-   * 创建引擎管理器。
+   * Creates a TRTC engine manager.
    */
   constructor(
     makeEngine: () => Promise<RtcEngine> = RtcEngineManager.defaultMakeEngine,
@@ -109,9 +105,9 @@ export class RtcEngineManager {
   }
 
   /**
-   * 等待并获取一份独占 RTC Engine 租约。
+   * Waits for an exclusive engine lease.
    *
-   * @returns 独占引擎租约；使用完毕必须调用 `release`。
+   * @returns A lease that must be released after use.
    */
   async acquire(): Promise<RtcEngineLease> {
     if (!this.activeLease && this.requests.length === 0) {
@@ -119,7 +115,10 @@ export class RtcEngineManager {
       this.activeLease = lease;
       return lease;
     }
-    return new Promise<RtcEngineLease>((resolve, reject) => {
+    return new Promise<RtcEngineLease>((
+      resolve,
+      reject
+    ) => {
       this.requests.push({
         id: `req-${Date.now()}-${this.requests.length}`,
         resolve,
@@ -129,7 +128,7 @@ export class RtcEngineManager {
   }
 
   /**
-   * 释放有效租约、销毁 Engine，并把独占权交给下一个等待者。
+   * Releases a valid lease, destroys its engine, and hands ownership to the next waiter.
    */
   release(
     lease: RtcEngineLease
@@ -141,24 +140,24 @@ export class RtcEngineManager {
     try {
       lease.engine.destroy();
     } catch {
-      // 引擎销毁失败不影响租约释放（如退房前调用 destroy）。
+      // Engine destruction failure must not prevent lease release.
     }
     void this.fulfillNextRequest();
   }
 
   /**
-   * 动态加载 TRTC SDK 并创建引擎实例。
+   * Lazily loads TRTC and creates an engine.
    */
   private static async defaultMakeEngine(): Promise<RtcEngine> {
     const module = await import("trtc-sdk-v5");
-    // NONE：关闭 TRTC 自身的 console 输出；保留默认的诊断日志上传。
-    // 在 create 之前设置，避免实例创建和进房日志淹没 XmaxSDK 日志。
+    // Disable TRTC console output while retaining its default diagnostic upload behavior.
+    // Set the level before creating an engine so native logs do not obscure SDK output.
     module.default.setLogLevel(5);
     return module.default.create();
   }
 
   /**
-   * 创建新引擎租约。
+   * Creates a new engine lease.
    */
   private async createLease(): Promise<RtcEngineLease> {
     const engine = await this.makeEngine();
@@ -172,7 +171,7 @@ export class RtcEngineManager {
   }
 
   /**
-   * 满足下一个排队请求；创建失败时拒绝该请求并继续处理后续请求。
+   * Services queued requests, rejecting failed engine creation and continuing with subsequent waiters.
    */
   private async fulfillNextRequest(): Promise<void> {
     while (!this.activeLease && this.requests.length > 0) {

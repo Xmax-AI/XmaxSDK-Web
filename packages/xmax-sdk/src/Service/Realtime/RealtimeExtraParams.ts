@@ -11,19 +11,20 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 可通过生成信令传递的 JSON 数据。
+ * JSON data accepted by generation signaling.
  */
 export type JsonValue = string | number | boolean | null | JsonValue[] | {
   [key: string]: JsonValue
 };
 
 /**
- * 合并到本次 start 或 change_condition 的 params；不缓存，不允许覆盖 SDK 字段。
+ * Parameters merged into this start or change_condition message. Values are not cached and must not
+ * override SDK-managed fields.
  */
 export type RealtimeExtraParams = Record<string, JsonValue>;
 
 /**
- * 由 SDK 管理的生成信令字段，扩展参数不得覆盖。
+ * Generation fields reserved for XmaxSDK.
  */
 const RESERVED_PARAMS = new Set([
   "model", "face_replace", "size", "target_size", "prompt", "ref_image_path",
@@ -31,45 +32,57 @@ const RESERVED_PARAMS = new Set([
 ]);
 
 /**
- * 校验并复制本次参数；不保存到生成上下文。
+ * Validates and copies parameters without caching them in the generation context.
  *
- * @param params 本次调用的扩展参数，只接受 JSON 数据。
- * @returns 独立的 JSON 副本；未传参数时返回 undefined。
- * @throws 参数包含非 JSON 数据、循环引用或 SDK 保留字段时抛出 invalidConfiguration。
+ * @param params - Additional JSON parameters for this call.
+ * @returns An independent JSON snapshot, or undefined if no parameters were supplied.
+ * @throws An invalidConfiguration error for non-JSON values, cycles, or reserved fields.
  */
 export function snapshotExtraParams(
   params?: RealtimeExtraParams
 ): RealtimeExtraParams | undefined {
-  if (params === undefined)
+  if (params === undefined) {
     return undefined;
+  }
   const invalid = (message: string): never => {
-    throw new XmaxError(XmaxErrorCode.invalidConfiguration, message);
+    throw new XmaxError(
+      XmaxErrorCode.invalidConfiguration,
+      message
+    );
   };
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     return invalid("extraParams must be a JSON object");
   }
   for (const key of Object.keys(params)) {
-    if (RESERVED_PARAMS.has(key))
+    if (RESERVED_PARAMS.has(key)) {
       return invalid(`extraParams conflicts with SDK parameter: ${key}`);
+    }
   }
   const ancestors = new Set<object>();
   const validate = (value: unknown): void => {
-    if (value === null || typeof value === "string" || typeof value === "boolean")
+    if (value === null || typeof value === "string" || typeof value === "boolean") {
       return;
-    if (typeof value === "number" && Number.isFinite(value))
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
       return;
-    if (typeof value !== "object" || !value)
+    }
+    if (typeof value !== "object" || !value) {
       return invalid("extraParams must contain only JSON values");
-    if (ancestors.has(value))
+    }
+    if (ancestors.has(value)) {
       return invalid("extraParams must not contain circular references");
+    }
     const prototype = Object.getPrototypeOf(value);
     if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
       return invalid("extraParams must contain only JSON objects and arrays");
     }
-    if (Object.getOwnPropertySymbols(value).length)
+    if (Object.getOwnPropertySymbols(value).length) {
       return invalid("extraParams must not contain symbol keys");
+    }
     ancestors.add(value);
-    for (const child of Array.isArray(value) ? value : Object.values(value)) validate(child);
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      validate(child);
+    }
     ancestors.delete(value);
   };
   validate(params);

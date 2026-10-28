@@ -13,22 +13,22 @@ import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack"
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 
 /**
- * 渲染层统一入口；Core 不直接持有视图、Registry 或轨迹 Binding。
+ * The render-layer boundary, hiding views, registries, and trajectory bindings from Core.
  */
 export interface RenderControlling {
 
   /**
-   * 当前远端视图是否已完成渲染预热。
+   * Whether remote render warmup has completed.
    */
   readonly isReady: boolean;
 
   /**
-   * 新任务开始前重置展示就绪状态，已有视图重新等待首帧和预热。
+   * Resets presentation readiness so a bound view awaits the new task's first frame and warmup.
    */
   prepareForGeneration(): void;
 
   /**
-   * 注册远端画面和交互能力；任务开始前交互不可用。
+   * Registers remote presentation and interaction, initially unavailable until the task starts.
    */
   registerRemoteTrack(
     track: RealtimeVideoTrack,
@@ -38,14 +38,14 @@ export interface RenderControlling {
   ): void;
 
   /**
-   * 同步远端流到当前视图，null 只清空画面，不销毁轨道。
+   * Updates remote media; null clears presentation without destroying the SDK track.
    */
   setRemoteMedia(
     track: MediaStreamTrack | null
   ): void;
 
   /**
-   * 开始或停止任务交互，格式为模型输入尺寸，不是下行尺寸。
+   * Changes task interaction using input-media dimensions, not downlink dimensions.
    */
   setInteractionEnabled(
     enabled: boolean,
@@ -53,7 +53,7 @@ export interface RenderControlling {
   ): void;
 
   /**
-   * 注销远端能力并清理视图资源，保留本地预览。
+   * Unregisters remote capabilities and releases view resources while retaining local preview.
    */
   resetRemoteTrack(): void;
 }

@@ -11,12 +11,12 @@
 import type { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 
 /**
- * 从显示视口采集的交互快照；坐标单位为 CSS 像素，不持有 DOM 事件。
+ * A viewport interaction snapshot in CSS pixels, without retaining DOM events.
  */
 export interface InteractionFrame {
 
   /**
-   * 同一采样时刻的触点位置。
+   * The touch positions at one sampling instant.
    */
   readonly points: readonly Readonly<{
     x: number;
@@ -24,7 +24,7 @@ export interface InteractionFrame {
   }>[];
 
   /**
-   * 显示视口的宽高，单位为 CSS 像素。
+   * The viewport dimensions, in CSS pixels.
    */
   readonly viewportSize: Readonly<{
     width: number;
@@ -32,12 +32,12 @@ export interface InteractionFrame {
   }>;
 
   /**
-   * 画面在视口中的缩放与裁剪方式。
+   * The image scaling and cropping mode within the viewport.
    */
   readonly contentMode: VideoContentMode;
 
   /**
-   * 是否对显示画面应用水平镜像。
+   * Whether the displayed image is horizontally mirrored.
    */
   readonly mirrored: boolean;
 }

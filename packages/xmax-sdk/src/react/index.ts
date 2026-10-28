@@ -8,9 +8,7 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-/**
- * Optional React entry point; the core entry never imports React.
- */
+// Optional React entry point; the core entry never imports React.
 export { XmaxRealtimeDualVideo } from "./XmaxRealtimeDualVideo";
 export type { XmaxRealtimeDualVideoProps } from "./XmaxRealtimeDualVideo";
 export { XmaxRealtimeVideo } from "./XmaxRealtimeVideo";

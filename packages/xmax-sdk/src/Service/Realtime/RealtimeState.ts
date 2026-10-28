@@ -11,136 +11,161 @@
 import { XmaxError } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 实时业务连接状态。
+ * The realtime connection lifecycle states.
  */
 export enum RealtimeConnectionState {
 
   /**
-   * 没有可用的本地媒体流。
+   * No local media stream is available.
    */
   idle = "Idle",
 
   /**
-   * 正在准备本地媒体流；摄像头还需等待有效帧和预览视图绑定。
+   * Local media is being prepared. Cameras also wait for a valid frame and a bound preview view.
    */
   preparing = "Preparing",
 
   /**
-   * 本地媒体流已就绪，可以预览、连接和生成。
+   * Local media is ready for preview, connection, and generation.
    */
   ready = "Ready",
 
   /**
-   * 正在创建 Session、加入 Room 并发布本地流。
+   * The session is being created, the RTC room joined, and local media published.
    */
   connecting = "Connecting",
 
   /**
-   * 实时连接已建立，当前没有生成任务。
+   * The realtime connection is established without an active generation task.
    */
   connected = "Connected",
 
   /**
-   * 正在启动生成或等待 SDK 视频视图完成首帧及渲染预热。
-   * startGeneration 返回远端流后仍可能保持此状态，接入方需挂载视频视图。
+   * Generation is starting or the SDK video view is awaiting its first frame and render warmup. This
+   * state may continue after startGeneration returns; your app must mount the video view.
    */
   starting = "Starting",
 
   /**
-   * 生成任务正在运行，SDK 视频视图已完成渲染预热并开始展示画面。
+   * Generation is active and the SDK video view has completed warmup and begun presenting results.
    */
   generating = "Generating",
 
   /**
-   * 正在清理生成、Room 和 Session 资源。
+   * Generation, room, and session resources are being released.
    */
   disconnecting = "Disconnecting",
 }
 
 /**
- * 进入当前实时状态的原因。
+ * The reason for entering a realtime state.
  */
 export type RealtimeReason =
   | {
+
+    /**
+     * A state transition caused by a normal operation.
+     */
     kind: "normal"
   }
   | {
+
+    /**
+     * A state transition caused by an orientation change.
+     */
     kind: "orientationChanged"
   }
   | {
+
+    /**
+     * A state transition caused by a failure.
+     */
     kind: "failure";
+
+    /**
+     * The error that caused the state transition.
+     */
     error: XmaxError
   };
 
 /**
- * 正常操作、画面方向变化和错误对应的状态原因。
+ * State reasons for normal operations, orientation changes, and failures.
  */
 export const RealtimeReason = {
+  /**
+   * The reason for a normal operation's state transition.
+   */
   normal: { kind: "normal" } as RealtimeReason,
+  /**
+   * The reason for an orientation-related state transition.
+   */
   orientationChanged: { kind: "orientationChanged" } as RealtimeReason,
   /**
-   * 将 SDK 错误包装为状态切换原因，保留错误码和原始说明。
+   * Wraps an SDK error as a state-transition reason, preserving its code and message.
    */
   failure(
     error: XmaxError
   ): RealtimeReason {
-    return { kind: "failure", error };
+    return {
+      kind: "failure",
+      error
+    };
   },
 };
 
 /**
- * 实时状态快照的生命周期、业务标识和变化原因。
+ * The lifecycle state, business identifiers, and transition reason for a snapshot.
  */
 export interface RealtimeStateInit {
 
   /**
-   * 当前实时连接生命周期状态。
+   * The current connection lifecycle state.
    */
   connectionState: RealtimeConnectionState;
 
   /**
-   * 业务会话标识。
+   * The business session ID.
    */
   sessionID?: string;
 
   /**
-   * 当前生成任务标识。
+   * The active generation task ID.
    */
   taskID?: string;
 
   /**
-   * 当前操作的结束或变更原因。
+   * The reason for the operation's completion or transition.
    */
   reason?: RealtimeReason;
 }
 
 /**
- * 实时业务当前状态快照。
+ * A snapshot of the realtime lifecycle state.
  */
 export class RealtimeState {
 
   /**
-   * 当前连接生命周期状态。
+   * The current connection lifecycle state.
    */
   readonly connectionState: RealtimeConnectionState;
 
   /**
-   * 当前或最近一次实时 Session 标识。
+   * The current or most recent realtime session ID.
    */
   readonly sessionID?: string;
 
   /**
-   * 当前生成任务标识。
+   * The active generation task ID.
    */
   readonly taskID?: string;
 
   /**
-   * 进入当前状态的原因；正常开始新的操作时清空。
+   * The reason for entering this state, cleared when a normal operation begins.
    */
   readonly reason?: RealtimeReason;
 
   /**
-   * 创建实时状态快照。
+   * Creates a realtime state snapshot.
    */
   constructor(
     init: RealtimeStateInit
@@ -152,9 +177,9 @@ export class RealtimeState {
   }
 
   /**
-   * 判断当前状态与另一状态是否等价：连接状态、会话、任务与原因种类一致。
+   * Compares connection state, session, task, and reason kind.
    *
-   * @param other 待比较的状态。
+   * @param other - The state to compare.
    */
   equals(
     other: RealtimeState
@@ -169,7 +194,7 @@ export class RealtimeState {
 }
 
 /**
- * 实时状态监听器。
+ * Receives realtime state snapshots.
  */
 export type RealtimeStateListener = (
   state: RealtimeState

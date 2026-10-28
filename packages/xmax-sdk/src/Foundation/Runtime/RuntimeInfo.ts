@@ -9,43 +9,43 @@
 //
 
 /**
- * SDK 当前版本号。
+ * The current SDK version.
  */
 export const XMAX_SDK_VERSION = "1.1.0";
 
 /**
- * 随业务请求上报的 SDK 与浏览器环境信息。
+ * SDK and browser metadata included with business requests.
  */
 export interface RuntimeInfoSnapshot {
 
   /**
-   * 运行平台标识。
+   * The runtime platform ID.
    */
   platform: string;
 
   /**
-   * 操作系统或浏览器版本描述。
+   * The operating-system or browser version description.
    */
   osVersion: string;
 
   /**
-   * SDK 版本号。
+   * The SDK version.
    */
   sdkVersion: string;
 
   /**
-   * 设备或浏览器型号描述。
+   * The device or browser description.
    */
   deviceModel: string;
 }
 
 /**
- * 描述 SDK 当前运行环境。
+ * Describes the SDK runtime environment.
  */
 export class RuntimeInfo {
 
   /**
-   * 当前运行环境快照。
+   * The current runtime metadata snapshot.
    */
   static readonly current: RuntimeInfoSnapshot = {
     platform: "web",
@@ -55,7 +55,7 @@ export class RuntimeInfo {
   };
 
   /**
-   * 序列化为接口传输使用的 snake_case 字段。
+   * Serializes runtime metadata to API snake_case fields.
    */
   static toJSON(
     snapshot: RuntimeInfoSnapshot = RuntimeInfo.current
@@ -69,7 +69,7 @@ export class RuntimeInfo {
   }
 
   /**
-   * 读取浏览器 User-Agent；非浏览器环境返回 unknown。
+   * Returns the browser User-Agent, or unknown outside a browser.
    */
   private static currentOSVersion(): string {
     if (typeof navigator !== "undefined" && navigator.userAgent) {

@@ -9,38 +9,38 @@
 //
 
 /**
- * 媒体坐标系中的横纵坐标。
+ * Coordinates in media space.
  */
 export interface RealtimePointInit {
 
   /**
-   * 媒体横坐标；交互轨迹使用 [0, 1] 归一化值。
+   * The horizontal coordinate; interaction trajectories use normalized values in [0, 1].
    */
   x: number;
 
   /**
-   * 媒体纵坐标；交互轨迹使用 [0, 1] 归一化值。
+   * The vertical coordinate; interaction trajectories use normalized values in [0, 1].
    */
   y: number;
 }
 
 /**
- * 媒体坐标系中的二维点；交互轨迹使用归一化坐标。
+ * A point in media space, using normalized coordinates for interaction trajectories.
  */
 export class RealtimePoint {
 
   /**
-   * 媒体横坐标。
+   * The horizontal media coordinate.
    */
   readonly x: number;
 
   /**
-   * 媒体纵坐标。
+   * The vertical media coordinate.
    */
   readonly y: number;
 
   /**
-   * 创建媒体坐标点。
+   * Creates a media-space point.
    */
   constructor(
     init: RealtimePointInit

@@ -9,22 +9,45 @@
 //
 
 /**
- * 外部 PCM 帧的只读输入契约，浏览器 AudioData 可直接传入。
- * 使用结构类型，避免要求接入方额外安装 WebCodecs 全局类型。
+ * A structural PCM input contract compatible with browser AudioData without requiring extra global
+ * WebCodecs types.
  */
 export interface RealtimeExternalAudioFrame {
 
   /**
-   * 共用源时间轴上的微秒时间戳及固定 PCM 规格。
+   * The timestamp in microseconds on the shared source timeline.
    */
   readonly timestamp: number;
+
+  /**
+   * The sample rate, in samples per second.
+   */
   readonly sampleRate: number;
+
+  /**
+   * The number of audio channels.
+   */
   readonly numberOfChannels: number;
+
+  /**
+   * The number of sample frames in each channel.
+   */
   readonly numberOfFrames: number;
+
+  /**
+   * The PCM sample format; null indicates that sample data is unavailable.
+   */
   readonly format: string | null;
 
   /**
-   * 将指定声道复制为平面浮点 PCM；返回后 SDK 不再访问原始样本。
+   * Copies a channel as planar floating-point PCM; the SDK no longer accesses source samples after this
+   * returns.
    */
-  copyTo(destination: Float32Array, options: { planeIndex: number; format: "f32-planar" }): void;
+  copyTo(
+    destination: Float32Array,
+    options: {
+      planeIndex: number;
+      format: "f32-planar"
+    }
+  ): void;
 }

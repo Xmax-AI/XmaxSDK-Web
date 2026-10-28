@@ -18,59 +18,61 @@ import {
 import type { RealtimeErrorHandler } from "./RealtimeErrorHandler";
 
 /**
- * 实时操作类型；同一时刻只允许一个操作。
+ * Realtime operation kinds; only one operation is admitted at a time.
  */
 export enum RealtimeOperationKind {
 
   /**
-   * 准备或释放本地媒体源。
+   * Prepares or releases a local media source.
    */
   media = "media",
 
   /**
-   * 建立实时会话和 RTC 连接。
+   * Creates a session and RTC connection.
    */
   connection = "connection",
 
   /**
-   * 启动或更新视频生成任务。
+   * Starts a generation task or updates its conditions.
    */
   generation = "generation",
 
   /**
-   * 保留连接并替换生成任务；失败按生成生命周期清理。
+   * Replaces a generation task while retaining the connection, with generation-lifecycle failure
+   * cleanup.
    */
   generationRestart = "generationRestart",
 
   /**
-   * 切换当前摄像头。
+   * Switches the active camera.
    */
   cameraSwitch = "cameraSwitch",
 
   /**
-   * 更新生成条件或回传尺寸，不改变生成生命周期。
+   * Updates conditions or returned dimensions without changing the generation lifecycle.
    */
   configuration = "configuration",
 }
 
 /**
- * 资源清理范围；值越大范围越广，并发终止请求合并为最大范围。
+ * Cleanup scopes ordered from narrower to broader; concurrent termination requests use the broadest
+ * scope.
  */
 export enum RealtimeTerminationScope {
 
   /**
-   * 结束生成并断开连接，保留本地媒体。
+   * Stops generation and disconnects while retaining local media.
    */
   connection = 0,
 
   /**
-   * 结束生成、断开连接并释放本地媒体。
+   * Stops generation, disconnects, and releases local media.
    */
   all = 1,
 }
 
 /**
- * 判断终止范围是否影响指定类型的操作。
+ * Determines whether a termination scope affects an operation kind.
  */
 function scopeAffects(
   scope: RealtimeTerminationScope,
@@ -83,23 +85,23 @@ function scopeAffects(
 }
 
 /**
- * 清理完成后的残留资源信息。
+ * Resources remaining after cleanup.
  */
 export interface RealtimeCleanupResult {
 
   /**
-   * 业务会话标识。
+   * The business session ID.
    */
   sessionID?: string;
 
   /**
-   * 资源清理后是否仍保留可用的本地媒体。
+   * Whether usable local media remains after cleanup.
    */
   hasLocalMedia: boolean;
 }
 
 /**
- * 分级资源清理的执行体，由 Manager 提供。
+ * The manager-provided cleanup operation for a termination scope.
  */
 export type RealtimeCleanupHandler = (
   scope: RealtimeTerminationScope,
@@ -107,60 +109,60 @@ export type RealtimeCleanupHandler = (
 ) => Promise<RealtimeCleanupResult>;
 
 /**
- * 操作租约：更新失败清理范围、校验操作仍拥有实时生命周期。
+ * A lifecycle lease for validating operations and selecting failure cleanup.
  */
 export interface RealtimeOperationToken {
 
   /**
-   * 更新当前操作失败或被调用方取消时需要释放的资源范围。
+   * Sets the resources to release if the operation fails or its caller cancels it.
    */
   setFailureScope(
     scope: RealtimeTerminationScope
   ): void;
 
   /**
-   * 在异步边界后校验当前操作仍拥有实时生命周期。
+   * Verifies lifecycle ownership after an asynchronous boundary.
    */
   ensureCurrent(): void;
 
   /**
-   * 供必须同步返回的底层有效性回调读取操作状态。
+   * Whether the lease remains valid, for synchronous lower-level validity callbacks.
    */
   readonly isCurrent: boolean;
 
   /**
-   * 操作被取消时触发中止（供 fetch 等可中断调用使用）。
+   * The cancellation signal for interruptible work such as fetch.
    */
   readonly signal: AbortSignal;
 }
 
 /**
- * 单次操作的有效性凭证，记录失败范围并向异步任务传播取消信号。
+ * An operation lease that tracks cleanup scope and propagates cancellation to asynchronous work.
  */
 class OperationLease implements RealtimeOperationToken {
 
   /**
-   * 并发状态
+   * Whether this lease still owns its operation.
    */
   private valid = true;
 
   /**
-   * 使当前操作终止的错误。
+   * The error that terminated the operation.
    */
   private terminalError?: XmaxError;
 
   /**
-   * 当前操作失败时需要清理的资源范围。
+   * The resources to clean up if this operation fails.
    */
   private storedFailureScope?: RealtimeTerminationScope;
 
   /**
-   * 取消当前业务操作及相关异步等待。
+   * The cancellation controller shared by this operation's asynchronous waits.
    */
   private readonly abortController = new AbortController();
 
   /**
-   * 创建操作租约；未指定失败范围时不自动扩大资源清理范围。
+   * Creates an operation lease without expanding cleanup when no failure scope is supplied.
    */
   constructor(
     failureScope?: RealtimeTerminationScope
@@ -169,35 +171,35 @@ class OperationLease implements RealtimeOperationToken {
   }
 
   /**
-   * 租约是否仍然有效，可用于异步结果提交前的快速判断。
+   * Whether the lease remains valid for committing asynchronous results.
    */
   get isCurrent(): boolean {
     return this.valid;
   }
 
   /**
-   * 首次使租约失效的错误；主动取消且未指定原因时为空。
+   * The first invalidation error; undefined for cancellation without an explicit reason.
    */
   get failure(): XmaxError | undefined {
     return this.terminalError;
   }
 
   /**
-   * 当前操作失败或取消时需要清理的资源范围。
+   * The resources to release on operation failure or cancellation.
    */
   get failureScope(): RealtimeTerminationScope | undefined {
     return this.storedFailureScope;
   }
 
   /**
-   * 租约失效时同步触发的取消信号。
+   * The signal aborted synchronously when the lease is invalidated.
    */
   get signal(): AbortSignal {
     return this.abortController.signal;
   }
 
   /**
-   * 更新当前操作失败或被调用方取消时需要释放的资源范围。
+   * Sets the resources to release if the operation fails or its caller cancels it.
    */
   setFailureScope(
     scope: RealtimeTerminationScope
@@ -206,7 +208,7 @@ class OperationLease implements RealtimeOperationToken {
   }
 
   /**
-   * 作废租约并触发中止信号；首个终止原因被保留。
+   * Invalidates the lease and aborts pending work, preserving the first termination reason.
    */
   invalidate(
     error?: XmaxError
@@ -219,7 +221,7 @@ class OperationLease implements RealtimeOperationToken {
   }
 
   /**
-   * 在异步边界后校验当前操作仍拥有实时生命周期。
+   * Verifies lifecycle ownership after an asynchronous boundary.
    */
   ensureCurrent(): void {
     if (!this.valid) {
@@ -229,122 +231,122 @@ class OperationLease implements RealtimeOperationToken {
 }
 
 /**
- * 正在执行的业务操作及其取消、清理进度。
+ * An active operation and its cancellation and cleanup progress.
  */
 interface Operation {
 
   /**
-   * 当前业务操作的唯一标识。
+   * The operation's unique ID.
    */
   id: string;
 
   /**
-   * 当前操作的业务类型。
+   * The operation kind.
    */
   kind: RealtimeOperationKind;
 
   /**
-   * 当前操作持有的生命周期租约。
+   * The lifecycle lease owned by this operation.
    */
   lease: OperationLease;
 
   /**
-   * 当前操作完成或清理结束时兑现的任务。
+   * The promise resolved after the operation or its cleanup finishes.
    */
   completion: Promise<void>;
 
   /**
-   * 等待当前操作收尾的终止任务。
+   * The termination task waiting for this operation to finish.
    */
   terminationTask?: Promise<void>;
 }
 
 /**
- * 一次终止操作需要释放的范围及等待任务。
+ * A termination request's cleanup scope and pending work.
  */
 interface Termination {
 
   /**
-   * 本次终止流程的唯一标识。
+   * The unique termination ID.
    */
   id: string;
 
   /**
-   * 本次需要释放的资源范围。
+   * The requested cleanup scope.
    */
   target: RealtimeTerminationScope;
 
   /**
-   * 当前操作的结束或变更原因。
+   * The reason for the operation's completion or transition.
    */
   reason: RealtimeReason;
 
   /**
-   * 导致当前操作失败的 SDK 错误。
+   * The SDK error responsible for the failure.
    */
   error?: XmaxError;
 
   /**
-   * 业务会话标识。
+   * The business session ID.
    */
   sessionID?: string;
 
   /**
-   * 资源清理前需要等待的在途操作。
+   * Pending operations that must settle before cleanup.
    */
   waitForOperations: Array<() => Promise<void>>;
 
   /**
-   * 当前终止流程的共享任务。
+   * The shared promise for this termination.
    */
   task: Promise<void>;
 }
 
 /**
- * 为实时操作和终止流程分配递增标识。
+ * The increasing ID source for operations and termination requests.
  */
 let operationSequence = 0;
 
 /**
- * 统一管理实时操作准入、状态提交和分级资源清理。
- * 在 JS 单线程事件循环下以 Promise 链和操作租约实现串行化语义。
+ * Coordinates operation admission, state commits, and scoped cleanup. Promise chains and operation
+ * leases serialize work within the JavaScript event loop.
  */
 export class RealtimeCoordinator {
 
   /**
-   * 业务组件
+   * The handler that reports lifecycle failures.
    */
   private readonly errorHandler: RealtimeErrorHandler;
 
   /**
-   * 按终止范围释放业务资源的回调。
+   * The callback that releases resources for a termination scope.
    */
   private readonly cleanup: RealtimeCleanupHandler;
 
   /**
-   * 状态管理
+   * The latest committed lifecycle state.
    */
   private state = new RealtimeState({
     connectionState: RealtimeConnectionState.idle,
   });
 
   /**
-   * 实时状态变化的业务监听器。
+   * The app's realtime state listener.
    */
   private stateListener?: RealtimeStateListener;
 
   /**
-   * 操作管理
+   * The operation currently admitted to the lifecycle.
    */
   private activeOperation?: Operation;
 
   /**
-   * 当前正在执行的资源终止流程。
+   * The active termination request.
    */
   private termination?: Termination;
 
   /**
-   * 注入错误分发与资源清理逻辑，初始状态为 idle。
+   * Creates a coordinator with error reporting and scoped cleanup.
    */
   constructor(
     options: {
@@ -357,23 +359,23 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 当前实时状态快照。
+   * The latest realtime state snapshot.
    */
   get currentState(): RealtimeState {
     return this.state;
   }
 
   /**
-   * 后台自动调档仅在没有前台操作或清理时申请操作租约。
+   * Whether foreground work or cleanup prevents automatic quality adaptation from acquiring a lease.
    */
   get isBusy(): boolean {
     return this.activeOperation !== undefined || this.termination !== undefined;
   }
 
   /**
-   * 设置实时状态监听器；设置后立即回放当前状态。
+   * Sets the state listener and immediately replays the current state.
    *
-   * @param listener 实时状态回调；传入 `undefined` 时清除监听器。
+   * @param listener - The callback; undefined removes it.
    */
   async setStateListener(
     listener?: RealtimeStateListener
@@ -385,14 +387,14 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 接纳并执行一个实时操作，同一时刻只允许一个。生命周期操作取消时先完成
-   * 对应范围的资源清理；仅取消参数更新不会停止当前生成。
+   * Admits and executes one realtime operation. Cancelling a lifecycle operation completes scoped
+   * cleanup first. Cancelling only a configuration update does not stop generation.
    *
-   * @param kind 操作类型。
-   * @param failureScope 操作失败时需要自动释放的资源范围；不传则失败仅上报。
-   * @param body 操作执行体，通过租约校验异步边界后的有效性。
-   * @returns 操作执行结果。
-   * @throws 已有活跃操作或终止进行中时抛出 `invalidConfiguration`。
+   * @param kind - The operation kind.
+   * @param failureScope - The automatic failure cleanup scope; omission only reports failures.
+   * @param body - The operation body, which validates its lease across asynchronous boundaries.
+   * @returns The operation result.
+   * @throws Rejects with invalidConfiguration if another operation or termination is active.
    */
   async run<Value>(
     kind: RealtimeOperationKind,
@@ -410,7 +412,7 @@ export class RealtimeCoordinator {
       throw error;
     }
 
-    // 普通生成调用在运行中只更新条件；强制重启保持独立的生命周期操作类型。
+    // Ordinary calls update active generation; explicit restarts retain a separate lifecycle kind.
     const operationKind =
       kind === RealtimeOperationKind.generation &&
         (this.state.connectionState === RealtimeConnectionState.generating ||
@@ -437,12 +439,15 @@ export class RealtimeCoordinator {
       this.finish(operation);
       return value;
     } catch (error) {
-      return this.handleFailure(error, operation);
+      return this.handleFailure(
+        error,
+        operation
+      );
     }
   }
 
   /**
-   * 仅当前操作可以提交新的公开状态。
+   * Commits public state only for the current operation.
    */
   async commit(
     nextState: RealtimeState,
@@ -453,7 +458,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 当前本地预览满足就绪条件后，结束媒体准备状态。
+   * Completes media preparation when the current local preview is ready.
    */
   async localPreviewDidBecomeReady(
     isCurrent: () => boolean
@@ -470,7 +475,8 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 当前生成任务和远端展示均就绪后进入 generating；迟到通知不恢复已结束任务。
+   * Enters generating only when the current task and presentation are ready; stale callbacks cannot
+   * restore ended tasks.
    */
   async remotePreviewDidBecomeReady(
     sessionID: string,
@@ -483,12 +489,14 @@ export class RealtimeCoordinator {
     }
 
     await this.setState(new RealtimeState({
-      connectionState: RealtimeConnectionState.generating, sessionID, taskID,
+      connectionState: RealtimeConnectionState.generating,
+      sessionID,
+      taskID,
     }));
   }
 
   /**
-   * 断开实时连接；尚未提交连接状态的活跃操作也会被取消。
+   * Disconnects and cancels active work, including work that has not committed a connection state.
    */
   async disconnect(
     reason: RealtimeReason = RealtimeReason.normal
@@ -498,13 +506,17 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 发起断开并返回收尾任务，使本地媒体调整不必等待网络资源释放。
+   * Begins disconnecting and returns its cleanup task without requiring local-media changes to await
+   * network teardown.
    */
   async beginDisconnect(
     reason: RealtimeReason,
   ): Promise<Promise<void> | undefined> {
     const hasConnectionOperation = this.activeOperation
-      ? scopeAffects(RealtimeTerminationScope.connection, this.activeOperation.kind)
+      ? scopeAffects(
+        RealtimeTerminationScope.connection,
+        this.activeOperation.kind
+      )
       : false;
     const state = this.state.connectionState;
     const needsDisconnect =
@@ -525,18 +537,22 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 终止指定范围并等待资源清理完成；并发终止请求会合并为最大范围。
+   * Terminates a scope and awaits cleanup, merging concurrent requests into the broadest scope.
    */
   async terminate(
     target: RealtimeTerminationScope,
     reason: RealtimeReason = RealtimeReason.normal,
   ): Promise<void> {
-    const task = await this.requestTermination(target, undefined, reason);
+    const task = await this.requestTermination(
+      target,
+      undefined,
+      reason
+    );
     await task;
   }
 
   /**
-   * 清理仍属于当前生命周期的后台故障，并通过最终状态提供原因。
+   * Cleans up a current-lifecycle background failure and exposes its reason in the final state.
    */
   async terminateWithError(
     error: XmaxError,
@@ -546,7 +562,7 @@ export class RealtimeCoordinator {
     if (!isCurrent()) {
       return;
     }
-    // 清理期间的远端迟到错误不覆盖主动结束；本地媒体终止仍需扩大释放范围。
+    // Late remote failures must not replace an intentional termination; local-media failures may still broaden cleanup.
     if (this.termination && target !== RealtimeTerminationScope.all) {
       return;
     }
@@ -559,7 +575,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 操作失败处理：取消走终止流程，错误按失败范围清理或直接上报。
+   * Routes cancellation through termination and other failures through scoped cleanup or reporting.
    */
   private async handleFailure<Value>(
     error: unknown,
@@ -571,7 +587,7 @@ export class RealtimeCoordinator {
       !operation.lease.isCurrent;
 
     if (operationWasCancelled) {
-      // 取消配置请求本身不停止生成；外部断开或关闭仍按已有终止流程等待收尾。
+      // Cancelling a configuration request alone must not stop generation; disconnect and close still await cleanup.
       if (
         (operation.kind === RealtimeOperationKind.configuration ||
           operation.lease.failureScope === undefined) &&
@@ -634,7 +650,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 发起或合并终止请求，作废旧操作并进入断开中状态。
+   * Begins or merges termination, invalidates obsolete operations, and enters disconnecting.
    */
   private async requestTermination(
     target: RealtimeTerminationScope,
@@ -667,7 +683,10 @@ export class RealtimeCoordinator {
     }
 
     const active = this.activeOperation;
-    if (active && active !== origin && scopeAffects(pending.target, active.kind)) {
+    if (active && active !== origin && scopeAffects(
+      pending.target,
+      active.kind
+    )) {
       active.lease.invalidate(pending.error);
       active.terminationTask = pending.task;
       pending.waitForOperations.push(() => active.completion);
@@ -688,7 +707,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 执行终止：等待旧操作收尾，分级清理资源，提交最终状态。
+   * Awaits obsolete operations, releases scoped resources, and commits the final state.
    */
   private async performTermination(
     id: string
@@ -729,9 +748,12 @@ export class RealtimeCoordinator {
         sessionID: pending.sessionID ?? this.state.sessionID,
         reason: pending.reason,
       });
-      // 先完成内部收尾，再通知监听器，避免旧任务覆盖重入的关闭请求。
+      // Finish internal bookkeeping before notifying observers so obsolete work cannot overwrite a reentrant close.
       const active = this.activeOperation;
-      if (active && scopeAffects(requestedTarget, active.kind)) {
+      if (active && scopeAffects(
+        requestedTarget,
+        active.kind
+      )) {
         this.finish(active);
       }
       const listener = !this.state.equals(finalState)
@@ -751,7 +773,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 结束指定操作，释放操作准入场。
+   * Completes an operation and releases its admission slot.
    */
   private finish(
     operation: Operation
@@ -762,7 +784,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 提交新状态并通知监听器；状态未变化时不通知。
+   * Commits and notifies a changed state, suppressing equivalent snapshots.
    */
   private async setState(
     nextState: RealtimeState
@@ -775,7 +797,7 @@ export class RealtimeCoordinator {
   }
 
   /**
-   * 构造统一的操作取消错误。
+   * Creates the standard operation-cancellation error.
    */
   static cancelledError(): XmaxError {
     return new XmaxError(

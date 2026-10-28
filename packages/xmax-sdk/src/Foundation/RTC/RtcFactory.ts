@@ -17,7 +17,7 @@ import type { RtcManaging } from "./RtcManaging";
 import { XmaxError, XmaxErrorCode } from "../Errors/XmaxError";
 
 /**
- * 按固定的接入配置创建 RTC 实现；构造阶段不加载厂商运行时。
+ * Creates an adapter from the configured RTC provider without loading its runtime during construction.
  */
 export function createRtcManager(
   provider: RtcProvider,
@@ -31,6 +31,9 @@ export function createRtcManager(
     case RtcProvider.vertc:
       return new VeRtcManager();
     default:
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Unsupported RTC provider"
+      );
   }
 }

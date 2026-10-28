@@ -12,30 +12,30 @@ import type { VideoContentMode } from "../../Foundation/Media/Video/VideoContent
 import type { RealtimeVideoTrack } from "./RealtimeVideoTrack";
 
 /**
- * 轨道渲染目标。
+ * A track rendering target implemented by a view.
  *
- * 由渲染层视图实现；绑定管线只通过该接口向视图送流和调整镜像，
- * 不感知具体视图类型。
+ * The binding delivers media and mirroring settings through this contract without depending on a
+ * concrete view type.
  */
 export interface VideoRenderTarget {
 
   /**
-   * 为新生成任务重新等待首帧及渲染预热，不重建媒体流。
+   * Restarts first-frame and render-warmup waiting for a new task without recreating the stream.
    */
   prepareForGeneration?: () => void;
 
   /**
-   * 视图内部播放器；自定义目标可以不提供。
+   * The view's internal player, if exposed by the target.
    */
   readonly videoElement?: HTMLVideoElement;
 
   /**
-   * 画面是否镜像显示（仅影响显示，不影响发布流）。
+   * Whether to mirror the displayed image, without affecting published media.
    */
   isMirrored: boolean;
 
   /**
-   * 设置渲染用的媒体流；传 null 清空画面。
+   * Sets the rendered media stream; null clears the image.
    */
   setMediaStream: (
     stream: MediaStream | null
@@ -43,27 +43,27 @@ export interface VideoRenderTarget {
 }
 
 /**
- * 轨道与渲染视图之间的绑定行为。
+ * The binding behavior between a video track and a rendering view.
  */
 export interface VideoRenderBinding {
 
   /**
-   * 远端首帧就绪后的展示预热时长；本地预览不配置。
+   * The remote presentation warmup after the first frame; unset for local preview.
    */
   renderWarmupMs?: number;
 
   /**
-   * 预热结束、开始渐入时通知轨道拥有者。
+   * Notifies the track owner when warmup ends and fade-in begins.
    */
   renderWarmupCompletedHandler?: () => void;
 
   /**
-   * 视图首帧呈现时通知轨道拥有者，独立于视图自身的渐入回调。
+   * Notifies the track owner of the first presented frame, independently of the view's fade-in callback.
    */
   frameDisplayHandler?: () => void;
 
   /**
-   * 视图绑定轨道时调用；负责把画面接入视图。
+   * Attaches the track's media when a view binds to it.
    */
   attachHandler: (
     target: VideoRenderTarget,
@@ -71,7 +71,7 @@ export interface VideoRenderBinding {
   ) => void;
 
   /**
-   * 视图解绑轨道时调用；负责释放画面资源。
+   * Releases presentation resources when a view unbinds from the track.
    */
   detachHandler: (
     target: VideoRenderTarget
@@ -79,31 +79,36 @@ export interface VideoRenderBinding {
 }
 
 /**
- * 轨道渲染绑定注册表。
+ * A registry of custom track rendering bindings.
  *
- * 摄像头等需要自定义渲染管线的轨道在创建时注册绑定；
- * 未注册绑定的轨道由视图按 `mediaStreamTrack` 直接渲染。
+ * Tracks needing custom rendering register a binding at creation. Unregistered tracks render directly
+ * through mediaStreamTrack.
  */
 export class VideoRenderRegistry {
 
   /**
-   * 轨道渲染绑定索引
+   * Custom rendering bindings indexed by video track.
    */
   private static bindings = new WeakMap<RealtimeVideoTrack, VideoRenderBinding>();
 
   /**
-   * 注册轨道的自定义渲染绑定，覆盖该轨道已有的绑定。
+   * Registers or replaces a track's custom rendering binding.
+   *
    * @internal
    */
   static register(
     track: RealtimeVideoTrack,
     binding: VideoRenderBinding
   ): void {
-    VideoRenderRegistry.bindings.set(track, binding);
+    VideoRenderRegistry.bindings.set(
+      track,
+      binding
+    );
   }
 
   /**
-   * 移除轨道的渲染绑定，不执行视图解绑或资源释放。
+   * Removes a binding without detaching views or releasing their resources.
+   *
    * @internal
    */
   static unregister(
@@ -113,7 +118,8 @@ export class VideoRenderRegistry {
   }
 
   /**
-   * 查询轨道的自定义渲染绑定；未注册时返回 undefined。
+   * Returns a track's custom rendering binding, or undefined when unregistered.
+   *
    * @internal
    */
   static binding(

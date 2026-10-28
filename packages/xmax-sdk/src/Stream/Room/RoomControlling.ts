@@ -16,12 +16,12 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { RoomEventTargetSize } from "./RoomEvent";
 
 /**
- * 接收房间业务消息。
+ * Receives room-level business messages.
  */
 export interface RoomListener {
 
   /**
-   * 处理完整房间业务消息（已完成分片组包与目标用户过滤）。
+   * Receives a complete message after fragment reassembly and recipient filtering.
    */
   onRoomMessage(
     senderUserID: string,
@@ -30,17 +30,17 @@ export interface RoomListener {
 }
 
 /**
- * 定义 RTC 房间生命周期和业务信令发送能力。
+ * Defines RTC room membership and generation signaling.
  */
 export interface RoomControlling {
 
   /**
-   * 加入实时房间，并在异步边界前后确认连接操作仍然有效。
+   * Joins an RTC room while checking that the connection operation remains active.
    *
-   * @param connection 会话下发的 RTC 连接参数。
-   * @param ensureActive 确认当前连接操作仍有效的检查；失效时抛出错误。
-   * @param measureRtcJoin 开始进房计时，返回成功进房时调用的完成回调。
-   * @throws 已有房间未离开、操作失效或进房失败时抛出错误。
+   * @param connection - RTC credentials returned by the session service.
+   * @param ensureActive - Throws when the connection operation is no longer current.
+   * @param measureRtcJoin - Starts join timing and returns a callback to complete it on success.
+   * @throws Rejects if a previous room is still active, the operation is obsolete, or joining fails.
    */
   join(
     connection: RtcSessionConnection,
@@ -49,21 +49,21 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * 停止房间心跳并离开当前 RTC 房间。
+   * Stops room heartbeats and leaves the current RTC room.
    */
   leave(): Promise<void>;
 
   /**
-   * 发送生成开始信令。
+   * Sends a generation-start message.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.mirror 是否由后端镜像输入画面，默认 false。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 合并到本次 start 的 params，不缓存。
-   * @throws 房间未就绪或信令发送失败时抛出错误。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.mirror - Whether the server mirrors the input; defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Parameters merged into this start message without being retained.
+   * @throws Rejects if the room is not ready or sending fails.
    */
   startGeneration(
     options: {
@@ -79,15 +79,16 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * 发送生成条件变更信令。
+   * Sends updated generation conditions.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
-   * @throws 房间未就绪或信令发送失败时抛出错误。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The updated generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Parameters merged into this change_condition message without being
+   * retained.
+   * @throws Rejects if the room is not ready or sending fails.
    */
   changeGenerationCondition(
     options: {
@@ -102,10 +103,10 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * 调整当前生成任务的回传尺寸。
+   * Updates the returned video dimensions.
    *
-   * @param options.ensureActive 发送前确认当前配置操作仍有效。
-   * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
+   * @param options.ensureActive - Checks that the configuration operation is current before sending.
+   * @throws Rejects if the operation is canceled, the room is not ready, or sending fails.
    */
   changeTargetSize(
     options: {
@@ -116,14 +117,14 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
+   * Attempts to stop generation; ignores calls without a joined room or task identifier.
    */
   stopGeneration(
     taskID: string
   ): Promise<void>;
 
   /**
-   * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
+   * Sends interaction points; ignores an empty task identifier or point list.
    */
   sendTracks(
     taskID: string,
@@ -131,15 +132,16 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * 设置房间事件监听器，传入空值时清除监听器。
+   * Sets the room message listener; an undefined value clears it.
    */
   setListener(
     listener?: RoomListener
   ): void;
 
   /**
-   * 处理 RTC 层桥接的入站自定义消息：分片组包、目标过滤后分发给监听器。
-   * 由持有 RTC 事件监听权的传输层组件调用。
+   * Reassembles RTC messages, filters their recipients, and delivers complete messages.
+   *
+   * Called by the transport component that owns the RTC event listener.
    */
   handleIncomingMessage(
     senderUserID: string,

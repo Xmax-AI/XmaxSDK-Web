@@ -16,24 +16,27 @@ import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Service/Realtime/StreamID";
 
 /**
- * 仅持有外部视频轨的副本；不采集设备、不处理画面、不创建预览。
+ * Owns an external-video clone without capturing devices, processing pixels, or creating preview.
  */
 export class ExternalVideoController {
 
   /**
-   * 当前媒体源对应的 SDK 视频轨道。
+   * The SDK track associated with the external source.
    */
   private track?: RealtimeVideoTrack;
 
   /**
-   * 媒体源结束时释放资源并通知上层。
+   * The callback reporting unexpected source termination.
    */
   private readonly onEnded = () => {
-    this.onError(new XmaxError(XmaxErrorCode.mediaError, "External video source ended"));
+    this.onError(new XmaxError(
+      XmaxErrorCode.mediaError,
+      "External video source ended"
+    ));
   };
 
   /**
-   * 设置外部视频轨结束时的错误通知。
+   * Creates a controller with an external-track failure callback.
    */
   constructor(
     private readonly onError: (
@@ -42,18 +45,19 @@ export class ExternalVideoController {
   ) { }
 
   /**
-   * 当前由 SDK 持有的外部视频克隆轨。
+   * The external-video clone owned by the SDK.
    */
   get currentTrack(): RealtimeVideoTrack | undefined {
     return this.track;
   }
 
   /**
-   * 校验并克隆外部视频轨，按统一媒体规则解析上行基准，不修改原始轨道像素。
+   * Validates and clones an external track, resolving its uplink baseline without modifying original
+   * pixels.
    *
-   * @param options 外部 live 视频轨及原始媒体规格。
-   * @param mediaService 当前模型的媒体尺寸解析服务。
-   * @returns 持有轨道副本和解析后固定媒体规格的本地流。
+   * @param options - A live video track and its original media format.
+   * @param mediaService - The model's media-sizing service.
+   * @returns A local stream holding the cloned track and resolved fixed format.
    */
   create(
     options: {
@@ -62,34 +66,65 @@ export class ExternalVideoController {
     },
     mediaService: MediaServicing
   ): RealtimeMediaStream {
-    if (this.track)
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current external video first");
-    const { videoTrack, videoFormat } = options;
-    if (!videoTrack || videoTrack.kind !== "video" || videoTrack.readyState !== "live" || typeof videoTrack.clone !== "function") {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External video requires a live video MediaStreamTrack");
+    if (this.track) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Close the current external video first"
+      );
     }
-    const size = mediaService.resolveMediaSize(videoFormat, "external");
-    const format = videoFormat.resized(size.width, size.height);
+    const { videoTrack, videoFormat } = options;
+    if (
+      !videoTrack || videoTrack.kind !== "video" ||
+      videoTrack.readyState !== "live" || typeof videoTrack.clone !== "function"
+    ) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "External video requires a live video MediaStreamTrack"
+      );
+    }
+    const size = mediaService.resolveMediaSize(
+      videoFormat,
+      "external"
+    );
+    const format = videoFormat.resized(
+      size.width,
+      size.height
+    );
     format.validate();
     const nativeTrack = videoTrack.clone();
     if (nativeTrack.readyState !== "live") {
       nativeTrack.stop();
-      throw new XmaxError(XmaxErrorCode.mediaError, "External video source ended during setup");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "External video source ended during setup"
+      );
     }
-    const track = new RealtimeVideoTrack({ id: "external-video", videoFormat: format });
+    const track = new RealtimeVideoTrack({
+      id: "external-video",
+      videoFormat: format
+    });
     track.mediaStreamTrack = nativeTrack;
-    nativeTrack.addEventListener("ended", this.onEnded);
+    nativeTrack.addEventListener(
+      "ended",
+      this.onEnded
+    );
     this.track = track;
-    return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
+    return new RealtimeMediaStream({
+      id: StreamID.local,
+      videoTrack: track
+    });
   }
 
   /**
-   * 解除结束事件监听并释放 SDK 持有的克隆轨。
+   * Removes termination observation and releases the SDK-owned clone.
    */
   stop(): void {
     const nativeTrack = this.track?.mediaStreamTrack;
     this.track = undefined;
-    nativeTrack?.removeEventListener("ended", this.onEnded);
+    nativeTrack?.removeEventListener(
+      "ended",
+      this.onEnded
+    );
     nativeTrack?.stop();
   }
 }

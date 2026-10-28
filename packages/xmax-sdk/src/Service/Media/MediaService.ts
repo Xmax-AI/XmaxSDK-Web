@@ -22,17 +22,17 @@ import type { MediaServicing } from "./MediaServicing";
 import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 
 /**
- * 统一计算本地媒体、生成画布及回传尺寸，并查询平台媒体能力。
+ * Resolves media, generation-canvas, and returned dimensions and queries platform media capabilities.
  */
 export class MediaService implements MediaServicing {
 
   /**
-   * 模型约束
+   * The model whose media constraints apply.
    */
   readonly model: RealtimeModelName;
 
   /**
-   * 创建媒体服务。
+   * Creates a media service.
    */
   constructor(
     model: RealtimeModelName = RealtimeModel.x2_1
@@ -41,12 +41,13 @@ export class MediaService implements MediaServicing {
   }
 
   /**
-   * 解析固定媒体基准：保留完整内容、不放大、限制面积并按 4 对齐。
-   * 摄像头请求尺寸须先匹配模型桶；文件媒体和外部轨道不受模型桶比例限制。
+   * Resolves a fixed media baseline, preserving content without upscaling and aligning limited
+   * dimensions to four pixels. Camera requests must match model resolutions; file and external media may
+   * use arbitrary aspect ratios.
    *
-   * @param sourceMediaSize 原始媒体尺寸。
-   * @param source 媒体来源，仅摄像头需要校验采集分辨率桶。
-   * @returns 用于固定媒体基准和初始上行编码的尺寸。
+   * @param sourceMediaSize - The original media dimensions.
+   * @param source - The media source; only camera input validates fixed capture resolutions.
+   * @returns The fixed media baseline and initial uplink dimensions.
    */
   resolveMediaSize(
     sourceMediaSize: ModelSize,
@@ -60,11 +61,16 @@ export class MediaService implements MediaServicing {
 
     const pixels = sourceMediaSize.width * sourceMediaSize.height;
     const scale = Math.min(1, Math.sqrt(maximumInputPixels(this.model) / pixels));
-    return alignedVideoSize(sourceMediaSize, scale, 4);
+    return alignedVideoSize(
+      sourceMediaSize,
+      scale,
+      4
+    );
   }
 
   /**
-   * 选择比例最接近的模型生成画布；无固定桶时按模型像素预算和对齐规则计算。
+   * Selects the closest-aspect generation canvas, or applies model pixel-budget and alignment rules
+   * without fixed resolutions.
    */
   resolveGenerationSize(
     resolvedMediaSize: ModelSize
@@ -85,11 +91,15 @@ export class MediaService implements MediaServicing {
         distance = candidate;
       }
     }
-    return { width: best.width, height: best.height };
+    return {
+      width: best.width,
+      height: best.height
+    };
   }
 
   /**
-   * 综合下行宽高上限计算回传尺寸，不放大、优先保持比例并按 4 对齐。
+   * Resolves bounded returned dimensions without upscaling, preferring the source aspect ratio and
+   * four-pixel alignment.
    */
   resolveTargetSize(
     resolvedMediaSize: ModelSize,
@@ -97,27 +107,37 @@ export class MediaService implements MediaServicing {
   ): ModelSize {
     this.validateIntegralSize(resolvedMediaSize);
     if (![maximumSize.width, maximumSize.height].every(value => Number.isFinite(value) && value > 0)) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Target bounds must be positive and finite");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Target bounds must be positive and finite"
+      );
     }
     const scale = Math.min(1, maximumSize.width / resolvedMediaSize.width, maximumSize.height / resolvedMediaSize.height);
-    return alignedVideoSize(resolvedMediaSize, scale, 4);
+    return alignedVideoSize(
+      resolvedMediaSize,
+      scale,
+      4
+    );
   }
 
   /**
-   * 拒绝无效或不能安全参与面积计算的媒体像素尺寸。
+   * Rejects invalid dimensions or pixel areas that cannot be calculated safely.
    */
   private validateIntegralSize(
     size: ModelSize
   ): void {
     if (![size.width, size.height].every(value => Number.isSafeInteger(value) && value > 0) ||
       !Number.isSafeInteger(size.width * size.height)) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Media dimensions must be positive safe integers");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Media dimensions must be positive safe integers"
+      );
     }
   }
 
-
   /**
-   * 按模型分辨率档位或像素预算解析输入尺寸，保持宽高比例并对齐；不支持的规格抛错。
+   * Resolves model input dimensions using fixed resolutions or an aligned pixel budget, rejecting
+   * unsupported formats.
    */
   resolveModelInputSize(
     size: ModelSize
@@ -137,7 +157,10 @@ export class MediaService implements MediaServicing {
           `${size.width}×${size.height}. Supported resolutions: ${supportedSizes}`,
         );
       }
-      return { width: size.width, height: size.height };
+      return {
+        width: size.width,
+        height: size.height
+      };
     }
 
     const validated = this.validatedSize(size);
@@ -172,10 +195,13 @@ export class MediaService implements MediaServicing {
 
     const alignedPixels = width * height;
     if (alignedPixels >= minimumPixels && alignedPixels <= maximumPixels) {
-      return { width, height };
+      return {
+        width,
+        height
+      };
     }
 
-    // 对齐可能使边界附近的尺寸越界，选择满足面积限制且最接近目标的尺寸。
+    // Alignment can exceed area bounds; select the closest aligned dimensions that remain within the budget.
     return this.boundedAlignedSize(
       validated.width * scale,
       validated.height * scale,
@@ -183,7 +209,7 @@ export class MediaService implements MediaServicing {
   }
 
   /**
-   * 在对齐网格上选择满足面积限制且最接近目标的尺寸。
+   * Selects the closest aligned dimensions within the pixel-area limits.
    */
   private boundedAlignedSize(
     width: number,
@@ -194,7 +220,10 @@ export class MediaService implements MediaServicing {
     const minimumUnits = Math.ceil(minimumInputPixels(this.model) / unitPixels);
     const maximumUnits = Math.floor(maximumInputPixels(this.model) / unitPixels);
 
-    let bestSize: ModelSize = { width: 0, height: 0 };
+    let bestSize: ModelSize = {
+      width: 0,
+      height: 0
+    };
     let bestDistance = Number.POSITIVE_INFINITY;
 
     for (let widthUnits = 1; widthUnits <= maximumUnits; widthUnits += 1) {
@@ -214,7 +243,10 @@ export class MediaService implements MediaServicing {
         ((candidateHeight - height) / height) ** 2;
       if (distance < bestDistance) {
         bestDistance = distance;
-        bestSize = { width: candidateWidth, height: candidateHeight };
+        bestSize = {
+          width: candidateWidth,
+          height: candidateHeight
+        };
       }
     }
 
@@ -222,7 +254,7 @@ export class MediaService implements MediaServicing {
   }
 
   /**
-   * 校验尺寸为有限正数，并归一化为不小于 1 的整数。
+   * Validates finite positive dimensions and normalizes them to integers of at least one pixel.
    */
   private validatedSize(
     size: ModelSize

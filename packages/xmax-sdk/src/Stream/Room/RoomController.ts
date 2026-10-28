@@ -25,99 +25,119 @@ import { RoomHeartbeat } from "./RoomHeartbeat";
 import { RoomMessageCodec } from "./RoomMessageCodec";
 
 /**
- * 房间生命周期状态。
+ * The lifecycle state of an RTC room.
  */
 type RoomState =
   | {
+
+    /**
+     * No room operation is active.
+     */
     kind: "idle"
   }
   | {
+
+    /**
+     * An RTC room join is in progress.
+     */
     kind: "joining";
+
+    /**
+     * Identifies the join operation across asynchronous boundaries.
+     */
     operationID: string
   }
   | {
+
+    /**
+     * The RTC room has been joined.
+     */
     kind: "joined";
+
+    /**
+     * The local user identifier in the joined room.
+     */
     userID: string
   }
   | {
+
+    /**
+     * The RTC room is being released.
+     */
     kind: "leaving"
   };
 
 /**
- * 房间传输、分片编解码和心跳选项。
+ * Dependencies for room transport, message fragmentation, and heartbeat scheduling.
  */
 export interface RoomControllerOptions {
 
   /**
-   * RTC 引擎与房间能力组件。
+   * The RTC engine and room transport.
    */
   rtcManager: RtcManaging;
 
   /**
-   * 房间心跳组件（可替换，测试用）。
+   * An optional heartbeat scheduler.
    */
   heartbeat?: RoomHeartbeat;
 
   /**
-   * 房间消息编解码组件（可替换，测试用）。
+   * An optional room message codec.
    */
   codec?: RoomMessageCodec;
 }
 
 /**
- * 管理 RTC 房间生命周期、心跳和实时生成信令。
+ * Manages RTC room membership, heartbeats, and generation signaling.
  *
- * 入站消息经 `RoomMessageCodec` 组包后按 `user_id` 目标字段过滤
- * （RTC 消息通道使用广播语义），再分发给监听器。
+ * Incoming messages are reassembled, filtered by the target `user_id` in the broadcast payload, and
+ * delivered to the listener.
  */
 export class RoomController implements RoomControlling {
 
   /**
-   * 基础层组件
+   * The RTC engine used for room operations.
    */
   private readonly rtcManager: RtcManaging;
 
   /**
-   * 传输层组件
+   * The scheduler that sends room heartbeats.
    */
   private readonly heartbeat: RoomHeartbeat;
 
   /**
-   * 当前房间使用的消息分片编解码器。
+   * The message codec used by the current room.
    */
   private codec: RoomMessageCodec;
 
   /**
-   * 接入方注入的消息分片编解码器。
+   * Whether the message codec was supplied by the caller.
    */
   private readonly customCodec: boolean;
 
   /**
-   * 串行发送房间消息的任务链。
+   * The task chain that serializes control messages.
    */
   private sendTail: Promise<void> = Promise.resolve();
 
   /**
-   * 事件监听
+   * The receiver for complete room messages.
    */
   private listener?: RoomListener;
 
   /**
-   * 房间资源
+   * The current membership and user identity.
    */
   private state: RoomState = { kind: "idle" };
 
   /**
-   * 共享的退房及资源清理任务。
+   * The shared room-leaving and cleanup operation.
    */
   private leaveOperation?: Promise<void>;
 
   /**
-   * 创建房间控制器。
-   *
-   * @param options.rtcManager RTC 引擎与房间能力组件。
-   * @param options.heartbeat 房间心跳组件（可替换，测试用）。
-   * @param options.codec 房间消息编解码组件（可替换，测试用）。
+   * Creates a room controller.
    */
   constructor(
     options: RoomControllerOptions
@@ -130,9 +150,9 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 加入实时房间，并在异步边界前后确认连接操作仍然有效。
+   * Joins an RTC room while checking that the connection operation remains active.
    *
-   * @throws 已有房间未离开、操作失效或进房失败时抛出错误。
+   * @throws Rejects if a previous room is still active, the operation is obsolete, or joining fails.
    */
   async join(
     connection: RtcSessionConnection,
@@ -152,14 +172,20 @@ export class RoomController implements RoomControlling {
     }
 
     const operationID = `join-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    this.state = { kind: "joining", operationID };
+    this.state = {
+      kind: "joining",
+      operationID
+    };
     this.heartbeat.stop();
 
     try {
-      if (!this.customCodec)
+      if (!this.customCodec) {
         this.codec = new RoomMessageCodec(
-          connection.provider === RtcProvider.vertc ? null : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
+          connection.provider === RtcProvider.vertc
+            ? null
+            : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
         );
+      }
       const configuration = toRoomJoinConfiguration(connection);
       const completeRtcJoin = measureRtcJoin?.();
       await this.rtcManager.joinRoom(configuration);
@@ -169,12 +195,18 @@ export class RoomController implements RoomControlling {
         this.state.operationID !== operationID ||
         this.leaveOperation
       ) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "RTC room join was cancelled");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "RTC room join was cancelled"
+        );
       }
 
       completeRtcJoin?.();
 
-      this.state = { kind: "joined", userID: connection.userID };
+      this.state = {
+        kind: "joined",
+        userID: connection.userID
+      };
       this.heartbeat.start(connection.userID);
     } catch (error) {
       if (
@@ -194,7 +226,7 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 停止房间心跳并离开当前 RTC 房间；并发的离开操作共享同一个任务。
+   * Stops heartbeats and leaves the RTC room; concurrent calls share the same operation.
    */
   async leave(): Promise<void> {
     if (this.leaveOperation) {
@@ -210,16 +242,16 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 发送生成开始信令。
+   * Sends a generation-start message.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.mirror 是否由后端镜像输入画面，默认 false。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 合并到本次 start 的 params，不缓存。
-   * @throws 房间未就绪或信令发送失败时抛出错误。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.mirror - Whether the server mirrors the input; defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Parameters merged into this start message without being retained.
+   * @throws Rejects if the room is not ready or sending fails.
    */
   startGeneration(
     options: {
@@ -250,15 +282,16 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 发送生成条件变更信令。
+   * Sends updated generation conditions.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.targetSize 服务端生成后的回传尺寸，缺省时不发送。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
-   * @throws 房间未就绪或信令发送失败时抛出错误。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The updated generation conditions.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.extraParams - Parameters merged into this change_condition message without being
+   * retained.
+   * @throws Rejects if the room is not ready or sending fails.
    */
   changeGenerationCondition(
     options: {
@@ -286,9 +319,9 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 调整当前生成任务的回传尺寸。
+   * Updates the returned video dimensions for the current task.
    *
-   * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
+   * @throws Rejects if the operation is canceled, the room is not ready, or sending fails.
    */
   changeTargetSize(
     options: {
@@ -309,8 +342,10 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 按回传尺寸和 24 fps 估算下行码率，最高值限制在 100～10000 kbps。
-   * 估算不设置服务端帧率，也不沿用显式上传码率。
+   * Estimates downlink bitrates from the returned dimensions at 24 fps, with a maximum between 100 and
+   * 10000 kbps.
+   *
+   * This estimate neither sets the server frame rate nor reuses an explicit uplink bitrate.
    */
   private downlinkBitrates(
     size: RoomEventTargetSize
@@ -319,13 +354,18 @@ export class RoomController implements RoomControlling {
     maximumBitrate: number
   } {
     const { maximum } = EncodingBitratePolicy.resolve(
-      Math.round(size.width), Math.round(size.height), 24,
+      Math.round(size.width),
+      Math.round(size.height),
+      24,
     );
-    return { minimumBitrate: 100, maximumBitrate: Math.min(10000, maximum) };
+    return {
+      minimumBitrate: 100,
+      maximumBitrate: Math.min(10000, maximum)
+    };
   }
 
   /**
-   * 尝试发送生成停止信令；未进房或任务标识为空时忽略。
+   * Attempts to stop generation; ignores calls without a joined room or task identifier.
    */
   stopGeneration(
     taskID: string
@@ -333,11 +373,14 @@ export class RoomController implements RoomControlling {
     if (!taskID || this.state.kind !== "joined") {
       return Promise.resolve();
     }
-    return this.send(RoomEvent.stop({ userID: this.state.userID, taskID }));
+    return this.send(RoomEvent.stop({
+      userID: this.state.userID,
+      taskID
+    }));
   }
 
   /**
-   * 发送生成任务的交互轨迹；任务标识或轨迹为空时忽略。
+   * Sends interaction points; ignores an empty task identifier or point list.
    */
   sendTracks(
     taskID: string,
@@ -357,7 +400,7 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 设置房间事件监听器，传入空值时清除监听器。
+   * Sets the room message listener; an undefined value clears it.
    */
   setListener(
     listener?: RoomListener
@@ -366,7 +409,7 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 执行离开：复位状态、停止心跳、清空组包缓存并退房。
+   * Resets room state, stops heartbeats, clears partial messages, and leaves the room.
    */
   private async performLeave(): Promise<void> {
     this.state = { kind: "idle" };
@@ -382,20 +425,23 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 组包入站消息并按目标用户过滤后分发完整业务消息。
+   * Reassembles incoming messages and delivers those addressed to the current user.
    */
   handleIncomingMessage(
     senderUserID: string,
     raw: string
   ): void {
-    const parsed = this.codec.processIncoming(senderUserID, raw);
+    const parsed = this.codec.processIncoming(
+      senderUserID,
+      raw
+    );
     if (typeof parsed !== "object" || parsed === null) {
       return;
     }
 
     const message = parsed as Record<string, unknown>;
 
-    // RTC 消息使用广播语义，按 payload 中的 user_id 过滤目标。
+    // RTC messages are broadcast; filter the intended recipient using the payload's user_id.
     const targetUserID =
       typeof message.user_id === "string" ? message.user_id : undefined;
     const ownUserID = this.state.kind === "joined" ? this.state.userID : undefined;
@@ -403,11 +449,15 @@ export class RoomController implements RoomControlling {
       return;
     }
 
-    this.listener?.onRoomMessage(senderUserID, message);
+    this.listener?.onRoomMessage(
+      senderUserID,
+      message
+    );
   }
 
   /**
-   * 控制信令串行确认；快照等待此前控制信令，但不阻塞后续控制信令。
+   * Serializes acknowledged control messages; snapshots wait for prior controls without blocking later
+   * controls.
    */
   private send(
     message: string,
@@ -415,17 +465,26 @@ export class RoomController implements RoomControlling {
   ): Promise<void> {
     const state = this.state;
     const packets = this.codec.encodeOutgoing(message);
-    // 多片消息仍逐片确认，避免快照覆盖导致接收端无法完整组包。
+    // Confirm each fragment in order so replacing a snapshot cannot leave an incomplete message.
     const mode = packets.length > 1 ? "ordered" : delivery;
     const operation = this.sendTail.then(async () => {
       for (const packet of packets) {
         if (state !== this.state || state.kind !== "joined") {
-          throw new XmaxError(XmaxErrorCode.cancelled, "Room message was cancelled");
+          throw new XmaxError(
+            XmaxErrorCode.cancelled,
+            "Room message was cancelled"
+          );
         }
         if (mode === "latest") {
-          await this.rtcManager.sendRoomMessage(packet, "latest");
+          await this.rtcManager.sendRoomMessage(
+            packet,
+            "latest"
+          );
         } else {
-          await this.rtcManager.sendRoomMessage(packet, "barrier");
+          await this.rtcManager.sendRoomMessage(
+            packet,
+            "barrier"
+          );
         }
       }
       XmaxLogger.room.info(
@@ -443,11 +502,14 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * 返回当前房间中的用户标识；未进房时抛出错误。
+   * Returns the current room user identifier; throws if the room has not been joined.
    */
   private requireUserID(): string {
     if (this.state.kind !== "joined") {
-      throw new XmaxError(XmaxErrorCode.rtcError, "RTC room is not joined");
+      throw new XmaxError(
+        XmaxErrorCode.rtcError,
+        "RTC room is not joined"
+      );
     }
     return this.state.userID;
   }

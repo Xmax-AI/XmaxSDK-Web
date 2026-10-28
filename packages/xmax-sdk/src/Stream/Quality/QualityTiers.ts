@@ -9,23 +9,39 @@
 //
 
 /**
- * 支持自动调档的 RTC 新轨道/新生成任务的默认启动档位；不改变 L1 恢复上限。
+ * The initial adaptive level for new supported RTC tracks or tasks, without changing the L1 recovery
+ * ceiling.
  */
 export const INITIAL_QUALITY_LEVEL = 2;
 
 /**
- * 自动缩放的短边下限；原始短边更小时不放大。
+ * The adaptive minimum short side; smaller original inputs are not upscaled.
  */
 export const MINIMUM_QUALITY_SHORT_SIDE = 240;
 
 /**
- * 上下行共用的五档缩放比例与上行帧率上限；具体尺寸由媒体基准计算。
- * 网络质量等级不与档位直接映射。
+ * The five shared dimension scales and uplink frame-rate limits, derived from a media baseline rather
+ * than directly mapped from network ratings.
  */
 export const QUALITY_TIERS = {
-  L1: { scale: 1, frameRate: 30 },
-  L2: { scale: 0.9, frameRate: 24 },
-  L3: { scale: 0.75, frameRate: 24 },
-  L4: { scale: 0.6, frameRate: 20 },
-  L5: { scale: 0.5, frameRate: 16 },
+  L1: {
+    scale: 1,
+    frameRate: 30
+  },
+  L2: {
+    scale: 0.9,
+    frameRate: 24
+  },
+  L3: {
+    scale: 0.75,
+    frameRate: 24
+  },
+  L4: {
+    scale: 0.6,
+    frameRate: 20
+  },
+  L5: {
+    scale: 0.5,
+    frameRate: 16
+  },
 } as const;

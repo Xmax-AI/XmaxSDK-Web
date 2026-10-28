@@ -25,47 +25,46 @@ import { RealtimeCoordinator } from "./RealtimeCoordinator";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
 /**
- * 内部连接管理器：拥有会话、心跳、RTC 连接及远端轨道；不提交公开状态。
+ * Owns sessions, heartbeats, RTC connections, and remote tracks without committing public state.
  */
 export class XmaxRealtimeConnectionManager {
 
   /**
-   * 会话资源
+   * The session currently owned by this connection.
    */
   private activeSession?: RealtimeSession;
 
   /**
-   * 会话凭据刷新版本，过滤旧生命周期的更新。
+   * The credential-refresh revision used to reject obsolete lifecycle updates.
    */
   private refreshVersion = 0;
 
   /**
-   * 当前会话凭据刷新的共享任务。
+   * The shared in-progress credential refresh.
    */
   private credentialRefresh?: Promise<void>;
 
   /**
-   * 当前正在应用的凭据更新任务。
+   * The serialized credential-application chain.
    */
   private credentialApplication: Promise<void> = Promise.resolve();
 
   /**
-   * 取消当前凭据刷新及恢复流程。
+   * The controller cancelling current credential refresh and recovery.
    */
   private credentialController?: AbortController;
 
   /**
-   * 远端轨道与渲染绑定
+   * The active remote track registered with the render layer.
    */
   private activeRemoteTrack?: RealtimeVideoTrack;
 
   /**
-   * 注入会话、传输、计时和渲染回调依赖；连接资源在 connect 时创建。
+   * Creates a connection manager.
+   *
+   * @param dependencies - The session, transport, timing, and rendering dependencies.
    */
   constructor(
-    /**
-     * 会话、传输、计时与渲染依赖
-     */
     private readonly dependencies: {
       provider?: RtcProvider;
       sessionService?: RealtimeSessionServicing;
@@ -84,33 +83,37 @@ export class XmaxRealtimeConnectionManager {
   ) { }
 
   /**
-   * 当前活动会话标识；尚未连接或清理完成后为空。
+   * The active session ID; undefined before connection or after cleanup.
    */
   get currentSessionID(): string | undefined {
     return this.activeSession?.id;
   }
 
   /**
-   * 未配置 API 服务时在连接操作开始前报错，不影响本地预览。
+   * Requires session services before connection without preventing local preview.
    */
   validateConfiguration(): void {
     this.requireSessionService();
   }
 
   /**
-   * 创建会话、配置编码、进房并发布本地媒体，启动心跳后返回远端占位流。
-   * 会话创建、RTC 进房和本地流发布分别计时；可选 beforePublish 检查阻塞发布，
-   * 其等待只反映在实际完整启动耗时中。
-   * @param options.localTrack 当前本地媒体轨道。
-   * @param options.remoteVideoFormat 原始生成及远端画面规格，缺省使用本地轨道规格。
-   * @param options.localVideoFormat 发布前实际应用的上行编码格式；与原始生成及远端格式分开。
-   * @param options.onVideoEncoderConfigured 上行编码配置成功后的回调。
-   * @param options.model 创建业务会话使用的模型名称。
-   * @param options.includeLocalAudio 是否发布本地音频。
-   * @param options.ensureCurrent 校验当前操作仍有效。
-   * @param options.onPublished 本地发布完成后的回调。
-   * @param options.beforePublish 发布前的可选异步检查。
-   * @throws 会话、进房、发布失败或操作租约已失效时抛出错误，由上层统一清理。
+   * Creates a session, configures encoding, joins, publishes, and starts heartbeats before returning a
+   * remote placeholder. Session creation, room join, and publication are timed separately. Optional
+   * pre-publication checks block publication and contribute only to overall startup time.
+   *
+   * @param options.localTrack - The active local media track.
+   * @param options.remoteVideoFormat - The original generation and remote format; defaults to the local
+   * track's format.
+   * @param options.localVideoFormat - The actual uplink format, independent of generation and remote
+   * dimensions.
+   * @param options.onVideoEncoderConfigured - The callback after uplink configuration succeeds.
+   * @param options.model - The model used to create the session.
+   * @param options.includeLocalAudio - Whether to publish local audio.
+   * @param options.ensureCurrent - The operation-validity check.
+   * @param options.onPublished - The callback after publication succeeds.
+   * @param options.beforePublish - An optional asynchronous publication prerequisite.
+   * @throws Rejects for session, join, publication, or lease failures; the caller performs lifecycle
+   * cleanup.
    */
   async connect(
     options: {
@@ -128,7 +131,7 @@ export class XmaxRealtimeConnectionManager {
     const sessionService = this.requireSessionService();
     const streamController = this.dependencies.streamController;
 
-    // 会话创建成功后立即登记，供失败清理时关闭会话。
+    // Register the session immediately so failure cleanup can close it.
     options.ensureCurrent();
     const completeSession = this.dependencies.timing.startSession();
     const session = await sessionService.createSession(options.model);
@@ -143,14 +146,17 @@ export class XmaxRealtimeConnectionManager {
         "Session does not contain RTC join information",
       );
     }
-    // 内部服务与适配器必须使用同一接入配置；connection.provider 不来自后端。
+    // Services and adapters must share the configured provider; it is not selected by the backend response.
     if (connection.provider !== (this.dependencies.provider ?? RtcProvider.trtc)) {
-      throw new XmaxError(XmaxErrorCode.sessionError, "RTC adapter configuration does not match the session service");
+      throw new XmaxError(
+        XmaxErrorCode.sessionError,
+        "RTC adapter configuration does not match the session service"
+      );
     }
     const refreshVersion = ++this.refreshVersion;
     this.credentialController = new AbortController();
 
-    // 发布本地流之前配置编码参数：采集阶段不发布，此处配置即可生效到发送端。
+    // Configure encoding before publication; capture itself does not publish media.
     const videoFormat = options.localVideoFormat ?? options.localTrack.videoFormat;
     if (!videoFormat) {
       throw new XmaxError(
@@ -164,49 +170,73 @@ export class XmaxRealtimeConnectionManager {
     options.ensureCurrent();
 
     let completePublish: (() => void) | undefined;
-    await streamController.connect(connection, options.includeLocalAudio, () => {
-      options.ensureCurrent();
-    }, async () => {
-      options.ensureCurrent();
+    await streamController.connect(
+      connection,
+      options.includeLocalAudio,
+      () => {
+        options.ensureCurrent();
+      },
+      async () => {
+        options.ensureCurrent();
 
-      // 预热与建连并行；剩余等待不计入进房或发布耗时。
-      await options.beforePublish?.();
-      options.ensureCurrent();
-      completePublish = this.dependencies.timing.startPublish();
-    }, () => this.dependencies.timing.startRtcJoin());
+        // Warmup overlaps connection; its remaining wait is excluded from join and publication durations.
+        await options.beforePublish?.();
+        options.ensureCurrent();
+        completePublish = this.dependencies.timing.startPublish();
+      },
+      () => this.dependencies.timing.startRtcJoin()
+    );
     options.ensureCurrent();
     completePublish?.();
     options.onPublished();
 
-    sessionService.startHeartbeat(session.id, {
-      onFailure: (sessionID, error) => {
-        this.dependencies.onHeartbeatFailure(sessionID, error);
-      },
-      onRefresh: (refreshed) => {
-        return this.handleSessionRefresh(refreshed, refreshVersion);
-      },
-    });
+    sessionService.startHeartbeat(
+      session.id,
+      {
+        onFailure: (
+          sessionID,
+          error
+        ) => {
+          this.dependencies.onHeartbeatFailure(
+            sessionID,
+            error
+          );
+        },
+        onRefresh: (refreshed) => {
+          return this.handleSessionRefresh(
+            refreshed,
+            refreshVersion
+          );
+        },
+      }
+    );
 
     const remoteTrack = new RealtimeVideoTrack({
       id: connection.botID ?? "video-remote",
       videoFormat: options.remoteVideoFormat ?? options.localTrack.videoFormat,
     });
     this.activeRemoteTrack = remoteTrack;
-    this.dependencies.renderController.registerRemoteTrack(remoteTrack, this.dependencies.onInteraction);
+    this.dependencies.renderController.registerRemoteTrack(
+      remoteTrack,
+      this.dependencies.onInteraction
+    );
     streamController.setRemoteAudioVolume(this.dependencies.remoteAudioVolume());
 
-    return new RealtimeMediaStream({ id: StreamID.remote, videoTrack: remoteTrack });
+    return new RealtimeMediaStream({
+      id: StreamID.remote,
+      videoTrack: remoteTrack
+    });
   }
 
   /**
-   * 清空远端视图的媒体流，保留轨道与视图绑定以供统一清理。
+   * Clears rendered remote media while retaining track/view bindings for unified cleanup.
    */
   clearRemoteMedia(): void {
     this.dependencies.renderController.setRemoteMedia(null);
   }
 
   /**
-   * 停止会话心跳；未配置会话服务时不执行操作。
+   * Stops session heartbeats if a session service exists.
    */
   stopHeartbeat(): void {
     this.refreshVersion++;
@@ -218,22 +248,31 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
-   * RTC Token 过期时复用会话心跳获取新凭据，并合并同一实例的并发请求。
+   * Refreshes expired RTC credentials through a session heartbeat, merging concurrent requests.
    */
   async refreshCredentials(): Promise<void> {
-    if (this.credentialRefresh)
+    if (this.credentialRefresh) {
       return this.credentialRefresh;
+    }
     const current = this.activeSession;
-    if (!current?.connection || current.connection.provider === RtcProvider.trtc)
+    if (!current?.connection || current.connection.provider === RtcProvider.trtc) {
       return;
+    }
     const version = this.refreshVersion;
     const operation = (async () => {
       try {
         const session = await this.requireSessionService().heartbeatSession(current.id);
-        await this.handleSessionRefresh(session, version, true);
+        await this.handleSessionRefresh(
+          session,
+          version,
+          true
+        );
       } catch (error) {
         if (version === this.refreshVersion && this.activeSession?.id === current.id) {
-          this.dependencies.onHeartbeatFailure(current.id, XmaxError.from(error));
+          this.dependencies.onHeartbeatFailure(
+            current.id,
+            XmaxError.from(error)
+          );
         }
       }
     })();
@@ -242,30 +281,43 @@ export class XmaxRealtimeConnectionManager {
       await operation;
     }
     finally {
-      if (this.credentialRefresh === operation)
+      if (this.credentialRefresh === operation) {
         this.credentialRefresh = undefined;
+      }
     }
   }
 
   /**
-   * 等待接收轨解除静音；超时只警告，取消必须立即退出并移除监听。
+   * Waits for the received track to unmute. Timeout only warns; cancellation exits immediately and
+   * releases listeners.
    */
   async waitUntilRemoteTrackReady(
     timeoutMs: number,
     signal: AbortSignal
   ): Promise<void> {
-    if (signal.aborted)
+    if (signal.aborted) {
       throw RealtimeCoordinator.cancelledError();
+    }
 
     const mediaTrack = this.activeRemoteTrack?.mediaStreamTrack;
-    if (!mediaTrack || !mediaTrack.muted)
+    if (!mediaTrack || !mediaTrack.muted) {
       return;
+    }
 
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((
+      resolve,
+      reject
+    ) => {
       const cleanup = () => {
         clearTimeout(timer);
-        mediaTrack.removeEventListener("unmute", finish);
-        signal.removeEventListener("abort", abort);
+        mediaTrack.removeEventListener(
+          "unmute",
+          finish
+        );
+        signal.removeEventListener(
+          "abort",
+          abort
+        );
       };
       const finish = () => {
         cleanup();
@@ -276,23 +328,35 @@ export class XmaxRealtimeConnectionManager {
         reject(RealtimeCoordinator.cancelledError());
       };
 
-      const timer = setTimeout(() => {
-        XmaxLogger.realtime.warning(() => "等待远端生成流首帧超时 (Timed Out Waiting for the First Remote Frame)");
-        finish();
-      }, timeoutMs);
+      const timer = setTimeout(
+        () => {
+          XmaxLogger.realtime.warning(() => "等待远端生成流首帧超时 (Timed Out Waiting for the First Remote Frame)");
+          finish();
+        },
+        timeoutMs
+      );
 
-      mediaTrack.addEventListener("unmute", finish);
-      signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted)
+      mediaTrack.addEventListener(
+        "unmute",
+        finish
+      );
+      signal.addEventListener(
+        "abort",
+        abort,
+        { once: true }
+      );
+      if (signal.aborted) {
         abort();
+      }
     });
   }
 
   /**
-   * 传输层远端生成流就绪或清理：更新远端轨道媒体轨并同步到渲染视图。
+   * Updates the remote track and views when transport binds or clears a generated stream.
    *
-   * @param binding 远端流及其视频轨；传入空值表示清理。
-   * @throws 远端流到达但当前没有活动连接时抛出错误，使生成确认失败。
+   * @param binding - The remote stream and video track, or null to clear them.
+   * @throws An error if a stream arrives without an active connection, preventing generation
+   * confirmation.
    */
   handleRemoteStreamBinding(
     binding: RemoteStreamBinding | null
@@ -318,7 +382,7 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
-   * 构造当前远端生成结果媒体流。
+   * Creates a media stream for the current remote result track.
    */
   makeRemoteStream(): RealtimeMediaStream {
     const track = this.activeRemoteTrack;
@@ -328,26 +392,33 @@ export class XmaxRealtimeConnectionManager {
         "The remote generation stream is unavailable",
       );
     }
-    return new RealtimeMediaStream({ id: StreamID.remote, videoTrack: track });
+    return new RealtimeMediaStream({
+      id: StreamID.remote,
+      videoTrack: track
+    });
   }
 
   /**
-   * 心跳成功后的凭据刷新：仅凭据变化时覆盖本地缓存；房间绑定信息
-   * （提供方、房间、应用、登录身份）变化时当前连接失效，按失败结束。
+   * Applies changed heartbeat credentials to the active connection. Changes to provider, room,
+   * application, or login identity invalidate the connection instead.
    */
   private handleSessionRefresh(
     session: RealtimeSession,
     version: number,
     force = false
   ): Promise<void> {
-    // 周期心跳和 Token 到期通知可能并发；按响应顺序应用，避免较旧 Token 迟到覆盖。
-    const operation = this.credentialApplication.then(() => this.applySessionRefresh(session, version, force));
+    // Serialize heartbeat and token-expiry responses so late work cannot replace newer credentials.
+    const operation = this.credentialApplication.then(() => this.applySessionRefresh(
+      session,
+      version,
+      force
+    ));
     this.credentialApplication = operation.catch(() => { });
     return operation;
   }
 
   /**
-   * 校验绑定并应用最新凭据，异步刷新期间失效的房间不得恢复缓存。
+   * Validates the room binding and applies credentials without restoring obsolete connection state.
    */
   private async applySessionRefresh(
     session: RealtimeSession,
@@ -375,15 +446,25 @@ export class XmaxRealtimeConnectionManager {
     if (bindingChanged) {
       this.dependencies.onHeartbeatFailure(
         session.id,
-        new XmaxError(XmaxErrorCode.sessionError, "RTC session binding changed during heartbeat"),
+        new XmaxError(
+          XmaxErrorCode.sessionError,
+          "RTC session binding changed during heartbeat"
+        ),
       );
       return;
     }
 
-    if (next.provider !== RtcProvider.trtc && (force || !previous || previous.provider === RtcProvider.trtc || next.roomToken !== previous.roomToken)) {
-      await this.dependencies.streamController.updateCredentials(next, this.credentialController?.signal);
-      if (version !== this.refreshVersion || this.activeSession !== current)
+    if (
+      next.provider !== RtcProvider.trtc &&
+      (force || !previous || previous.provider === RtcProvider.trtc || next.roomToken !== previous.roomToken)
+    ) {
+      await this.dependencies.streamController.updateCredentials(
+        next,
+        this.credentialController?.signal
+      );
+      if (version !== this.refreshVersion || this.activeSession !== current) {
         return;
+      }
     }
 
     this.activeSession = new RealtimeSession({
@@ -396,7 +477,7 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
-   * 尽力清理全部连接资源，即使退房失败也关闭服务端会话。
+   * Attempts all connection cleanup, closing the server session even if leaving the room fails.
    */
   async disconnect(): Promise<string | undefined> {
     const sessionID = this.activeSession?.id;
@@ -431,7 +512,7 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
-   * 获取会话 Service；未配置 API 服务时抛出配置错误。
+   * Returns the session service or throws a configuration error.
    */
   private requireSessionService(): RealtimeSessionServicing {
     if (!this.dependencies.sessionService) {

@@ -11,67 +11,70 @@
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 
 /**
- * 分片消息的固定事件名。
+ * The default fragment event name.
  */
 const CHUNK_EVENT = "__trtc_chunk__";
 
 /**
- * 未完成的组包记录。
+ * An incomplete message being reassembled.
  */
 interface ChunkRecord {
 
   /**
-   * 当前分片消息预期接收的总片数。
+   * The expected number of fragments.
    */
   count: number;
 
   /**
-   * 按分片序号保存的消息片段。
+   * Message fragments indexed by their sequence number.
    */
   parts: Map<number, string>;
 }
 
 /**
- * 房间文本协议编解码器；TRTC/Agora 启用拆包，VeRTC 原样传输。
+ * Encodes room text messages and reassembles incoming fragments.
  *
- * 出站：启用拆包时，消息 UTF-8 字节长度超过 800 后按分片 JSON 拆包；
- * 入站：识别分片消息并按 `(发送方, eventId)` 乱序组包，
- * 未收齐时返回 `undefined`，收齐后返回解析后的完整业务消息。
+ * TRTC and Agora fragment messages exceeding 800 UTF-8 bytes; VeRTC sends them unchanged. Incoming
+ * fragments are grouped by sender and event ID, may arrive out of order, and produce a parsed business
+ * message only when complete.
  */
 export class RoomMessageCodec {
 
   /**
-   * 触发拆包的消息字节阈值。
+   * The message size, in bytes, above which fragmentation is used.
    */
   static readonly chunkThresholdBytes = 800;
 
   /**
-   * 单个分片正文的字节预算，保证分片 JSON 自身不超过阈值。
+   * The fragment data budget, in bytes, leaving room for the JSON envelope.
    */
   static readonly chunkDataBudgetBytes = 600;
 
   /**
-   * 未完成组包记录的缓存上限（LRU）。
+   * The maximum number of cached incomplete messages.
    */
   static readonly cacheLimit = 1000;
 
   /**
-   * 接收缓存
+   * Incomplete messages indexed by sender and event ID.
    */
   private readonly records = new Map<string, ChunkRecord>();
 
   /**
-   * 创建厂商协议编解码器；TRTC 保持原事件名，Agora 使用 __agora_chunk__；null 表示不拆包。
+   * Creates a message codec.
+   *
+   * @param chunkEvent - The fragment event name; TRTC uses the default, Agora uses __agora_chunk__, and
+   * null disables fragmentation.
    */
   constructor(
     private readonly chunkEvent: string | null = CHUNK_EVENT
   ) { }
 
   /**
-   * 编码出站消息。
+   * Encodes an outgoing message.
    *
-   * @returns 不超过阈值时返回仅含原消息的单元素数组；
-   * 否则返回按当前提供方分片协议包装的 JSON 数组。
+   * @returns The original message as a single item when fragmentation is unnecessary; otherwise, JSON
+   * fragments using the selected provider's protocol.
    */
   encodeOutgoing(
     message: string
@@ -93,7 +96,10 @@ export class RoomMessageCodec {
         `└─ eventId: ${eventId} · count: ${count} · bytes: ${RoomMessageCodec.byteLength(message)}`,
     );
 
-    return slices.map((data, index) =>
+    return slices.map((
+      data,
+      index
+    ) =>
       JSON.stringify({
         event: this.chunkEvent,
         eventId,
@@ -105,10 +111,10 @@ export class RoomMessageCodec {
   }
 
   /**
-   * 处理入站消息。
+   * Processes an incoming message.
    *
-   * @returns 返回解析后的业务消息；分片未收齐或 JSON 非法时返回
-   * `undefined`；分片收齐后从缓存移除并解析完整消息。
+   * @returns A parsed business message, or undefined for invalid JSON or incomplete fragments. Completed
+   * fragment records are removed before parsing.
    */
   processIncoming(
     senderUserID: string,
@@ -130,12 +136,21 @@ export class RoomMessageCodec {
     const key = `${senderUserID}:${chunk.eventId}`;
     let record = this.records.get(key);
     if (!record) {
-      record = { count: chunk.count, parts: new Map() };
-      this.records.set(key, record);
+      record = {
+        count: chunk.count,
+        parts: new Map()
+      };
+      this.records.set(
+        key,
+        record
+      );
       this.evictOverflow();
     }
 
-    record.parts.set(chunk.index, chunk.data);
+    record.parts.set(
+      chunk.index,
+      chunk.data
+    );
 
     if (record.parts.size < record.count) {
       return undefined;
@@ -163,14 +178,15 @@ export class RoomMessageCodec {
   }
 
   /**
-   * 清空未完成的组包缓存。
+   * Clears all incomplete messages.
    */
   reset(): void {
     this.records.clear();
   }
 
   /**
-   * 从已解析的值识别分片消息；字段不完整时按普通业务消息处理。
+   * Recognizes a fragment envelope; incomplete envelope fields are treated as a regular business
+   * message.
    */
   private parseChunk(
     parsed: unknown,
@@ -202,11 +218,16 @@ export class RoomMessageCodec {
       return undefined;
     }
 
-    return { eventId: record.eventId, index, count, data: record.data };
+    return {
+      eventId: record.eventId,
+      index,
+      count,
+      data: record.data
+    };
   }
 
   /**
-   * 淘汰最旧的未完成记录，保持缓存不超过上限。
+   * Evicts the oldest incomplete messages until the cache is within its limit.
    */
   private evictOverflow(): void {
     while (this.records.size > RoomMessageCodec.cacheLimit) {
@@ -219,7 +240,7 @@ export class RoomMessageCodec {
   }
 
   /**
-   * 按 UTF-8 字节预算切分字符串，不拆分多字节字符。
+   * Splits a string by its UTF-8 byte budget without splitting multibyte characters.
    */
   private static sliceByByteBudget(
     message: string,
@@ -230,7 +251,7 @@ export class RoomMessageCodec {
     let currentBytes = 0;
 
     for (const char of message) {
-      // data 是 JSON 字符串，必须计入引号、反斜杠与控制字符的转义开销。
+      // The JSON data field must include the escaping cost of quotes, backslashes, and control characters.
       const bytes = RoomMessageCodec.byteLength(JSON.stringify(char)) - 2;
       if (currentBytes + bytes > budget && current.length > 0) {
         slices.push(current);
@@ -249,7 +270,7 @@ export class RoomMessageCodec {
   }
 
   /**
-   * 计算字符串的 UTF-8 字节长度。
+   * Returns the UTF-8 byte length of a string.
    */
   private static byteLength(
     value: string
@@ -258,14 +279,19 @@ export class RoomMessageCodec {
   }
 
   /**
-   * 生成拆包事件标识（32 位十六进制）。
+   * Creates a 32-character hexadecimal fragment event identifier.
    */
   private static makeEventId(): string {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID().replace(/-/g, "");
+      return crypto.randomUUID().replace(
+        /-/g,
+        ""
+      );
     }
-    return Array.from({ length: 32 }, () =>
-      Math.floor(Math.random() * 16).toString(16),
+    return Array.from(
+      { length: 32 },
+      () =>
+        Math.floor(Math.random() * 16).toString(16),
     ).join("");
   }
 }

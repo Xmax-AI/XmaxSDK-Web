@@ -32,7 +32,7 @@ import {
 } from "../VideoEncodingConfiguration";
 
 /**
- * TRTC 事件名（字符串字面量，避免在非浏览器环境引用 TRTC 运行时常量）。
+ * TRTC event-name literals that do not require loading browser runtime constants.
  */
 const RTC_EVENT = {
   remoteVideoAvailable: "remote-video-available",
@@ -45,30 +45,27 @@ const RTC_EVENT = {
 } as const;
 
 /**
- * TRTC 主流类型标识。
+ * The TRTC main-video stream identifier.
  */
 const STREAM_TYPE_MAIN = "main";
 
 /**
- * 房间自定义消息使用的 cmdId。
+ * The command ID used for room messages.
  */
 const CUSTOM_MESSAGE_CMD_ID = 1;
 
 /**
- * 房间自定义消息编码后的字节上限。
+ * The encoded room-message byte limit.
  */
 const ROOM_MESSAGE_MAX_BYTES = 1000;
 
 /**
- * 采集启动时的占位码率（kbps）。
- *
- * 采集阶段不发布，该值不会生效到发送端；发布前由编码控制器按
- * 参考表计算的码率覆盖。
+ * The placeholder capture bitrate, in kbps, replaced before publication by the encoding controller.
  */
 const CAPTURE_PLACEHOLDER_BITRATE = 1000;
 
 /**
- * 编码策略偏好到 TRTC 弱网偏好的映射。
+ * The mapping from encoding preferences to TRTC network-adaptation modes.
  */
 const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> = {
   [RtcVideoEncoderPreference.maintainFramerate]: "smooth",
@@ -76,12 +73,12 @@ const QOS_PREFERENCE_MAP: Record<RtcVideoEncoderPreference, "smooth" | "clear"> 
 };
 
 /**
- * 引擎事件订阅需要的最小接口，用于隔离 TRTC 事件枚举类型。
+ * The minimum engine event interface, independent of the TRTC event enum.
  */
 interface RtcEventSource {
 
   /**
-   * 为指定 RTC 事件注册回调。
+   * Registers a handler for an RTC event.
    */
   on(
     event: string,
@@ -91,7 +88,7 @@ interface RtcEventSource {
   ): void;
 
   /**
-   * 移除指定 RTC 事件的对应回调。
+   * Removes a handler for an RTC event.
    */
   off(
     event: string,
@@ -102,98 +99,97 @@ interface RtcEventSource {
 }
 
 /**
- * TRTC 远端视频事件的负载。
+ * The TRTC remote-video event payload.
  */
 interface RtcRemoteVideoEvent {
 
   /**
-   * RTC 事件对应的用户标识。
+   * The RTC user associated with the event.
    */
   userId: string;
 
   /**
-   * TRTC 视频流类型，用于区分主流与辅流。
+   * The TRTC main or auxiliary video-stream type.
    */
   streamType: string;
 }
 
 /**
- * TRTC 自定义消息事件的负载。
+ * The TRTC custom-message event payload.
  */
 interface RtcCustomMessageEvent {
 
   /**
-   * RTC 事件对应的用户标识。
+   * The RTC user associated with the event.
    */
   userId: string;
 
   /**
-   * TRTC 自定义消息的命令标识。
+   * The custom-message command ID.
    */
   cmdId: number;
 
   /**
-   * RTC 自定义消息的原始内容。
+   * The raw custom-message bytes.
    */
   data: ArrayBuffer;
 }
 
 /**
- * 基于 TRTC 的 RTC 能力管理器。
+ * The TRTC media and room adapter.
  *
- * 采集由 TRTC 内部完成：`startLocalVideo({ publish: false })` 只采不发，
- * 浏览器兼容性差异交由 TRTC 适配；视频轨通过 `getVideoTrack()` 取出后
- * 交给 SDK 自己的渲染层预览。房间信令走自定义消息通道（`cmdId = 1`）。
+ * TRTC owns capture and browser compatibility. Unpublished capture tracks are rendered through SDK
+ * views, and room signaling uses custom messages with cmdId 1.
  */
 export class TrtcRtcManager implements RtcManaging {
 
   /**
-   * 依赖
+   * The manager supplying exclusive TRTC engine leases.
    */
   private readonly engineManager: RtcEngineManager;
 
   /**
-   * RTC 资源
+   * The active engine lease.
    */
   private lease?: RtcEngineLease;
 
   /**
-   * 采集状态
+   * Whether camera capture is active.
    */
   private isCapturing = false;
 
   /**
-   * 是否已启动本地音频采集。
+   * Whether local audio capture is active.
    */
   private isAudioCapturing = false;
 
   /**
-   * 外部媒体的克隆轨；原始轨道由媒体源管理。
+   * The adapter-owned external-video clone.
    */
   private externalVideo?: MediaStreamTrack;
 
   /**
-   * 由媒体源提供、适配器持有的外部音频克隆轨。
+   * The adapter-owned external-audio clone.
    */
   private externalAudio?: MediaStreamTrack;
 
   /**
-   * 房间状态
+   * Whether the engine has joined a room.
    */
   private isInRoom = false;
 
   /**
-   * 事件监听
+   * The shared RTC event listener.
    */
   private eventListener?: RtcEventListener;
 
   /**
-   * 解除 RTC 统计事件监听。
+   * The disposer for RTC statistics event listeners.
    */
   private removeStatsListeners?: () => void;
 
   /**
-   * 创建 RTC 管理器。
+   * Creates a TRTC adapter.
    */
   constructor(
     engineManager: RtcEngineManager = RtcEngineManager.shared
@@ -202,14 +198,14 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * RTC 引擎是否已初始化。
+   * Whether the RTC engine is initialized.
    */
   get isInitialized(): boolean {
     return this.lease !== undefined;
   }
 
   /**
-   * 初始化 RTC 引擎（获取独占租约）并注册事件桥接；已初始化时重复调用不产生效果。
+   * Acquires an exclusive engine and registers event bridges, doing nothing when already initialized.
    */
   async initialize(): Promise<void> {
     if (this.lease) {
@@ -221,7 +217,8 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 停止采集与发布、销毁 RTC 引擎并释放租约；未初始化时重复调用不产生效果。
+   * Releases capture, publication, the engine, and its lease; repeated calls without initialization do
+   * nothing.
    */
   async destroy(): Promise<void> {
     const lease = this.lease;
@@ -246,13 +243,13 @@ export class TrtcRtcManager implements RtcManaging {
     try {
       await lease.engine.stopLocalAudio();
     } catch {
-      // 引擎销毁前停止音频失败不影响租约释放。
+      // Audio-stop failure must not prevent engine-lease release.
     }
 
     try {
       await lease.engine.stopLocalVideo();
     } catch {
-      // 引擎销毁前停止采集失败不影响租约释放。
+      // Capture-stop failure must not prevent engine-lease release.
     }
 
     externalVideo?.stop();
@@ -261,7 +258,8 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 准备外部音视频轨但不发布；失败时释放克隆轨，不影响原始媒体源。
+   * Prepares external audio/video clones without publication, retaining ownership of the original tracks
+   * at the source.
    */
   async setExternalMediaTracks(
     tracks: {
@@ -271,11 +269,17 @@ export class TrtcRtcManager implements RtcManaging {
   ): Promise<void> {
     const engine = this.requireEngine();
     if (this.isCapturing || this.isAudioCapturing || this.externalVideo) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Release the current local media before attaching external tracks");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Release the current local media before attaching external tracks"
+      );
     }
     if (tracks.videoTrack.kind !== "video" || tracks.videoTrack.readyState !== "live" ||
       (tracks.audioTrack && (tracks.audioTrack.kind !== "audio" || tracks.audioTrack.readyState !== "live"))) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "External media tracks must be live video/audio tracks");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "External media tracks must be live video/audio tracks"
+      );
     }
 
     const video = tracks.videoTrack.clone();
@@ -284,17 +288,31 @@ export class TrtcRtcManager implements RtcManaging {
     try {
       audio = tracks.audioTrack?.clone();
       this.externalAudio = audio;
-      await engine.startLocalVideo({ publish: false, option: { videoTrack: video } });
+      await engine.startLocalVideo({
+        publish: false,
+        option: { videoTrack: video }
+      });
       if (this.lease?.engine !== engine) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "External media preparation was cancelled");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "External media preparation was cancelled"
+        );
       }
       if (audio) {
         await engine.startLocalAudio({
           publish: false,
-          option: { audioTrack: audio, echoCancellation: false, autoGainControl: false, noiseSuppression: false },
+          option: {
+            audioTrack: audio,
+            echoCancellation: false,
+            autoGainControl: false,
+            noiseSuppression: false
+          },
         });
         if (this.lease?.engine !== engine) {
-          throw new XmaxError(XmaxErrorCode.cancelled, "External media preparation was cancelled");
+          throw new XmaxError(
+            XmaxErrorCode.cancelled,
+            "External media preparation was cancelled"
+          );
         }
       }
     } catch (error) {
@@ -313,30 +331,43 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 更新未连接的摄像头采集尺寸与帧率，保留当前设备和采集生命周期。
+   * Updates disconnected camera dimensions and frame rate without replacing its device or capture
+   * lifecycle.
    */
   async updateCameraCapture(
     options: RtcCameraCaptureOptions
   ): Promise<MediaStreamTrack> {
     const engine = this.requireEngine();
     if (!this.isCapturing || this.externalVideo || this.isInRoom) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A disconnected camera preview is required");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "A disconnected camera preview is required"
+      );
     }
     const size = rtcOrientedVideoSize(options);
     try {
       await engine.updateLocalVideo({
         option: {
           profile: {
-            width: size.width, height: size.height, frameRate: options.frameRate, bitrate: CAPTURE_PLACEHOLDER_BITRATE,
+            width: size.width,
+            height: size.height,
+            frameRate: options.frameRate,
+            bitrate: CAPTURE_PLACEHOLDER_BITRATE,
           }
         }
       });
       if (this.lease?.engine !== engine || !this.isCapturing) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "Camera capture stopped during format update");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Camera capture stopped during format update"
+        );
       }
       const track = engine.getVideoTrack();
       if (!track) {
-        throw new XmaxError(XmaxErrorCode.mediaError, "RTC engine did not produce a camera video track");
+        throw new XmaxError(
+          XmaxErrorCode.mediaError,
+          "RTC engine did not produce a camera video track"
+        );
       }
       return track;
     } catch (error) {
@@ -345,16 +376,19 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 启动摄像头采集（不发布）。
+   * Starts camera capture without publication.
    *
-   * @returns 采集到的视频轨。
-   * @throws 引擎未初始化、已在采集、设备不可用或权限被拒绝时抛出错误。
+   * @returns The captured video track.
+   * @throws Rejects for uninitialized or active capture, unavailable devices, or denied permission.
    */
   async startCameraCapture(
     options: RtcCameraCaptureOptions,
   ): Promise<MediaStreamTrack> {
     if (options.rotation !== undefined && options.rotation !== 0) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera rotation currently requires Agora");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Camera rotation currently requires Agora"
+      );
     }
     const engine = this.requireEngine();
     if (this.isCapturing || this.externalVideo) {
@@ -364,7 +398,7 @@ export class TrtcRtcManager implements RtcManaging {
       );
     }
     try {
-      // 移动端竖屏时 TRTC 会转置输出宽高，这里反向转置使上行方向与请求一致。
+      // Compensate for mobile portrait transposition so the transmitted orientation matches the request.
       const captureSize = rtcOrientedVideoSize({
         width: options.width,
         height: options.height,
@@ -396,10 +430,10 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 在前置和后置摄像头之间切换。
+   * Switches between front and rear cameras.
    *
-   * @returns 切换后的视频轨。
-   * @throws 引擎未初始化、采集未启动或设备切换失败时抛出错误。
+   * @returns The current capture video track.
+   * @throws Rejects without initialized capture or if switching fails.
    */
   async switchCameraCapture(
     to: CameraPosition
@@ -429,7 +463,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 停止摄像头采集；引擎未初始化或采集未启动时不产生效果。
+   * Stops camera capture, doing nothing when capture or the engine is inactive.
    */
   async stopCameraCapture(): Promise<void> {
     if (this.externalVideo) {
@@ -448,15 +482,18 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 加入 RTC 房间。
+   * Joins an RTC room.
    *
-   * @throws 引擎未初始化、进房参数无效或进房失败时抛出错误。
+   * @throws Rejects for an uninitialized engine, invalid parameters, or join failure.
    */
   async joinRoom(
     configuration: RtcRoomJoinConfiguration
   ): Promise<void> {
     if (configuration.provider !== RtcProvider.trtc) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "TRTC credentials required");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "TRTC credentials required"
+      );
     }
     const engine = this.requireEngine();
     const sdkAppId = Number(configuration.sdkAppID);
@@ -480,7 +517,7 @@ export class TrtcRtcManager implements RtcManaging {
         userSig: configuration.userSig,
         strRoomId: configuration.roomID,
         privateMapKey: configuration.privateMapKey,
-        // 由传输层先设置音量再显式订阅，避免首帧前按 TRTC 默认音量播放。
+        // Require explicit audio subscription after applying volume to avoid initial playback at TRTC defaults.
         autoReceiveAudio: false,
       });
       this.isInRoom = true;
@@ -490,7 +527,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 离开当前 RTC 房间；未在房间中或引擎未初始化时不产生效果，退房失败仅记录日志。
+   * Leaves the active room when initialized; failures are logged without rejecting cleanup.
    */
   async leaveRoom(): Promise<void> {
     const engine = this.lease?.engine;
@@ -511,12 +548,10 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 配置本地视频编码参数。
+   * Configures video encoding using minimumBitrate as TRTC's single target bitrate and mapping the
+   * encoding preference to its adaptation mode.
    *
-   * TRTC 只接受单一目标码率，以 `minimumBitrate`（流畅优先档）作为目标码率；
-   * 编码策略偏好映射为 TRTC 弱网偏好。
-   *
-   * @throws 本地视频未准备或编码参数配置失败时抛出错误。
+   * @throws Rejects if local video is unavailable or configuration fails.
    */
   async configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
@@ -529,7 +564,7 @@ export class TrtcRtcManager implements RtcManaging {
       );
     }
     try {
-      // 外部画布方向已确定；只有摄像头需要移动端反向转置。
+      // External Canvas orientation is already resolved; only native camera input requires mobile transposition.
       const encodingSize = this.externalVideo ? configuration : rtcOrientedVideoSize({
         width: configuration.width,
         height: configuration.height,
@@ -551,9 +586,9 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 发布本地视频流。
+   * Publishes local video.
    *
-   * @throws 本地视频未准备或发布失败时抛出错误。
+   * @throws Rejects without prepared media or if publication fails.
    */
   async publishLocalVideo(): Promise<void> {
     const engine = this.requireEngine();
@@ -571,7 +606,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 停止发布本地视频流；采集保持运行，本地预览不受影响。
+   * Unpublishes video while retaining capture and preview.
    */
   async unpublishLocalVideo(): Promise<void> {
     const engine = this.lease?.engine;
@@ -586,9 +621,9 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 发布文件音频或麦克风；无文件音轨时不启动麦克风。
+   * Publishes file audio or microphone input, never starting a microphone for an audio-free file source.
    *
-   * @throws 引擎未初始化、麦克风权限被拒绝或发布失败时抛出错误。
+   * @throws Rejects for an uninitialized engine, denied permission, or publication failure.
    */
   async publishLocalAudio(): Promise<void> {
     const engine = this.requireEngine();
@@ -609,7 +644,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 停止发布本地音频流；麦克风采集保持运行。
+   * Unpublishes local audio while retaining microphone capture.
    */
   async unpublishLocalAudio(): Promise<void> {
     const engine = this.lease?.engine;
@@ -624,9 +659,9 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 更新远端视频主流订阅状态；订阅成功返回远端视频轨供渲染层绑定。
+   * Changes a remote main-video subscription and returns the subscribed track for rendering.
    *
-   * @throws 引擎未初始化、订阅或停止订阅失败时抛出错误。
+   * @throws Rejects without an engine or if the subscription change fails.
    */
   async subscribeRemoteVideo(
     userID: string,
@@ -659,9 +694,9 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 更新远端音频订阅状态。
+   * Changes remote audio subscription.
    *
-   * @throws 引擎未初始化或操作失败时抛出错误。
+   * @throws Rejects without an engine or if the operation fails.
    */
   async subscribeRemoteAudio(
     userID: string,
@@ -669,40 +704,45 @@ export class TrtcRtcManager implements RtcManaging {
   ): Promise<void> {
     const engine = this.requireEngine();
     try {
-      await engine.muteRemoteAudio(userID, !subscribe);
+      await engine.muteRemoteAudio(
+        userID,
+        !subscribe
+      );
     } catch (error) {
       throw this.mapError(error);
     }
   }
 
   /**
-   * 当前平台是否支持远端音量控制（iOS Safari/WKWebView 不支持）。
+   * Whether this platform supports TRTC remote-volume control; false on iOS Safari and WKWebView.
    */
   get supportsRemoteAudioVolumeControl(): boolean {
     return canControlTrtcRemoteAudioVolume();
   }
 
   /**
-   * 获取原始远端音轨；不支持独立播放音量的平台暂不开放媒体观察。
+   * Returns original remote audio, rejecting observation where independent playback-volume control is
+   * unsupported.
    */
   getRemoteAudioTrack(
     userID: string
   ): MediaStreamTrack | undefined {
     if (!canControlTrtcRemoteAudioVolume()) {
-      throw new XmaxError(XmaxErrorCode.mediaError, "TRTC cannot provide remote audio frames independently of playback on this platform");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "TRTC cannot provide remote audio frames independently of playback on this platform"
+      );
     }
     return this.requireEngine().getAudioTrack(userID) ?? undefined;
   }
 
   /**
-   * 设置指定远端用户的音频播放音量。
+   * Sets a remote user's playback volume.
    *
-   * iOS Safari/WKWebView 不允许 JS 修改媒体元素音量（TRTC 官方标注
-   * `setRemoteAudioVolume` 不支持 iOS Safari），该平台上降级为
-   * 播放/静音二值控制：音量为 0 时停止播放该路音频，非 0 时恢复播放；
-   * 恢复播放需要重新拉流，会有短暂缓冲。
+   * On iOS Safari and WKWebView, zero stops subscription playback and nonzero restores it. Restoring
+   * playback may briefly buffer because the stream must be fetched again.
    *
-   * @param volume 音量，取值范围为 `0...100`，越界时收敛到边界。
+   * @param volume - The requested volume, clamped to 0–100.
    */
   setRemoteAudioVolume(
     volume: number,
@@ -711,7 +751,10 @@ export class TrtcRtcManager implements RtcManaging {
     const engine = this.requireEngine();
     const normalized = Math.min(Math.max(Math.round(volume), 0), 100);
     if (!canControlTrtcRemoteAudioVolume()) {
-      void engine.muteRemoteAudio(userID, normalized === 0).catch((error: unknown) => {
+      void engine.muteRemoteAudio(
+        userID,
+        normalized === 0
+      ).catch((error: unknown) => {
         XmaxLogger.rtc.warning(
           () =>
             `远端音频播放状态切换失败 (Failed to Toggle Remote Audio Playback)\n` +
@@ -720,13 +763,16 @@ export class TrtcRtcManager implements RtcManaging {
       });
       return;
     }
-    engine.setRemoteAudioVolume(userID, normalized);
+    engine.setRemoteAudioVolume(
+      userID,
+      normalized
+    );
   }
 
   /**
-   * 向当前 RTC 房间发送自定义消息（`cmdId = 1`）。
+   * Sends a room custom message with cmdId 1.
    *
-   * @throws 未在房间中或消息编码后超过 1000 字节时抛出错误。
+   * @throws Rejects outside a room or when encoded text exceeds 1000 bytes.
    */
   async sendRoomMessage(
     message: string
@@ -754,14 +800,14 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * TRTC 凭据由会话层缓存，保持现有进房鉴权行为。
+   * Retains TRTC join authentication while the session layer caches refreshed credentials.
    */
   async updateCredentials(
     _configuration: RtcRoomJoinConfiguration
   ): Promise<void> { }
 
   /**
-   * 设置 RTC 事件监听器，传入空值时清除监听器。
+   * Sets the RTC event listener; undefined removes it.
    */
   setEventListener(
     listener?: RtcEventListener
@@ -770,30 +816,51 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 注册引擎事件桥接：媒体、消息及性能日志。
+   * Bridges native media, message, and performance events.
    */
   private registerEventBridge(
     engine: RtcEngine
   ): void {
     const source = engine as unknown as RtcEventSource;
 
-    // 直接使用 TRTC 的统计周期，不创建定时器；退房和旧引擎的迟到事件不输出。
+    // Use TRTC's statistics cadence without another timer, ignoring events from left rooms or obsolete engines.
     const onStatistics = (stats: TRTCStatistics) => {
       if (this.isInRoom && this.lease?.engine === engine) {
         RtcStatsLogger.logConnectionStatistics({
-          rttMs: stats.rtt, uplinkLossPercent: stats.upLoss, downlinkLossPercent: stats.downLoss,
-          sentBytes: stats.bytesSent, receivedBytes: stats.bytesReceived,
+          rttMs: stats.rtt,
+          uplinkLossPercent: stats.upLoss,
+          downlinkLossPercent: stats.downLoss,
+          sentBytes: stats.bytesSent,
+          receivedBytes: stats.bytesReceived,
         });
         const video = stats.localStatistics?.video?.find((item) => item.videoType === "big");
-        const valid = (value: number | undefined, minimum: number) =>
+        const valid = (
+          value: number | undefined,
+          minimum: number
+        ) =>
           typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : undefined;
-        // TRTC 的上行 frameRate 来自编码帧率，不作为采集或发送帧率重复输出。
+        // TRTC uplink frameRate is an encoding rate, not a capture or send rate.
         const localVideo: UplinkVideoStatistics | undefined = video ? Object.freeze({
-          width: valid(video.width, 1),
-          height: valid(video.height, 1),
-          encodeFrameRate: valid(video.frameRate, 0),
-          bitrateKbps: valid(video.bitrate, 0),
-          packetLossPercent: stats.upLoss <= 100 ? valid(stats.upLoss, 0) : undefined,
+          width: valid(
+            video.width,
+            1
+          ),
+          height: valid(
+            video.height,
+            1
+          ),
+          encodeFrameRate: valid(
+            video.frameRate,
+            0
+          ),
+          bitrateKbps: valid(
+            video.bitrate,
+            0
+          ),
+          packetLossPercent: stats.upLoss <= 100 ? valid(
+            stats.upLoss,
+            0
+          ) : undefined,
         }) : undefined;
         this.eventListener?.onLocalVideoStatistics?.(localVideo);
         if (localVideo) {
@@ -806,18 +873,36 @@ export class TrtcRtcManager implements RtcManaging {
             if (!video) {
               return [];
             }
-            // 当前 TRTC 类型声明漏了这个可选运行时字段，缺失时不以缓冲延迟替代。
+            // Use the optional runtime E2E field absent from native typings; do not substitute buffering delay.
             const playback = video as typeof video & {
               point2pointDelay?: number;
             };
             return [Object.freeze({
               userID: remote.userId,
-              width: valid(video.width, 1),
-              height: valid(video.height, 1),
-              decodeFrameRate: valid(video.frameRate, 0),
-              bitrateKbps: valid(video.bitrate, 0),
-              packetLossPercent: stats.downLoss <= 100 ? valid(stats.downLoss, 0) : undefined,
-              endToEndDelayMs: valid(playback.point2pointDelay, 0),
+              width: valid(
+                video.width,
+                1
+              ),
+              height: valid(
+                video.height,
+                1
+              ),
+              decodeFrameRate: valid(
+                video.frameRate,
+                0
+              ),
+              bitrateKbps: valid(
+                video.bitrate,
+                0
+              ),
+              packetLossPercent: stats.downLoss <= 100 ? valid(
+                stats.downLoss,
+                0
+              ) : undefined,
+              endToEndDelayMs: valid(
+                playback.point2pointDelay,
+                0
+              ),
             })];
           }),
         );
@@ -836,58 +921,104 @@ export class TrtcRtcManager implements RtcManaging {
         });
         RtcStatsLogger.logNetworkQuality({
           ...quality,
-          uplinkRTT: stats.uplinkRTT, downlinkRTT: stats.downlinkRTT,
-          uplinkLoss: stats.uplinkLoss, downlinkLoss: stats.downlinkLoss,
+          uplinkRTT: stats.uplinkRTT,
+          downlinkRTT: stats.downlinkRTT,
+          uplinkLoss: stats.uplinkLoss,
+          downlinkLoss: stats.downlinkLoss,
         });
         this.eventListener?.onNetworkStatistics?.(quality);
       }
     };
 
-    source.on(RTC_EVENT.statistics, onStatistics);
-    source.on(RTC_EVENT.networkQuality, onNetworkQuality);
+    source.on(
+      RTC_EVENT.statistics,
+      onStatistics
+    );
+    source.on(
+      RTC_EVENT.networkQuality,
+      onNetworkQuality
+    );
     const onAudioChanged = (event: RtcRemoteVideoEvent) => {
-      if (this.isInRoom && this.lease?.engine === engine) this.eventListener?.onRemoteAudioTrackChanged?.(event.userId);
+      if (this.isInRoom && this.lease?.engine === engine) {
+        this.eventListener?.onRemoteAudioTrackChanged?.(event.userId);
+      }
     };
-    source.on(RTC_EVENT.remoteAudioAvailable, onAudioChanged);
-    source.on(RTC_EVENT.remoteAudioUnavailable, onAudioChanged);
+    source.on(
+      RTC_EVENT.remoteAudioAvailable,
+      onAudioChanged
+    );
+    source.on(
+      RTC_EVENT.remoteAudioUnavailable,
+      onAudioChanged
+    );
     this.removeStatsListeners = () => {
-      source.off(RTC_EVENT.statistics, onStatistics);
-      source.off(RTC_EVENT.networkQuality, onNetworkQuality);
-      source.off(RTC_EVENT.remoteAudioAvailable, onAudioChanged);
-      source.off(RTC_EVENT.remoteAudioUnavailable, onAudioChanged);
+      source.off(
+        RTC_EVENT.statistics,
+        onStatistics
+      );
+      source.off(
+        RTC_EVENT.networkQuality,
+        onNetworkQuality
+      );
+      source.off(
+        RTC_EVENT.remoteAudioAvailable,
+        onAudioChanged
+      );
+      source.off(
+        RTC_EVENT.remoteAudioUnavailable,
+        onAudioChanged
+      );
     };
 
-    source.on(RTC_EVENT.remoteVideoAvailable, (event: RtcRemoteVideoEvent) => {
-      if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
-        return;
+    source.on(
+      RTC_EVENT.remoteVideoAvailable,
+      (event: RtcRemoteVideoEvent) => {
+        if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
+          return;
+        }
+        this.eventListener?.onRemoteVideoPublished(
+          event.userId,
+          true
+        );
       }
-      this.eventListener?.onRemoteVideoPublished(event.userId, true);
-    });
+    );
 
-    source.on(RTC_EVENT.remoteVideoUnavailable, (event: RtcRemoteVideoEvent) => {
-      if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
-        return;
+    source.on(
+      RTC_EVENT.remoteVideoUnavailable,
+      (event: RtcRemoteVideoEvent) => {
+        if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
+          return;
+        }
+        this.eventListener?.onRemoteVideoPublished(
+          event.userId,
+          false
+        );
       }
-      this.eventListener?.onRemoteVideoPublished(event.userId, false);
-    });
+    );
 
-    source.on(RTC_EVENT.customMessage, (event: RtcCustomMessageEvent) => {
-      if (this.lease?.engine !== engine || event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
-        return;
+    source.on(
+      RTC_EVENT.customMessage,
+      (event: RtcCustomMessageEvent) => {
+        if (this.lease?.engine !== engine || event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
+          return;
+        }
+        let message: string;
+        try {
+          message = new TextDecoder().decode(event.data);
+        } catch {
+          XmaxLogger.rtc.warning(() => "自定义消息解码失败 (Failed to Decode Custom Message)");
+          return;
+        }
+        this.eventListener?.onCustomMessageReceived(
+          event.userId,
+          message
+        );
       }
-      let message: string;
-      try {
-        message = new TextDecoder().decode(event.data);
-      } catch {
-        XmaxLogger.rtc.warning(() => "自定义消息解码失败 (Failed to Decode Custom Message)");
-        return;
-      }
-      this.eventListener?.onCustomMessageReceived(event.userId, message);
-    });
+    );
   }
 
   /**
-   * 返回当前引擎实例；未初始化时抛出错误。
+   * Returns the current engine or throws if uninitialized.
    */
   private requireEngine(): RtcEngine {
     const engine = this.lease?.engine;
@@ -901,7 +1032,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * 将 TRTC 错误映射为 SDK 统一错误。
+   * Maps TRTC failures to SDK errors.
    */
   private mapError(
     error: unknown
@@ -922,19 +1053,28 @@ export class TrtcRtcManager implements RtcManaging {
         ? rtcError.message.trim()
         : String(error);
 
-    // 浏览器权限拒绝（getUserMedia 的 NotAllowedError 会被 TRTC 包装后抛出）。
+    // TRTC may wrap getUserMedia permission-denial errors.
     if (
       originName === "NotAllowedError" ||
       originName === "SecurityError" ||
       /NotAllowed/i.test(message)
     ) {
-      return new XmaxError(XmaxErrorCode.cameraPermissionDenied, message);
+      return new XmaxError(
+        XmaxErrorCode.cameraPermissionDenied,
+        message
+      );
     }
-    // 其他设备层错误：无可用设备、设备被占用、采集参数不支持等。
+    // Other original device errors represent missing, busy, or unsupported capture devices.
     if (originName) {
-      return new XmaxError(XmaxErrorCode.mediaError, message);
+      return new XmaxError(
+        XmaxErrorCode.mediaError,
+        message
+      );
     }
 
-    return new XmaxError(XmaxErrorCode.rtcError, message);
+    return new XmaxError(
+      XmaxErrorCode.rtcError,
+      message
+    );
   }
 }

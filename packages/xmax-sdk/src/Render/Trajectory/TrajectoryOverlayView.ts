@@ -17,72 +17,73 @@ import type { TrajectoryEffectRendering } from "./TrajectoryEffectRendering";
 import type { TrajectoryPoint } from "./TrajectoryPoint";
 
 /**
- * 采集鼠标、触屏和触控笔输入，驱动效果并以约 30Hz 提交视口采样。
+ * Samples mouse, touch, and pen input, renders effects, and submits viewport snapshots at approximately
+ * 30 Hz.
  */
 export class TrajectoryOverlayView {
 
   /**
-   * 视图与显示配置
+   * The transparent interaction-layer element.
    */
   readonly element = document.createElement("div");
 
   /**
-   * 当前轨道提供的交互绑定。
+   * The interaction binding supplied by the current track.
    */
   private binding?: TrajectoryBinding;
 
   /**
-   * 交互坐标换算使用的固定媒体规格。
+   * The fixed media format used for coordinate mapping.
    */
   private format?: RealtimeVideoFormat;
 
   /**
-   * 画面在视口中的缩放与裁剪方式。
+   * The image scaling and cropping mode.
    */
   private contentMode = VideoContentMode.fill;
 
   /**
-   * 是否对显示画面应用水平镜像。
+   * Whether the displayed image is mirrored horizontally.
    */
   private mirrored = false;
 
   /**
-   * 接入方是否请求启用轨迹交互。
+   * Whether the app requests interaction.
    */
   private requested = true;
 
   /**
-   * 当前绑定是否允许提交交互采样。
+   * Whether the binding permits interaction samples.
    */
   private enabled = false;
 
   /**
-   * 手势采样与生命周期资源
+   * The active pointers indexed by browser pointer ID.
    */
   private readonly pointers = new Map<number, TrajectoryPoint>();
 
   /**
-   * 下一条轨迹使用的标识。
+   * The next trajectory ID.
    */
   private nextID = 0;
 
   /**
-   * 下一次动画刷新任务的句柄。
+   * The pending animation-frame handle.
    */
   private animation?: number;
 
   /**
-   * 等待按显示节拍提交的最新触点快照。
+   * The monotonic time of the last submitted sample, in milliseconds.
    */
   private lastSample = 0;
 
   /**
-   * 同步交互层视口尺寸的观察器。
+   * The observer tracking interaction-viewport size.
    */
   private resizeObserver?: ResizeObserver;
 
   /**
-   * 当前交互视口的 CSS 像素尺寸。
+   * The current viewport dimensions, in CSS pixels.
    */
   private viewport?: {
     width: number;
@@ -90,7 +91,7 @@ export class TrajectoryOverlayView {
   };
 
   /**
-   * 页面隐藏时结束活动轨迹并清理采样。
+   * The handler cancelling gestures when the page becomes hidden.
    */
   private readonly visibilityChanged = () => {
     if (document.hidden) {
@@ -100,35 +101,71 @@ export class TrajectoryOverlayView {
   };
 
   /**
-   * 处理触点按下并创建新轨迹。
+   * The handler beginning a pointer trajectory.
    */
   private readonly onDown = (event: PointerEvent) => this.begin(event);
 
   /**
-   * 处理触点移动并更新采样。
+   * The handler updating pointer position and visuals.
    */
   private readonly onMove = (event: PointerEvent) => this.move(event);
 
   /**
-   * 结束触点及对应轨迹。
+   * The handler ending a pointer trajectory.
    */
   private readonly onEnd = (event: PointerEvent) => this.end(event.pointerId);
 
   /**
-   * 安装透明交互层及独立 Renderer；只有任务就绪时接管指针。
+   * Creates a transparent overlay with a separate effect renderer, capturing pointers only when
+   * interaction is available.
    */
   constructor(
     private readonly renderer: TrajectoryEffectRendering
   ) {
-    Object.assign(this.element.style, { position: "absolute", inset: "0", zIndex: "2", overflow: "hidden" });
-    Object.assign(renderer.element.style, { position: "absolute", inset: "0", width: "100%", height: "100%", pointerEvents: "none" });
+    Object.assign(
+      this.element.style,
+      {
+        position: "absolute",
+        inset: "0",
+        zIndex: "2",
+        overflow: "hidden"
+      }
+    );
+    Object.assign(
+      renderer.element.style,
+      {
+        position: "absolute",
+        inset: "0",
+        width: "100%",
+        height: "100%",
+        pointerEvents: "none"
+      }
+    );
     this.element.appendChild(renderer.element);
-    this.element.addEventListener("pointerdown", this.onDown);
-    this.element.addEventListener("pointermove", this.onMove);
-    this.element.addEventListener("pointerup", this.onEnd);
-    this.element.addEventListener("pointercancel", this.onEnd);
-    this.element.addEventListener("lostpointercapture", this.onEnd);
-    document.addEventListener("visibilitychange", this.visibilityChanged);
+    this.element.addEventListener(
+      "pointerdown",
+      this.onDown
+    );
+    this.element.addEventListener(
+      "pointermove",
+      this.onMove
+    );
+    this.element.addEventListener(
+      "pointerup",
+      this.onEnd
+    );
+    this.element.addEventListener(
+      "pointercancel",
+      this.onEnd
+    );
+    this.element.addEventListener(
+      "lostpointercapture",
+      this.onEnd
+    );
+    document.addEventListener(
+      "visibilitychange",
+      this.visibilityChanged
+    );
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(() => this.cancel());
       this.resizeObserver.observe(this.element);
@@ -137,7 +174,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 更新任务绑定，清除旧任务手势和采样。
+   * Updates the task binding and clears obsolete gestures and samples.
    */
   setBinding(
     binding?: TrajectoryBinding,
@@ -152,7 +189,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 同步显示配置；配置变化后旧坐标不再继续发送。
+   * Updates presentation settings and stops submitting coordinates from the old layout.
    */
   configure(
     mode: VideoContentMode,
@@ -169,23 +206,41 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 卸载时取消采样、动画、捕获和事件监听；Renderer 可以再次挂载。
+   * Releases sampling, animation, pointer capture, and listeners while allowing renderer reuse.
    */
   dispose(): void {
     this.binding?.detach(this);
     this.cancel();
     this.resizeObserver?.disconnect();
-    document.removeEventListener("visibilitychange", this.visibilityChanged);
-    this.element.removeEventListener("pointerdown", this.onDown);
-    this.element.removeEventListener("pointermove", this.onMove);
-    this.element.removeEventListener("pointerup", this.onEnd);
-    this.element.removeEventListener("pointercancel", this.onEnd);
-    this.element.removeEventListener("lostpointercapture", this.onEnd);
+    document.removeEventListener(
+      "visibilitychange",
+      this.visibilityChanged
+    );
+    this.element.removeEventListener(
+      "pointerdown",
+      this.onDown
+    );
+    this.element.removeEventListener(
+      "pointermove",
+      this.onMove
+    );
+    this.element.removeEventListener(
+      "pointerup",
+      this.onEnd
+    );
+    this.element.removeEventListener(
+      "pointercancel",
+      this.onEnd
+    );
+    this.element.removeEventListener(
+      "lostpointercapture",
+      this.onEnd
+    );
     this.element.remove();
   }
 
   /**
-   * 无任务或被禁用时不阻止页面滚动。
+   * Allows page scrolling when no task is active or interaction is disabled.
    */
   private updateStyle(): void {
     const active = this.requested && this.enabled && !!this.binding && !document.hidden;
@@ -195,7 +250,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 根据实际显示区域拒绝黑边，移动到视口外时限制在可见视频边缘。
+   * Rejects letterbox margins and clamps out-of-viewport movement to visible video edges.
    */
   private point(
     event: PointerEvent,
@@ -206,7 +261,11 @@ export class TrajectoryOverlayView {
     if (!this.format) {
       return undefined;
     }
-    const rect = InteractionCoordinateMapper.displayedFrame(viewport, this.format, this.contentMode);
+    const rect = InteractionCoordinateMapper.displayedFrame(
+      viewport,
+      this.format,
+      this.contentMode
+    );
     if (!rect || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
       return undefined;
     }
@@ -223,14 +282,21 @@ export class TrajectoryOverlayView {
     y = Math.max(minY, Math.min(maxY, y));
     return Object.freeze({
       id,
-      location: Object.freeze({ x, y }),
-      normalizedLocation: Object.freeze({ x: (x - rect.x) / rect.width, y: (y - rect.y) / rect.height }),
+      location: Object.freeze({
+        x,
+        y
+      }),
+      normalizedLocation: Object.freeze({
+        x: (x - rect.x) / rect.width,
+        y: (y - rect.y) / rect.height
+      }),
       timestamp: performance.now(),
     });
   }
 
   /**
-   * 按下立即采样，不等待定时窗口；只接受鼠标主键。
+   * Samples presses immediately without waiting for the next interval, accepting only the primary mouse
+   * button.
    */
   private begin(
     event: PointerEvent
@@ -238,24 +304,34 @@ export class TrajectoryOverlayView {
     if (!this.requested || !this.enabled || !this.binding || document.hidden || event.button !== 0) {
       return;
     }
-    const point = this.point(event, ++this.nextID, false);
+    const point = this.point(
+      event,
+      ++this.nextID,
+      false
+    );
     if (!point) {
       return;
     }
     event.preventDefault();
-    this.pointers.set(event.pointerId, point);
+    this.pointers.set(
+      event.pointerId,
+      point
+    );
     try {
       this.element.setPointerCapture(event.pointerId);
     } catch {
-      // 指针可能已被浏览器取消；仍由 pointercancel 或视图卸载结束手势。
+      // The browser may already have cancelled capture; pointercancel or disposal still ends the gesture.
     }
     this.render(() => this.renderer.renderBegan([point]));
-    this.sample(performance.now(), true);
+    this.sample(
+      performance.now(),
+      true
+    );
     this.schedule();
   }
 
   /**
-   * 高频指针事件只更新最新位置及视觉效果，不直接发送网络消息。
+   * Updates the latest position and visuals on high-frequency moves without sending each event.
    */
   private move(
     event: PointerEvent
@@ -264,15 +340,22 @@ export class TrajectoryOverlayView {
     if (!previous) {
       return;
     }
-    const point = this.point(event, previous.id, true);
+    const point = this.point(
+      event,
+      previous.id,
+      true
+    );
     if (point) {
-      this.pointers.set(event.pointerId, point);
+      this.pointers.set(
+        event.pointerId,
+        point
+      );
       this.render(() => this.renderer.renderMoved([point]));
     }
   }
 
   /**
-   * 释放单个指针，多指交互继续；最后一个指针释放后停止采样。
+   * Releases one pointer, continuing multi-touch interaction until the final pointer ends.
    */
   private end(
     pointerID: number
@@ -285,7 +368,7 @@ export class TrajectoryOverlayView {
     try {
       this.element.releasePointerCapture(pointerID);
     } catch {
-      // 浏览器可能已在 pointerup 或取消事件中释放捕获。
+      // The browser may already have released capture during pointerup or cancellation.
     }
     this.render(() => this.renderer.renderEnded([point.id]));
     if (!this.pointers.size) {
@@ -294,7 +377,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 取消全部手势及视觉效果，不保留跨生命周期轨迹。
+   * Cancels all gestures and visual effects without retaining cross-lifecycle trajectories.
    */
   private cancel(): void {
     for (const id of [...this.pointers.keys()]) {
@@ -305,7 +388,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 清理采样回调与视口快照。
+   * Clears the sampling callback and viewport snapshot.
    */
   private stopSampling(): void {
     if (this.animation !== undefined) {
@@ -317,7 +400,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 只在存在活动触点时运行动画时钟。
+   * Runs the animation clock only while pointers are active.
    */
   private schedule(): void {
     if (this.animation === undefined && this.pointers.size) {
@@ -330,7 +413,8 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 固定频率发送所有活动触点的快照，布局变化时取消而非发送旧坐标。
+   * Samples all active pointers at a fixed frequency, cancelling after layout changes rather than
+   * sending obsolete coordinates.
    */
   private sample(
     now: number,
@@ -345,7 +429,10 @@ export class TrajectoryOverlayView {
       this.cancel();
       return;
     }
-    this.viewport = { width, height };
+    this.viewport = {
+      width,
+      height
+    };
     if (!force && now - this.lastSample < 1000 / 30) {
       return;
     }
@@ -359,7 +446,7 @@ export class TrajectoryOverlayView {
   }
 
   /**
-   * 自定义效果异常不影响触点采集和网络发送。
+   * Isolates custom-renderer failures from sampling and message delivery.
    */
   private render(
     action: () => void

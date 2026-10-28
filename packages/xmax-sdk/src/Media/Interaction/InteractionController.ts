@@ -16,12 +16,13 @@ import type { InteractionFrame } from "./InteractionFrame";
 import type { InteractionControlling, InteractionListener } from "./InteractionControlling";
 
 /**
- * 将视口采样转换为媒体坐标，串行提交且只保留最新待发送帧。
+ * Maps viewport samples to media coordinates and submits them serially, retaining only the latest
+ * pending sample.
  */
 export class InteractionController implements InteractionControlling {
 
   /**
-   * 活动任务与待发送采样；上下文对象身份隔离任务切换。
+   * The active task and fixed format, identified by object identity across task replacement.
    */
   private active?: {
     taskID: string;
@@ -30,7 +31,7 @@ export class InteractionController implements InteractionControlling {
   };
 
   /**
-   * 发送忙时保留的最新交互采样。
+   * The latest interaction sample retained while sending is busy.
    */
   private pending?: {
     context: NonNullable<InteractionController["active"]>;
@@ -38,19 +39,19 @@ export class InteractionController implements InteractionControlling {
   };
 
   /**
-   * 当前正在串行发送采样的交互上下文。
+   * The interaction context whose samples are currently being drained.
    */
   private draining?: NonNullable<InteractionController["active"]>;
 
   /**
-   * 注入发送能力，不持有房间或具体 RTC。
+   * Creates an interaction controller with a sender, without owning a room or RTC adapter.
    */
   constructor(
     private readonly listener: InteractionListener
   ) { }
 
   /**
-   * 激活或更新任务输入格式，清除旧采样。
+   * Activates a task or updates its input format, discarding obsolete samples.
    */
   startInteraction(
     taskID: string,
@@ -59,12 +60,16 @@ export class InteractionController implements InteractionControlling {
   ): void {
     this.stopInteraction();
     if (taskID) {
-      this.active = { taskID, videoFormat, coordinateSpace };
+      this.active = {
+        taskID,
+        videoFormat,
+        coordinateSpace
+      };
     }
   }
 
   /**
-   * 立即使交互上下文失效；已提交给 RTC 的消息无法撤回。
+   * Invalidates interaction immediately; messages already submitted to RTC cannot be recalled.
    */
   stopInteraction(): void {
     this.active = undefined;
@@ -73,7 +78,7 @@ export class InteractionController implements InteractionControlling {
   }
 
   /**
-   * 同步转换数据，发送忙时用最新采样覆盖旧采样，避免弱网积压。
+   * Maps points synchronously and replaces pending samples to avoid constrained-network backlogs.
    */
   submitInteraction(
     frame: InteractionFrame
@@ -84,21 +89,29 @@ export class InteractionController implements InteractionControlling {
     }
 
     const points = frame.points.flatMap(point => {
-      const mapped = InteractionCoordinateMapper.map(point, frame, context.videoFormat, context.coordinateSpace);
+      const mapped = InteractionCoordinateMapper.map(
+        point,
+        frame,
+        context.videoFormat,
+        context.coordinateSpace
+      );
       return mapped ? [mapped] : [];
     });
     if (!points.length) {
       return;
     }
 
-    this.pending = { context, points };
+    this.pending = {
+      context,
+      points
+    };
     if (this.draining !== context) {
       void this.drain(context);
     }
   }
 
   /**
-   * 顺序发送；失败只丢弃当前帧，不终止生成或阻止后续交互。
+   * Sends samples in order; a failed sample does not stop generation or subsequent interaction.
    */
   private async drain(
     context: NonNullable<InteractionController["active"]>
@@ -109,7 +122,10 @@ export class InteractionController implements InteractionControlling {
         const { points } = this.pending;
         this.pending = undefined;
         try {
-          await this.listener(context.taskID, points);
+          await this.listener(
+            context.taskID,
+            points
+          );
         } catch {
           if (context === this.active) {
             XmaxLogger.interaction.warning(() => "发送交互轨迹失败，已丢弃当前采样帧 (Interaction Sample Dropped)");

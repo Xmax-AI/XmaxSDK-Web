@@ -12,22 +12,23 @@ import { INITIAL_QUALITY_LEVEL, QUALITY_TIERS } from "./QualityTiers";
 import type { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
 /**
- * 自动调档历史记录的传输方向。
+ * The transmission direction of quality history.
  */
 type QualityDirection = "uplink" | "downlink";
 
 /**
- * 一小时内成功应用的档位；按 RTC 提供方、模型、方向隔离，不保存媒体或凭据。
+ * Successful levels retained for one hour, isolated by provider, model, and direction without storing
+ * media or credentials.
  */
 export class QualityHistory {
 
   /**
-   * 历史档位有效期，单位为毫秒。
+   * The history lifetime, in milliseconds.
    */
   private static readonly expirationMs = 60 * 60 * 1000;
 
   /**
-   * 创建按模型与 RTC 提供方隔离的档位存储。
+   * Creates model- and provider-specific quality history.
    */
   constructor(
     private readonly model: string,
@@ -36,7 +37,7 @@ export class QualityHistory {
   ) { }
 
   /**
-   * 无记录、过期、损坏、时钟回退或存储不可用时使用默认 L2。
+   * Returns L2 for missing, expired, malformed, inaccessible, or clock-regressed history.
    */
   read(
     direction: QualityDirection
@@ -48,12 +49,15 @@ export class QualityHistory {
         entry.savedAt > 0 && now >= entry.savedAt && now - entry.savedAt < QualityHistory.expirationMs) {
         return entry.level;
       }
-    } catch { /* 存储不可用不影响生成。 */ }
+    } catch { /**
+     * Unavailable storage must not affect generation.
+     */ }
     return INITIAL_QUALITY_LEVEL;
   }
 
   /**
-   * 应用成功后保存档位并刷新一小时有效期；下行成功仅表示信令已发送。
+   * Stores a successful level and refreshes its one-hour lifetime; downlink success means signaling
+   * submission only.
    */
   write(
     direction: QualityDirection,
@@ -63,12 +67,20 @@ export class QualityHistory {
       return;
     }
     try {
-      globalThis.localStorage.setItem(this.key(direction), JSON.stringify({ level, savedAt: this.now() }));
-    } catch { /* 配额或权限错误不影响自动调档。 */ }
+      globalThis.localStorage.setItem(
+        this.key(direction),
+        JSON.stringify({
+          level,
+          savedAt: this.now()
+        })
+      );
+    } catch { /**
+     * Storage quota or permission errors must not interrupt adaptation.
+     */ }
   }
 
   /**
-   * 生成当前方向的存储键；无时间戳的旧记录按无效记录处理。
+   * Builds a direction-specific storage key; timestamp-free records are invalid.
    */
   private key(
     direction: QualityDirection
@@ -77,7 +89,7 @@ export class QualityHistory {
   }
 
   /**
-   * 校验档位编号。
+   * Validates a quality-level number.
    */
   private isValid(
     level: number

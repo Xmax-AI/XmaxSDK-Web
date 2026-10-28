@@ -11,7 +11,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
- * 在缩放上限内计算对齐尺寸，优先保持精确宽高比，不放大源画面。
+ * Computes aligned dimensions within a scale limit, preferring the exact aspect ratio without upscaling.
  */
 export function alignedVideoSize(
   size: {
@@ -27,7 +27,10 @@ export function alignedVideoSize(
   const { width, height } = size;
   if (![width, height, alignment].every(value => Number.isSafeInteger(value) && value > 0) ||
     !Number.isFinite(scale) || scale <= 0 || scale > 1) {
-    throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Invalid video size or alignment");
+    throw new XmaxError(
+      XmaxErrorCode.invalidConfiguration,
+      "Invalid video size or alignment"
+    );
   }
 
   let divisor = width;
@@ -36,16 +39,25 @@ export function alignedVideoSize(
     [divisor, remainder] = [remainder, divisor % remainder];
   }
 
-  // 最简比例的公共倍数同时满足像素对齐，避免宽高分别取整改变比例。
+  // Use a common multiple of the reduced aspect ratio to avoid independent rounding changing its proportions.
   const units = Math.floor(divisor * scale / alignment) * alignment;
   if (units >= alignment) {
-    return { width: width / divisor * units, height: height / divisor * units };
+    return {
+      width: width / divisor * units,
+      height: height / divisor * units
+    };
   }
 
   const alignedWidth = Math.floor(width * scale / alignment) * alignment;
   const alignedHeight = Math.floor(height * scale / alignment) * alignment;
   if (alignedWidth < alignment || alignedHeight < alignment) {
-    throw new XmaxError(XmaxErrorCode.invalidConfiguration, "No aligned video size is available within the size limits");
+    throw new XmaxError(
+      XmaxErrorCode.invalidConfiguration,
+      "No aligned video size is available within the size limits"
+    );
   }
-  return { width: alignedWidth, height: alignedHeight };
+  return {
+    width: alignedWidth,
+    height: alignedHeight
+  };
 }

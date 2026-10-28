@@ -11,22 +11,22 @@
 import { RealtimeVideoTrack } from "./RealtimeVideoTrack";
 
 /**
- * 实时生成输入/输出的媒体流。
+ * A media stream used as realtime generation input or output.
  */
 export class RealtimeMediaStream {
 
   /**
-   * 媒体流标识。
+   * The media stream ID.
    */
   readonly id: string;
 
   /**
-   * 媒体流包含的视频轨道。
+   * The stream's video track.
    */
   readonly videoTrack?: RealtimeVideoTrack;
 
   /**
-   * 创建实时媒体流。
+   * Creates a realtime media stream.
    */
   constructor(
     init: {

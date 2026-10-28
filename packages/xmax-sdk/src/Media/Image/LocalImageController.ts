@@ -17,68 +17,69 @@ import { StreamID } from "../../Service/Realtime/StreamID";
 import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
 
 /**
- * 图片解码、静止画面输出及预览资源。
+ * Image decoding, still-video output, and preview resources.
  */
 interface LocalImageSource {
 
   /**
-   * 用于解码源图片的图像元素。
+   * The element decoding the source image.
    */
   image: HTMLImageElement;
 
   /**
-   * 承载媒体帧的画布。
+   * The Canvas holding still-video frames.
    */
   canvas: HTMLCanvasElement;
 
   /**
-   * 源图片的浏览器对象 URL，释放源时一并撤销。
+   * The source Blob URL, revoked on release.
    */
   url: string;
 
   /**
-   * 取消当前媒体操作及相关等待。
+   * The controller cancelling media preparation and waits.
    */
   abort: AbortController;
 
   /**
-   * 当前绑定该媒体源的渲染目标。
+   * The rendering targets bound to this source.
    */
   targets: Set<VideoRenderTarget>;
 
   /**
-   * 由当前媒体源输出的浏览器媒体流。
+   * The browser stream produced by the source.
    */
   stream?: MediaStream;
 
   /**
-   * 当前媒体源对应的 SDK 视频轨道。
+   * The SDK video track associated with this source.
    */
   track?: RealtimeVideoTrack;
 
   /**
-   * 当前等待或定时任务的取消句柄。
+   * The timer refreshing the static output frame.
    */
   timer?: ReturnType<typeof setInterval>;
 
   /**
-   * 媒体源结束时释放资源并通知上层。
+   * The callback releasing resources when output ends.
    */
   onEnded?: () => void;
 }
 
 /**
- * 将本地图片等比缩放为静止视频流，不上传文件、不采集设备、不生成音频。
+ * Scales a local image proportionally into a silent still-video stream without uploads or device
+ * capture.
  */
 export class LocalImageController {
 
   /**
-   * 当前图片源，包含尚未完成的解码操作。
+   * The active image source, including pending decoding.
    */
   private source?: LocalImageSource;
 
   /**
-   * 注入运行期错误通知，不创建浏览器资源。
+   * Creates an image controller with a runtime failure callback.
    */
   constructor(
     private readonly onError: (
@@ -87,21 +88,22 @@ export class LocalImageController {
   ) { }
 
   /**
-   * 是否持有正在准备或可用的图片源。
+   * Whether an image source is preparing or available.
    */
   get isActive(): boolean {
     return this.source !== undefined;
   }
 
   /**
-   * 已准备的本地图片视频轨。
+   * The prepared still-image video track.
    */
   get currentTrack(): RealtimeVideoTrack | undefined {
     return this.source?.track;
   }
 
   /**
-   * 解码图片、准备静止画面并持续输出帧；取消或失败时释放本次资源。
+   * Decodes the image and continuously outputs its still snapshot, releasing resources on failure or
+   * cancellation.
    */
   async create(
     options: {
@@ -112,94 +114,157 @@ export class LocalImageController {
     signal: AbortSignal
   ): Promise<RealtimeMediaStream> {
     if (this.source) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current local image before creating another one");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Close the current local image before creating another one"
+      );
     }
     if (!(options.file instanceof Blob) || options.file.size === 0) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local image requires a non-empty File or Blob");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Local image requires a non-empty File or Blob"
+      );
     }
     options.videoFormat.validate();
     if (signal.aborted) {
       throw this.cancelled();
     }
     if (typeof document === "undefined") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Local image requires a browser");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Local image requires a browser"
+      );
     }
 
     const image = document.createElement("img");
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
     if (!context || typeof canvas.captureStream !== "function") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Canvas video capture is unavailable");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Canvas video capture is unavailable"
+      );
     }
     const source: LocalImageSource = {
-      image, canvas, url: URL.createObjectURL(options.file),
-      abort: new AbortController(), targets: new Set(),
+      image,
+      canvas,
+      url: URL.createObjectURL(options.file),
+      abort: new AbortController(),
+      targets: new Set(),
     };
     this.source = source;
 
     try {
-      await this.load(source, signal);
+      await this.load(
+        source,
+        signal
+      );
       if (signal.aborted || this.source !== source) {
         throw this.cancelled();
       }
       if (!image.naturalWidth || !image.naturalHeight) {
-        throw new XmaxError(XmaxErrorCode.mediaError, "The image has no valid dimensions");
+        throw new XmaxError(
+          XmaxErrorCode.mediaError,
+          "The image has no valid dimensions"
+        );
       }
 
-      const size = mediaService.resolveMediaSize({ width: image.naturalWidth, height: image.naturalHeight }, "image");
-      const format = options.videoFormat.resized(size.width, size.height);
+      const size = mediaService.resolveMediaSize(
+        {
+          width: image.naturalWidth,
+          height: image.naturalHeight
+        },
+        "image"
+      );
+      const format = options.videoFormat.resized(
+        size.width,
+        size.height
+      );
       canvas.width = size.width;
       canvas.height = size.height;
 
-      // 仅在解码完成时绘制一次图片；后续发送同一快照，动图也不会继续播放。
+      // Draw the decoded image once; animated inputs must not advance after the snapshot.
       context.fillStyle = "black";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      context.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+      context.drawImage(
+        image,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
       source.stream = canvas.captureStream(format.fps);
       const nativeTrack = source.stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
       if (!nativeTrack || nativeTrack.readyState !== "live") {
-        throw new XmaxError(XmaxErrorCode.mediaError, "Canvas did not provide a live video track");
+        throw new XmaxError(
+          XmaxErrorCode.mediaError,
+          "Canvas did not provide a live video track"
+        );
       }
-      const track = new RealtimeVideoTrack({ id: "local-image", videoFormat: format });
+      const track = new RealtimeVideoTrack({
+        id: "local-image",
+        videoFormat: format
+      });
       track.mediaStreamTrack = nativeTrack;
       source.track = track;
 
       const refresh = () => {
-        // 重绘快照使 Canvas 产生新帧；不重复绘制原图，避免动图内容变化。
-        context.drawImage(canvas, 0, 0);
+        // Refresh the Canvas snapshot rather than redrawing the source image and advancing animated content.
+        context.drawImage(
+          canvas,
+          0,
+          0
+        );
         if (typeof nativeTrack.requestFrame === "function") {
           nativeTrack.requestFrame();
         }
       };
       refresh();
-      source.timer = setInterval(() => {
-        if (this.source !== source) {
-          return;
-        }
-        try {
-          refresh();
-        } catch {
-          this.handleError(source);
-        }
-      }, 1000 / format.fps);
-      source.onEnded = () => this.handleError(source);
-      nativeTrack.addEventListener("ended", source.onEnded);
-
-      VideoRenderRegistry.register(track, {
-        attachHandler: view => {
+      source.timer = setInterval(
+        () => {
           if (this.source !== source) {
             return;
           }
-          view.isMirrored = false;
-          view.setMediaStream(source.stream!);
-          source.targets.add(view);
+          try {
+            refresh();
+          } catch {
+            this.handleError(source);
+          }
         },
-        detachHandler: view => {
-          source.targets.delete(view);
-          view.setMediaStream(null);
-        },
+        1000 / format.fps
+      );
+      source.onEnded = () => this.handleError(source);
+      nativeTrack.addEventListener(
+        "ended",
+        source.onEnded
+      );
+
+      VideoRenderRegistry.register(
+        track,
+        {
+          attachHandler: view => {
+            if (this.source !== source) {
+              return;
+            }
+            view.isMirrored = false;
+            view.setMediaStream(source.stream!);
+            source.targets.add(view);
+          },
+          detachHandler: view => {
+            source.targets.delete(view);
+            view.setMediaStream(null);
+          },
+        }
+      );
+      return new RealtimeMediaStream({
+        id: StreamID.local,
+        videoTrack: track
       });
-      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     } catch (error) {
       if (this.source === source) {
         this.stop();
@@ -209,7 +274,7 @@ export class LocalImageController {
   }
 
   /**
-   * 取消解码、清空预览并释放视频轨、定时器和对象 URL。
+   * Cancels decoding, clears preview, and releases tracks, timers, and the Blob URL.
    */
   stop(): void {
     const source = this.source;
@@ -223,7 +288,10 @@ export class LocalImageController {
     if (source.track) {
       VideoRenderRegistry.unregister(source.track);
       if (source.onEnded) {
-        source.track.mediaStreamTrack?.removeEventListener("ended", source.onEnded);
+        source.track.mediaStreamTrack?.removeEventListener(
+          "ended",
+          source.onEnded
+        );
       }
       source.track.mediaStreamTrack = undefined;
     }
@@ -231,7 +299,7 @@ export class LocalImageController {
       try {
         view.setMediaStream(null);
       } catch {
-        // 单个视图异常不能阻断媒体资源清理。
+        // A view failure must not prevent media-resource cleanup.
       }
     }
     source.targets.clear();
@@ -243,19 +311,34 @@ export class LocalImageController {
   }
 
   /**
-   * 等待浏览器完成图片解码，支持主动停止、操作取消和超时。
+   * Waits for browser image decoding with stop, cancellation, and timeout support.
    */
   private load(
     source: LocalImageSource,
     signal: AbortSignal
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise((
+      resolve,
+      reject
+    ) => {
       const finish = (error?: XmaxError) => {
         clearTimeout(timer);
-        source.image.removeEventListener("load", loaded);
-        source.image.removeEventListener("error", failed);
-        signal.removeEventListener("abort", aborted);
-        source.abort.signal.removeEventListener("abort", aborted);
+        source.image.removeEventListener(
+          "load",
+          loaded
+        );
+        source.image.removeEventListener(
+          "error",
+          failed
+        );
+        signal.removeEventListener(
+          "abort",
+          aborted
+        );
+        source.abort.signal.removeEventListener(
+          "abort",
+          aborted
+        );
         if (error) {
           reject(error);
         } else {
@@ -263,13 +346,38 @@ export class LocalImageController {
         }
       };
       const loaded = () => finish();
-      const failed = () => finish(new XmaxError(XmaxErrorCode.mediaError, "The browser cannot decode this image file"));
+      const failed = () => finish(new XmaxError(
+        XmaxErrorCode.mediaError,
+        "The browser cannot decode this image file"
+      ));
       const aborted = () => finish(this.cancelled());
-      const timer = setTimeout(() => finish(new XmaxError(XmaxErrorCode.timeout, "Local image preparation timed out")), 10_000);
-      source.image.addEventListener("load", loaded, { once: true });
-      source.image.addEventListener("error", failed, { once: true });
-      signal.addEventListener("abort", aborted, { once: true });
-      source.abort.signal.addEventListener("abort", aborted, { once: true });
+      const timer = setTimeout(
+        () => finish(new XmaxError(
+          XmaxErrorCode.timeout,
+          "Local image preparation timed out"
+        )),
+        10_000
+      );
+      source.image.addEventListener(
+        "load",
+        loaded,
+        { once: true }
+      );
+      source.image.addEventListener(
+        "error",
+        failed,
+        { once: true }
+      );
+      signal.addEventListener(
+        "abort",
+        aborted,
+        { once: true }
+      );
+      source.abort.signal.addEventListener(
+        "abort",
+        aborted,
+        { once: true }
+      );
       if (signal.aborted || source.abort.signal.aborted) {
         aborted();
       } else {
@@ -279,7 +387,7 @@ export class LocalImageController {
   }
 
   /**
-   * 输出失效时停止刷新并仅报告一次，资源由业务生命周期统一释放。
+   * Stops refresh and reports one output failure, leaving resource cleanup to the media lifecycle.
    */
   private handleError(
     source: LocalImageSource
@@ -289,13 +397,19 @@ export class LocalImageController {
     }
     clearInterval(source.timer);
     source.timer = undefined;
-    this.onError(new XmaxError(XmaxErrorCode.mediaError, "Local image video output failed"));
+    this.onError(new XmaxError(
+      XmaxErrorCode.mediaError,
+      "Local image video output failed"
+    ));
   }
 
   /**
-   * 构造统一的图片操作取消错误。
+   * Creates a standard image-operation cancellation error.
    */
   private cancelled(): XmaxError {
-    return new XmaxError(XmaxErrorCode.cancelled, "Local image operation was cancelled");
+    return new XmaxError(
+      XmaxErrorCode.cancelled,
+      "Local image operation was cancelled"
+    );
   }
 }

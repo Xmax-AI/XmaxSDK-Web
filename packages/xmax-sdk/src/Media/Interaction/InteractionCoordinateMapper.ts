@@ -13,12 +13,13 @@ import { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
 import type { InteractionFrame } from "./InteractionFrame";
 
 /**
- * 将视口坐标映射到固定媒体基准；不依赖 DOM、设备像素比或 RTC。
+ * Maps viewport coordinates to a fixed media baseline without DOM, pixel-ratio, or RTC dependencies.
  */
 export class InteractionCoordinateMapper {
 
   /**
-   * 计算居中显示的视频矩形；fill 允许矩形超出视口，fit 留出黑边。
+   * Returns the centered displayed-video rectangle; fill may extend outside the viewport and fit may
+   * leave margins.
    */
   static displayedFrame(
     viewport: {
@@ -35,15 +36,23 @@ export class InteractionCoordinateMapper {
       return undefined;
     }
 
-    const scale = (mode === VideoContentMode.fill ? Math.max : Math.min)(viewport.width / video.width, viewport.height / video.height);
+    const scale = (mode === VideoContentMode.fill ? Math.max : Math.min)(
+      viewport.width / video.width,
+      viewport.height / video.height
+    );
     const width = video.width * scale;
     const height = video.height * scale;
-    return { x: (viewport.width - width) / 2, y: (viewport.height - height) / 2, width, height };
+    return {
+      x: (viewport.width - width) / 2,
+      y: (viewport.height - height) / 2,
+      width,
+      height
+    };
   }
 
   /**
-   * 忽略黑边和无效点，撤销显示镜像后返回归一化坐标。
-   * 可选 pixels 模式返回媒体像素坐标。
+   * Rejects margins and invalid points, removes display mirroring, and returns normalized coordinates.
+   * The optional pixels mode returns media-pixel coordinates.
    */
   static map(
     point: {
@@ -57,7 +66,11 @@ export class InteractionCoordinateMapper {
     },
     coordinateSpace: "normalized" | "pixels" = "normalized",
   ): RealtimePoint | undefined {
-    const rect = this.displayedFrame(frame.viewportSize, video, frame.contentMode);
+    const rect = this.displayedFrame(
+      frame.viewportSize,
+      video,
+      frame.contentMode
+    );
     if (!rect || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
       return undefined;
     }

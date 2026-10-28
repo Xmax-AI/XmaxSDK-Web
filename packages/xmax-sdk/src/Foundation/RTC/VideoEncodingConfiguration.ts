@@ -9,56 +9,55 @@
 //
 
 /**
- * RTC 视频编码策略偏好。
+ * RTC video encoding preferences.
  */
 export enum RtcVideoEncoderPreference {
 
   /**
-   * 优先保障帧率（弱网降分辨率）。
+   * Prioritizes frame rate by reducing resolution on constrained networks.
    */
   maintainFramerate = "maintainFramerate",
 
   /**
-   * 优先保障分辨率（弱网降帧率）。
+   * Prioritizes resolution by reducing frame rate on constrained networks.
    */
   maintainQuality = "maintainQuality",
 }
 
 /**
- * 下发给 RTC 引擎的视频编码参数。
- *
- * TRTC 只接受单一目标码率：以 `minimumBitrate`（流畅优先档）作为目标码率，
- * `maximumBitrate` 仅用于上层码率区间校验，不下发给引擎。
+ * Video encoding settings supplied to an RTC engine. TRTC accepts one target bitrate, taken from
+ * minimumBitrate. Its maximumBitrate validates the range but is not sent to the engine.
  */
 export interface VideoEncodingConfiguration {
 
   /**
-   * 编码宽度，单位为像素。
+   * The encoding width, in pixels.
    */
   width: number;
 
   /**
-   * 编码高度，单位为像素。
+   * The encoding height, in pixels.
    */
   height: number;
 
   /**
-   * 编码帧率。
+   * The encoding frame rate.
    */
   frameRate: number;
 
   /**
-   * 最低上传码率，单位为 kbps；TRTC 用作目标码率，Agora 用作下限，VeRTC 不提供下限配置。
+   * The minimum uplink bitrate, in kbps: TRTC's target, Agora's lower bound, and unsupported as a bound
+   * by VeRTC.
    */
   minimumBitrate: number;
 
   /**
-   * 最高上传码率，单位为 kbps；Agora 与 VeRTC 用作上限，TRTC 仅参与区间校验。
+   * The maximum uplink bitrate, in kbps: an Agora/VeRTC limit and only a range check for TRTC.
    */
   maximumBitrate: number;
 
   /**
-   * 编码策略偏好。
+   * The encoding preference.
    */
   encoderPreference: RtcVideoEncoderPreference;
 }

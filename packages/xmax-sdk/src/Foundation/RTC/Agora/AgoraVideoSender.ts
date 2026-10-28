@@ -13,12 +13,13 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 
 /**
- * 实验性摄像头发送配置：不修改采集约束，不调用 Agora 的编码配置接口。
+ * Experimental camera-sender configuration without changing capture constraints or calling Agora encoder
+ * configuration.
  */
 export class AgoraVideoSender {
 
   /**
-   * 将码率和帧率约束应用到浏览器视频发送器。
+   * Applies bitrate and frame-rate limits to the browser video sender.
    */
   static async apply(
     track: ILocalVideoTrack,
@@ -27,17 +28,27 @@ export class AgoraVideoSender {
   ): Promise<void> {
     ensureActive();
     const sender = track.getRTCRtpTransceiver()?.sender;
-    if (!sender)
-      throw new XmaxError(XmaxErrorCode.rtcError, "WebRTC video sender is unavailable");
+    if (!sender) {
+      throw new XmaxError(
+        XmaxErrorCode.rtcError,
+        "WebRTC video sender is unavailable"
+      );
+    }
     const capture = sender.track?.getSettings();
     if (!capture?.width || !capture.height) {
-      throw new XmaxError(XmaxErrorCode.rtcError, "WebRTC capture dimensions are unavailable");
+      throw new XmaxError(
+        XmaxErrorCode.rtcError,
+        "WebRTC capture dimensions are unavailable"
+      );
     }
-    // 按实际采集规格计算，不能用上一次发送规格，否则连续降档会重复缩放。
+    // Derive scaling from capture dimensions, not the previous send dimensions, to avoid repeated scaling across downgrades.
     const scale = Math.max(1, capture.width / config.width, capture.height / config.height);
     const parameters = sender.getParameters();
     if (parameters.encodings?.length !== 1) {
-      throw new XmaxError(XmaxErrorCode.rtcError, "Sender-only configuration requires one video encoding");
+      throw new XmaxError(
+        XmaxErrorCode.rtcError,
+        "Sender-only configuration requires one video encoding"
+      );
     }
     const encoding = parameters.encodings[0]!;
     const previous = { ...encoding };
@@ -50,27 +61,38 @@ export class AgoraVideoSender {
     await sender.setParameters(parameters);
     ensureActive();
     if (track.getRTCRtpTransceiver()?.sender !== sender) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "WebRTC video sender changed during configuration");
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "WebRTC video sender changed during configuration"
+      );
     }
     const applied = sender.getParameters();
     const actual = applied.encodings?.[0];
     if (!actual || Math.abs((actual.scaleResolutionDownBy ?? 1) - scale) > 0.0001 ||
       actual.maxFramerate !== encoding.maxFramerate || actual.maxBitrate !== encoding.maxBitrate) {
-      // 某些浏览器会静默忽略字段；尽力恢复旧发送参数，绝不回退到修改摄像头约束。
+      // Browsers may silently ignore fields; attempt to restore sender parameters without
+      // falling back to capture-constraint changes.
       if (actual && applied.encodings.length === 1) {
         for (const key of ["scaleResolutionDownBy", "maxFramerate", "maxBitrate"] as const) {
-          if (previous[key] === undefined)
+          if (previous[key] === undefined) {
             delete actual[key];
-          else
+          }
+          else {
             actual[key] = previous[key];
+          }
         }
-        if (previousPreference === undefined)
+        if (previousPreference === undefined) {
           delete applied.degradationPreference;
-        else
+        }
+        else {
           applied.degradationPreference = previousPreference;
+        }
         await sender.setParameters(applied);
       }
-      throw new XmaxError(XmaxErrorCode.rtcError, "Browser did not retain WebRTC video sender parameters");
+      throw new XmaxError(
+        XmaxErrorCode.rtcError,
+        "Browser did not retain WebRTC video sender parameters"
+      );
     }
   }
 }

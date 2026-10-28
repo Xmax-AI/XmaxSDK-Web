@@ -11,28 +11,33 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { ApiServicing } from "../Network/ApiServicing";
 import {
-  NonRealtimeQuality, NonRealtimeTaskStatus,
-  type NonRealtimeResult, type NonRealtimeTask, type NonRealtimeTaskOptions,
-  type NonRealtimeTaskListOptions, type NonRealtimeTaskPage,
+  NonRealtimeQuality,
+  NonRealtimeTaskStatus,
+  type NonRealtimeResult,
+  type NonRealtimeTask,
+  type NonRealtimeTaskOptions,
+  type NonRealtimeTaskListOptions,
+  type NonRealtimeTaskPage,
 } from "./NonRealtimeTask";
 
 /**
- * 非实时任务接口允许显式指定的处理帧率。
+ * Explicit processing frame rates accepted by the non-realtime API.
  */
 const SUPPORTED_FPS = new Set([8, 10, 12, 15, 16, 18, 20, 22, 24, 25, 30, 45, 48, 50, 60, 72, 90, 100, 120]);
 
 /**
- * 非实时任务 HTTP 服务；负责协议校验及字段映射，不执行提交重试或轮询。
+ * A non-realtime HTTP service that validates and maps protocol fields without submission retries or
+ * polling.
  */
 export class NonRealtimeTaskService {
 
   /**
-   * 网络依赖
+   * The API transport for task requests.
    */
   private readonly api: ApiServicing;
 
   /**
-   * 注入非实时任务使用的 API 服务。
+   * Creates a task service using the supplied API transport.
    */
   constructor(
     api: ApiServicing
@@ -41,7 +46,7 @@ export class NonRealtimeTaskService {
   }
 
   /**
-   * 提交一次任务；请求结果不确定时也不自动重试，以免重复扣费。
+   * Submits once without retrying ambiguous outcomes that might incur duplicate charges.
    */
   async submitTask(
     options: NonRealtimeTaskOptions
@@ -65,26 +70,32 @@ export class NonRealtimeTaskService {
       invalid("Unsupported processing frame rate");
     }
 
-    const payload = await this.api.post<unknown>("/offline-task", {
-      model,
-      prompt,
-      refVideoPath: options.videoPath.trim(),
-      ...(options.referencePath === undefined ? {} : { refImagePath: options.referencePath.trim() }),
-      quality: options.quality,
-      ...(options.fps === undefined ? {} : { fps: options.fps }),
-    });
+    const payload = await this.api.post<unknown>(
+      "/offline-task",
+      {
+        model,
+        prompt,
+        refVideoPath: options.videoPath.trim(),
+        ...(options.referencePath === undefined ? {} : { refImagePath: options.referencePath.trim() }),
+        quality: options.quality,
+        ...(options.fps === undefined ? {} : { fps: options.fps }),
+      }
+    );
     return parseTask(payload);
   }
 
   /**
-   * 查询任务，校验返回 ID；signal 只取消本次 HTTP 查询，不取消服务端任务。
+   * Queries and validates a task ID; cancellation stops this HTTP query, not the server task.
    */
   async getTask(
     taskUid: string,
     signal?: AbortSignal
   ): Promise<NonRealtimeTask> {
     const uid = validateTaskUid(taskUid);
-    const task = parseTask(await this.api.get<unknown>(`/offline-task/${encodeURIComponent(uid)}`, { signal }));
+    const task = parseTask(await this.api.get<unknown>(
+      `/offline-task/${encodeURIComponent(uid)}`,
+      { signal }
+    ));
     if (task.uid !== uid) {
       malformed("Task UID does not match the request");
     }
@@ -92,7 +103,8 @@ export class NonRealtimeTaskService {
   }
 
   /**
-   * 查询最多 100 个 ID，按首次出现顺序去重；任一任务不可用时整体失败。
+   * Queries at most 100 IDs, deduplicating in first-occurrence order and failing if any task is
+   * unavailable.
    */
   async getTasks(
     taskUids: readonly string[]
@@ -101,16 +113,22 @@ export class NonRealtimeTaskService {
       invalid("Provide 1–100 task UIDs");
     }
     const uids = [...new Set(taskUids.map(validateTaskUid))];
-    const payload = record(await this.api.post<unknown>("/offline-task/batch-query", { taskUids: uids }));
+    const payload = record(await this.api.post<unknown>(
+      "/offline-task/batch-query",
+      { taskUids: uids }
+    ));
     const tasks = parseList(payload.list);
-    if (tasks.length !== uids.length || tasks.some((task, index) => task.uid !== uids[index])) {
+    if (tasks.length !== uids.length || tasks.some((
+      task,
+      index
+    ) => task.uid !== uids[index])) {
       malformed("Batch response does not match the requested task UIDs");
     }
     return tasks;
   }
 
   /**
-   * 分页查询任务，不隐式加载其他页。
+   * Queries one page without implicitly loading additional pages.
    */
   async listTasks(
     options: NonRealtimeTaskListOptions = {}
@@ -127,22 +145,40 @@ export class NonRealtimeTaskService {
       invalid("Invalid task status");
     }
 
-    const query = new URLSearchParams({ pageNumber: String(pageNumber), pageSize: String(pageSize) });
+    const query = new URLSearchParams({
+      pageNumber: String(pageNumber),
+      pageSize: String(pageSize)
+    });
     if (options.status !== undefined) {
-      query.set("status", options.status);
+      query.set(
+        "status",
+        options.status
+      );
     }
     const payload = record(await this.api.get<unknown>(`/offline-task/page?${query}`));
     return Object.freeze({
-      pageNumber: pageInteger(payload, "pageNumber", 1),
-      pageSize: pageInteger(payload, "pageSize", 1),
-      total: pageInteger(payload, "total", 0),
+      pageNumber: pageInteger(
+        payload,
+        "pageNumber",
+        1
+      ),
+      pageSize: pageInteger(
+        payload,
+        "pageSize",
+        1
+      ),
+      total: pageInteger(
+        payload,
+        "total",
+        0
+      ),
       list: parseList(payload.list),
     });
   }
 }
 
 /**
- * 校验任务 ID，拒绝相对路径段以避免 URL 规范化改变请求目标。
+ * Validates task IDs and rejects relative path segments that would change the normalized request target.
  */
 export function validateTaskUid(
   value: string
@@ -155,7 +191,7 @@ export function validateTaskUid(
 }
 
 /**
- * 仅校验网络 URL 格式；资源是否由 Xmax 上传必须由服务端核验。
+ * Validates network URL syntax; the server must verify that media originated from Xmax uploads.
  */
 function validateURL(
   value: string
@@ -172,25 +208,31 @@ function validateURL(
 }
 
 /**
- * 将参数错误映射为 SDK 配置错误。
+ * Reports invalid parameters as SDK configuration errors.
  */
 function invalid(
   message: string
 ): never {
-  throw new XmaxError(XmaxErrorCode.invalidConfiguration, message);
+  throw new XmaxError(
+    XmaxErrorCode.invalidConfiguration,
+    message
+  );
 }
 
 /**
- * 拒绝不可用的响应数据，避免把缺失状态当成永久处理中。
+ * Rejects malformed responses rather than treating missing state as perpetual processing.
  */
 function malformed(
   message = "Invalid non-realtime response data"
 ): never {
-  throw new XmaxError(XmaxErrorCode.apiError, message);
+  throw new XmaxError(
+    XmaxErrorCode.apiError,
+    message
+  );
 }
 
 /**
- * 解析响应对象。
+ * Parses a response object.
  */
 function record(
   value: unknown
@@ -202,7 +244,7 @@ function record(
 }
 
 /**
- * 读取可空字段，保留缺失与数值 0 的区别。
+ * Reads optional fields without conflating missing values with zero.
  */
 function field<T extends "string" | "number">(
   data: Record<string, unknown>,
@@ -220,14 +262,18 @@ function field<T extends "string" | "number">(
 }
 
 /**
- * 校验分页响应中必需的整数。
+ * Validates required pagination integers.
  */
 function pageInteger(
   data: Record<string, unknown>,
   key: string,
   minimum: number
 ): number {
-  const value = field(data, key, "number");
+  const value = field(
+    data,
+    key,
+    "number"
+  );
   if (value === undefined || !Number.isSafeInteger(value) || value < minimum) {
     malformed(`Invalid field: ${key}`);
   }
@@ -235,7 +281,7 @@ function pageInteger(
 }
 
 /**
- * 将任务数组解析为不可变快照。
+ * Parses a task array into immutable snapshots.
  */
 function parseList(
   value: unknown
@@ -247,15 +293,27 @@ function parseList(
 }
 
 /**
- * 转换任务及结果字段，不补造服务端未提供的进度或失败原因。
+ * Maps task and result fields without inventing missing progress or failure details.
  */
 function parseTask(
   value: unknown
 ): NonRealtimeTask {
   const data = record(value);
-  const uid = field(data, "uid", "string");
-  const status = field(data, "status", "string") as NonRealtimeTaskStatus;
-  const quality = field(data, "quality", "string") as NonRealtimeQuality | undefined;
+  const uid = field(
+    data,
+    "uid",
+    "string"
+  );
+  const status = field(
+    data,
+    "status",
+    "string"
+  ) as NonRealtimeTaskStatus;
+  const quality = field(
+    data,
+    "quality",
+    "string"
+  ) as NonRealtimeQuality | undefined;
   if (!uid?.trim() || !Object.values(NonRealtimeTaskStatus).includes(status)) {
     malformed("Missing task UID or invalid status");
   }
@@ -264,43 +322,145 @@ function parseTask(
   }
 
   return Object.freeze({
-    uid, status, quality,
-    userUid: field(data, "userUid", "string"),
-    prompt: field(data, "prompt", "string"),
-    videoPath: field(data, "refVideoPath", "string"),
-    referencePath: field(data, "refImagePath", "string"),
-    processorId: field(data, "processorId", "string"),
-    requestedFps: field(data, "requestedFps", "number"),
-    resolvedFps: field(data, "resolvedFps", "number"),
-    retryCount: field(data, "retryCount", "number"),
-    videoDurationSeconds: field(data, "videoDurationSeconds", "number"),
-    billableDurationSeconds: field(data, "billableDurationSeconds", "number"),
-    chargePoints: field(data, "chargePoints", "number"),
+    uid,
+    status,
+    quality,
+    userUid: field(
+      data,
+      "userUid",
+      "string"
+    ),
+    prompt: field(
+      data,
+      "prompt",
+      "string"
+    ),
+    videoPath: field(
+      data,
+      "refVideoPath",
+      "string"
+    ),
+    referencePath: field(
+      data,
+      "refImagePath",
+      "string"
+    ),
+    processorId: field(
+      data,
+      "processorId",
+      "string"
+    ),
+    requestedFps: field(
+      data,
+      "requestedFps",
+      "number"
+    ),
+    resolvedFps: field(
+      data,
+      "resolvedFps",
+      "number"
+    ),
+    retryCount: field(
+      data,
+      "retryCount",
+      "number"
+    ),
+    videoDurationSeconds: field(
+      data,
+      "videoDurationSeconds",
+      "number"
+    ),
+    billableDurationSeconds: field(
+      data,
+      "billableDurationSeconds",
+      "number"
+    ),
+    chargePoints: field(
+      data,
+      "chargePoints",
+      "number"
+    ),
     result: data.result == null ? undefined : parseResult(data.result),
-    processStartTime: field(data, "processStartTime", "string"),
-    createTimestamp: field(data, "createTimestamp", "string"),
-    updateTimestamp: field(data, "updateTimestamp", "string"),
+    processStartTime: field(
+      data,
+      "processStartTime",
+      "string"
+    ),
+    createTimestamp: field(
+      data,
+      "createTimestamp",
+      "string"
+    ),
+    updateTimestamp: field(
+      data,
+      "updateTimestamp",
+      "string"
+    ),
   });
 }
 
 /**
- * 将服务端 snake_case 结果转换成 SDK camelCase 字段。
+ * Maps server snake_case result fields to SDK camelCase fields.
  */
 function parseResult(
   value: unknown
 ): NonRealtimeResult {
   const data = record(value);
   return Object.freeze({
-    url: field(data, "result_url", "string"),
-    uploadError: field(data, "upload_error", "string"),
-    uploadStatus: field(data, "upload_status", "string"),
-    finalizeDurationMs: field(data, "finalize_duration_ms", "number"),
-    compressionLevel: field(data, "compression_level", "string"),
-    frameCount: field(data, "frame_count", "number"),
-    fps: field(data, "fps", "number"),
-    durationMs: field(data, "result_duration_ms", "number"),
-    fileSizeBytes: field(data, "file_size_bytes", "number"),
-    droppedFrameCount: field(data, "dropped_frame_count", "number"),
-    originalFileSizeBytes: field(data, "original_file_size_bytes", "number"),
+    url: field(
+      data,
+      "result_url",
+      "string"
+    ),
+    uploadError: field(
+      data,
+      "upload_error",
+      "string"
+    ),
+    uploadStatus: field(
+      data,
+      "upload_status",
+      "string"
+    ),
+    finalizeDurationMs: field(
+      data,
+      "finalize_duration_ms",
+      "number"
+    ),
+    compressionLevel: field(
+      data,
+      "compression_level",
+      "string"
+    ),
+    frameCount: field(
+      data,
+      "frame_count",
+      "number"
+    ),
+    fps: field(
+      data,
+      "fps",
+      "number"
+    ),
+    durationMs: field(
+      data,
+      "result_duration_ms",
+      "number"
+    ),
+    fileSizeBytes: field(
+      data,
+      "file_size_bytes",
+      "number"
+    ),
+    droppedFrameCount: field(
+      data,
+      "dropped_frame_count",
+      "number"
+    ),
+    originalFileSizeBytes: field(
+      data,
+      "original_file_size_bytes",
+      "number"
+    ),
   });
 }

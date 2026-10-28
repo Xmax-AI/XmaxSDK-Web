@@ -12,70 +12,73 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { CameraRotation } from "./CameraRotation";
 
 /**
- * 将摄像头原始帧旋转为固定目标尺寸，供预览和 RTC 共用。
- * 只持有输入轨引用，不关闭摄像头；拥有输出轨和帧调度资源。
+ * Rotates camera frames to fixed output dimensions shared by preview and RTC. Borrows the camera track
+ * and owns the output track and scheduling resources.
  */
 export class CameraRotationProcessor {
 
   /**
-   * 用于读取或预览源画面的视频元素。
+   * The video element reading source frames.
    */
   private readonly video = document.createElement("video");
 
   /**
-   * 承载媒体帧的画布。
+   * The canvas holding rotated output frames.
    */
   private readonly canvas = document.createElement("canvas");
 
   /**
-   * 画布绘制上下文。
+   * The canvas drawing context.
    */
   private readonly context: CanvasRenderingContext2D;
 
   /**
-   * 由当前媒体源输出的浏览器媒体流。
+   * The browser stream produced by this processor.
    */
   private stream?: MediaStream;
 
   /**
-   * 旋转处理前的摄像头原始轨，不由本组件关闭。
+   * The borrowed camera track before rotation.
    */
   private source?: MediaStreamTrack;
 
   /**
-   * 等待下一帧的视频回调句柄。
+   * The pending video-frame callback handle.
    */
   private frameCallback?: number;
 
   /**
-   * 当前等待或定时任务的取消句柄。
+   * The pending fallback timer.
    */
   private timer?: ReturnType<typeof setTimeout>;
 
   /**
-   * 终止尚未完成的首帧等待。
+   * The callback cancelling an unfinished first-frame wait.
    */
   private cancelPending?: () => void;
 
   /**
-   * 是否已停止调度并释放当前管线。
+   * Whether scheduling has stopped and the pipeline is released.
    */
   private stopped = false;
 
   /**
-   * 标识当前媒体操作，过滤旧操作的迟到结果。
+   * The source-operation revision rejecting obsolete asynchronous results.
    */
   private version = 0;
 
   /**
-   * 摄像头原始轨结束时停止旋转处理。
+   * The handler failing rotation when the borrowed camera track ends.
    */
   private readonly sourceEnded = () => {
-    this.fail(new XmaxError(XmaxErrorCode.mediaError, "Camera source ended during rotation"));
+    this.fail(new XmaxError(
+      XmaxErrorCode.mediaError,
+      "Camera source ended during rotation"
+    ));
   };
 
   /**
-   * 准备旋转画布与播放器，浏览器不支持画布采集时抛出错误。
+   * Creates the rotation canvas and player, rejecting browsers without Canvas capture.
    */
   constructor(
     private readonly options: {
@@ -90,9 +93,15 @@ export class CameraRotationProcessor {
   ) {
     this.canvas.width = options.width;
     this.canvas.height = options.height;
-    const context = this.canvas.getContext("2d", { alpha: false });
+    const context = this.canvas.getContext(
+      "2d",
+      { alpha: false }
+    );
     if (!context || typeof this.canvas.captureStream !== "function") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Canvas camera rotation is not supported by this browser");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Canvas camera rotation is not supported by this browser"
+      );
     }
     this.context = context;
     this.video.muted = true;
@@ -101,92 +110,135 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * 等待第一帧实际绘制成功；换摄像头时复用输出轨，不重建 sender。
+   * Waits for a successfully drawn first frame, reusing the output track across camera switches.
    */
   async setSource(
     source: MediaStreamTrack
   ): Promise<MediaStreamTrack> {
-    if (this.stopped)
-      throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation has stopped");
+    if (this.stopped) {
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "Camera rotation has stopped"
+      );
+    }
     if (source.readyState === "ended") {
       this.stop();
-      throw new XmaxError(XmaxErrorCode.mediaError, "Camera rotation requires a live source");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Camera rotation requires a live source"
+      );
     }
     this.cancelPending?.();
     this.cancelFrame();
-    this.source?.removeEventListener("ended", this.sourceEnded);
+    this.source?.removeEventListener(
+      "ended",
+      this.sourceEnded
+    );
     const version = ++this.version;
     this.source = source;
-    source.addEventListener("ended", this.sourceEnded);
+    source.addEventListener(
+      "ended",
+      this.sourceEnded
+    );
     this.video.srcObject = new MediaStream([source]);
 
     try {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((
+        resolve,
+        reject
+      ) => {
         let settled = false;
         const finish = (error?: unknown) => {
-          if (settled)
+          if (settled) {
             return;
+          }
           settled = true;
           clearTimeout(timeout);
           this.cancelPending = undefined;
-          if (error)
+          if (error) {
             reject(error);
-          else
+          }
+          else {
             resolve();
+          }
         };
-        const timeout = setTimeout(() => finish(new XmaxError(XmaxErrorCode.timeout, "Timed out waiting for a camera rotation frame")), 10000);
-        this.cancelPending = () => finish(new XmaxError(XmaxErrorCode.cancelled, "Camera rotation source changed"));
-        // play() 的异步完成也可能晚于停止/切换，不能复活旧的绘制循环。
-        void this.video.play().then(() => {
-          if (settled || this.stopped || version !== this.version)
-            return;
-          const firstFrame = () => {
-            if (settled || this.stopped || version !== this.version)
+        const timeout = setTimeout(
+          () => finish(new XmaxError(
+            XmaxErrorCode.timeout,
+            "Timed out waiting for a camera rotation frame"
+          )),
+          10000
+        );
+        this.cancelPending = () => finish(new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Camera rotation source changed"
+        ));
+        // Late play() completion must not revive rendering after a stop or source change.
+        void this.video.play().then(
+          () => {
+            if (settled || this.stopped || version !== this.version) {
               return;
-            try {
-              if (!this.draw()) {
-                this.schedule(firstFrame);
+            }
+            const firstFrame = () => {
+              if (settled || this.stopped || version !== this.version) {
                 return;
               }
-              this.stream ??= this.canvas.captureStream(this.options.frameRate);
-              if (!this.stream.getVideoTracks()[0])
-                throw new Error("Canvas did not produce a video track");
-              this.requestFrame();
-              finish();
-              this.schedule(() => this.render(version));
-            } catch (error) {
-              finish(error);
-            }
-          };
-          this.schedule(firstFrame);
-        }, finish);
+              try {
+                if (!this.draw()) {
+                  this.schedule(firstFrame);
+                  return;
+                }
+                this.stream ??= this.canvas.captureStream(this.options.frameRate);
+                if (!this.stream.getVideoTracks()[0]) {
+                  throw new Error("Canvas did not produce a video track");
+                }
+                this.requestFrame();
+                finish();
+                this.schedule(() => this.render(version));
+              } catch (error) {
+                finish(error);
+              }
+            };
+            this.schedule(firstFrame);
+          },
+          finish
+        );
       });
       if (this.stopped || version !== this.version) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation source changed");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "Camera rotation source changed"
+        );
       }
       return this.stream!.getVideoTracks()[0]!;
     } catch (error) {
-      if (version === this.version)
+      if (version === this.version) {
         this.stop();
+      }
       throw XmaxError.from(error);
     }
   }
 
   /**
-   * 换设备前解除旧原始轨监听，保留 Canvas 最后一帧及输出轨。
+   * Unbinds the old source before a device change while retaining the last canvas frame and output
+   * track.
    */
   pauseSource(): void {
     ++this.version;
     this.cancelPending?.();
     this.cancelFrame();
-    this.source?.removeEventListener("ended", this.sourceEnded);
+    this.source?.removeEventListener(
+      "ended",
+      this.sourceEnded
+    );
     this.source = undefined;
     this.video.pause();
     this.video.srcObject = null;
   }
 
   /**
-   * 更新旋转画布与输出帧率，复用当前输出轨道和源帧调度。
+   * Updates rotated dimensions and output frame rate without replacing the output track or source
+   * scheduler.
    */
   async updateFormat(
     width: number,
@@ -194,15 +246,28 @@ export class CameraRotationProcessor {
     frameRate: number
   ): Promise<void> {
     if (this.stopped) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation has stopped");
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "Camera rotation has stopped"
+      );
     }
     const version = this.version;
     const output = this.stream?.getVideoTracks()[0];
     await output?.applyConstraints({ frameRate });
     if (this.stopped || this.version !== version) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "Camera rotation source changed");
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "Camera rotation source changed"
+      );
     }
-    Object.assign(this.options, { width, height, frameRate });
+    Object.assign(
+      this.options,
+      {
+        width,
+        height,
+        frameRate
+      }
+    );
     this.canvas.width = width;
     this.canvas.height = height;
     if (this.draw()) {
@@ -211,16 +276,20 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * 停止旋转调度并释放输出轨，保留原始摄像头轨的所有权。
+   * Stops scheduling and releases output resources without stopping the borrowed camera track.
    */
   stop(): void {
-    if (this.stopped)
+    if (this.stopped) {
       return;
+    }
     this.stopped = true;
     ++this.version;
     this.cancelPending?.();
     this.cancelFrame();
-    this.source?.removeEventListener("ended", this.sourceEnded);
+    this.source?.removeEventListener(
+      "ended",
+      this.sourceEnded
+    );
     this.source = undefined;
     this.video.pause();
     this.video.srcObject = null;
@@ -230,37 +299,56 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * 按旋转后的目标尺寸居中裁剪并绘制当前源帧。
+   * Draws the source using a centered crop at the post-rotation target dimensions.
    */
   private draw(): boolean {
     const { videoWidth: width, videoHeight: height } = this.video;
-    if (this.video.readyState < 2 || !width || !height)
+    if (this.video.readyState < 2 || !width || !height) {
       return false;
+    }
     const { width: outWidth, height: outHeight, rotation } = this.options;
     const quarterTurn = rotation === 90 || rotation === 270;
     const targetWidth = quarterTurn ? outHeight : outWidth;
     const targetHeight = quarterTurn ? outWidth : outHeight;
-    // 设备不一定满足请求宽高；按真实帧尺寸等比居中裁剪，绝不拉伸。
+    // Use actual frame dimensions for proportional cropping; capture constraints may not be satisfied exactly.
     const scale = Math.max(targetWidth / width, targetHeight / height);
     const cropWidth = targetWidth / scale, cropHeight = targetHeight / scale;
-    this.context.setTransform(1, 0, 0, 1, outWidth / 2, outHeight / 2);
+    this.context.setTransform(
+      1,
+      0,
+      0,
+      1,
+      outWidth / 2,
+      outHeight / 2
+    );
     this.context.rotate(rotation * Math.PI / 180);
-    this.context.drawImage(this.video, (width - cropWidth) / 2, (height - cropHeight) / 2,
-      cropWidth, cropHeight, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+    this.context.drawImage(
+      this.video,
+      (width - cropWidth) / 2,
+      (height - cropHeight) / 2,
+      cropWidth,
+      cropHeight,
+      -targetWidth / 2,
+      -targetHeight / 2,
+      targetWidth,
+      targetHeight
+    );
     return true;
   }
 
   /**
-   * 绘制当前源帧并继续调度；媒体源已切换或停止时结束调度。
+   * Draws and reschedules the current source, stopping when its revision is obsolete.
    */
   private render(
     version: number
   ): void {
-    if (this.stopped || version !== this.version)
+    if (this.stopped || version !== this.version) {
       return;
+    }
     try {
-      if (this.draw())
+      if (this.draw()) {
         this.requestFrame();
+      }
       this.schedule(() => this.render(version));
     } catch (error) {
       this.fail(XmaxError.from(error));
@@ -268,7 +356,7 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * 通知画布输出轨发送刚绘制的帧。
+   * Requests publication of the newly drawn canvas frame.
    */
   private requestFrame(): void {
     const track = this.stream?.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
@@ -276,7 +364,7 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * 优先等待原生视频帧回调，不支持时按目标帧率定时绘制。
+   * Schedules a native video-frame callback, falling back to a timer at the target frame rate.
    */
   private schedule(
     callback: () => void
@@ -284,23 +372,27 @@ export class CameraRotationProcessor {
     if (typeof this.video.requestVideoFrameCallback === "function") {
       this.frameCallback = this.video.requestVideoFrameCallback(callback);
     } else {
-      this.timer = setTimeout(callback, 1000 / this.options.frameRate);
+      this.timer = setTimeout(
+        callback,
+        1000 / this.options.frameRate
+      );
     }
   }
 
   /**
-   * 取消下一次视频帧回调和定时绘制任务。
+   * Cancels the pending frame callback and fallback timer.
    */
   private cancelFrame(): void {
-    if (this.frameCallback !== undefined)
+    if (this.frameCallback !== undefined) {
       this.video.cancelVideoFrameCallback(this.frameCallback);
+    }
     clearTimeout(this.timer);
     this.frameCallback = undefined;
     this.timer = undefined;
   }
 
   /**
-   * 释放旋转资源并向上层报告媒体错误。
+   * Releases rotation resources and reports a media failure.
    */
   private fail(
     error: XmaxError

@@ -9,23 +9,23 @@
 //
 
 /**
- * Xmax 服务环境。
+ * Xmax service environments.
  */
 export enum XmaxEnvironment {
 
   /**
-   * 国内环境。
+   * The China environment.
    */
   china = "china",
 
   /**
-   * 海外环境。
+   * The global environment.
    */
   global = "global",
 }
 
 /**
- * 通用 API 与存储服务使用的环境地址。
+ * Environment endpoints for general API and storage services.
  */
 const API_BASE_URLS: Record<XmaxEnvironment, string> = {
   [XmaxEnvironment.china]: "https://cloud.xmax.22duck.cn/open/api/v1",
@@ -33,7 +33,7 @@ const API_BASE_URLS: Record<XmaxEnvironment, string> = {
 };
 
 /**
- * 实时会话服务的环境地址。
+ * Environment endpoints for realtime session services.
  */
 const REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
   [XmaxEnvironment.china]: "https://cloud.xmax.22duck.cn/open/api/v1",
@@ -41,7 +41,7 @@ const REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
 };
 
 /**
- * 非实时任务服务的环境地址。
+ * Environment endpoints for non-realtime tasks.
  */
 const NON_REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
   [XmaxEnvironment.china]: "https://api.xmaxai.com/open/api/v1",
@@ -49,7 +49,7 @@ const NON_REALTIME_API_BASE_URLS: Record<XmaxEnvironment, string> = {
 };
 
 /**
- * 环境对应的 Xmax API Base URL。
+ * Returns the general API base URL for an environment.
  */
 export function apiBaseURL(
   environment: XmaxEnvironment
@@ -58,7 +58,7 @@ export function apiBaseURL(
 }
 
 /**
- * 环境对应的实时会话 API 地址。
+ * Returns the realtime session endpoint for an environment.
  */
 export function realtimeApiBaseURL(
   environment: XmaxEnvironment
@@ -67,7 +67,7 @@ export function realtimeApiBaseURL(
 }
 
 /**
- * 环境对应的非实时任务 API Base URL。
+ * Returns the non-realtime task endpoint for an environment.
  */
 export function nonRealtimeApiBaseURL(
   environment: XmaxEnvironment

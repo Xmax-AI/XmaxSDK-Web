@@ -9,63 +9,61 @@
 //
 
 /**
- * Xmax API 支持的 HTTP 请求方法。
+ * HTTP methods supported by the Xmax API.
  */
 export enum ApiMethod {
 
   /**
-   * 读取服务端资源。
+   * Reads a server resource.
    */
   get = "GET",
 
   /**
-   * 提交数据或创建资源。
+   * Submits data or creates a resource.
    */
   post = "POST",
 
   /**
-   * 更新服务端资源。
+   * Updates a server resource.
    */
   put = "PUT",
 
   /**
-   * 删除服务端资源。
+   * Deletes a server resource.
    */
   delete = "DELETE",
 }
 
 /**
- * 请求控制选项；signal 仅取消本地 HTTP 请求，不撤销服务端已执行的操作。
+ * Request controls. Cancellation stops local HTTP work without undoing server-side operations.
  */
 export interface ApiRequestOptions {
 
   /**
-   * 取消请求及后续等待的信号。
+   * The signal cancelling a request and subsequent waits.
    */
   signal?: AbortSignal;
 
   /**
-   * 允许页面退出后继续完成符合浏览器限制的请求。
+   * Whether a browser-permitted request may finish after page unload.
    */
   keepalive?: boolean;
 }
 
 /**
- * 定义 Xmax API 的基础请求能力。
- *
- * 响应统一按 `{ success, code, message, data }` 信封解析，
- * 各方法返回信封中的 `data` 字段。
+ * The shared Xmax API request capabilities. Responses use the success/code/message/data envelope;
+ * methods return its data field.
  */
 export interface ApiServicing {
 
   /**
-   * 发送请求并返回统一响应中的数据。
+   * Sends a request and returns response-envelope data.
    *
-   * @param method HTTP 请求方法。
-   * @param path 相对 Base URL 的请求路径。
-   * @param body JSON 请求体；无请求体时省略。
-   * @returns 统一响应中的 `data` 字段。
-   * @throws 配置无效、网络失败、业务失败或响应无法解析时抛出错误。
+   * @param method - The HTTP method.
+   * @param path - The path relative to the base URL.
+   * @param body - The optional JSON request body.
+   * @returns The response's data field.
+   * @throws Rejects for invalid configuration, network or business failure, or an unparseable response.
    */
   request<T>(
     method: ApiMethod,
@@ -75,7 +73,7 @@ export interface ApiServicing {
   ): Promise<T>;
 
   /**
-   * 发送 GET 请求。
+   * Sends a GET request.
    */
   get<T>(
     path: string,
@@ -83,7 +81,7 @@ export interface ApiServicing {
   ): Promise<T>;
 
   /**
-   * 发送 POST 请求。
+   * Sends a POST request.
    */
   post<T>(
     path: string,
@@ -91,7 +89,7 @@ export interface ApiServicing {
   ): Promise<T>;
 
   /**
-   * 发送 PUT 请求。
+   * Sends a PUT request.
    */
   put<T>(
     path: string,
@@ -99,10 +97,9 @@ export interface ApiServicing {
   ): Promise<T>;
 
   /**
-   * 发送 DELETE 请求。
+   * Sends a DELETE request.
    *
-   * @param options.keepalive 为 true 时请求可存活于页面卸载之后，
-   * 用于刷新或关闭页签时的清理请求。
+   * @param options.keepalive - Whether a cleanup request may survive page refresh or closure.
    */
   delete<T>(
     path: string,

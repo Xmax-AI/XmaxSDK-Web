@@ -22,147 +22,155 @@ import type { RoomEventTargetSize } from "./Room/RoomEvent";
 import type { RemoteMediaTracks } from "../Foundation/Media/RemoteMediaTracks";
 
 /**
- * 远端结果流及其可供渲染层绑定的视频轨。
+ * A remote result stream and its renderable video track.
  */
 export interface RemoteStreamBinding {
 
   /**
-   * 远端流标识。
+   * The remote stream identity.
    */
   stream: RemoteStream;
 
   /**
-   * 远端视频轨。
+   * The remote video track.
    */
   videoTrack: MediaStreamTrack;
 }
 
 /**
- * 远端生成流就绪（携带绑定）与清理（传入空值）回调。
+ * Receives a ready result binding, or null when the binding is cleared.
  */
 export type RemoteStreamListener = (
   binding: RemoteStreamBinding | null
 ) => void;
 
 /**
- * 生成开始/变更信令的公共参数。
+ * Shared parameters for generation start and condition updates.
  */
 export interface StreamGenerationOptions {
 
   /**
-   * 当前生成任务的唯一标识。
+   * The unique generation task identifier.
    */
   taskID: string;
 
   /**
-   * 服务端模型生成使用的视频格式，与本地媒体尺寸独立。
+   * The server generation video format, independent of local media dimensions.
    */
   videoFormat: RealtimeVideoFormat;
 
   /**
-   * 当前生成任务使用的条件上下文。
+   * The conditions used by the generation task.
    */
   context: RealtimeContext;
 
   /**
-   * 仅开始生成时使用：替换已运行任务并发送 start，默认 false，不预先发送 stop。
+   * Replaces the running task on start; defaults to false and does not send stop first.
    */
   restart?: boolean;
 
   /**
-   * 当前连接的回传尺寸，缺省时不发送。
+   * The returned video dimensions, omitted when unset.
    */
   targetSize?: RoomEventTargetSize;
 
   /**
-   * 后端输入镜像，仅用于 start；非前置摄像头输入为 false。
+   * Whether the server mirrors the input on start; false for sources other than the front camera.
    */
   mirror?: boolean;
 
   /**
-   * 原始人脸回贴，用于 start 和 change_condition，默认 false。
+   * Whether to restore the original face on start and condition updates; defaults to false.
    */
   faceRestoration?: boolean;
 
   /**
-   * 是否由服务端按包含模式适配生成画布。
+   * Whether the server fits media inside the generation canvas using contain mode.
    */
   paddingContain?: boolean;
 
   /**
-   * 开始信令发送成功后的回调，不等待生成确认；更新条件时不调用。
+   * Runs after start is sent without waiting for confirmation; not called for condition updates.
    */
   onStartSent?: () => Promise<void>;
 
   /**
-   * 合并到本次生成信令的 params，不缓存。
+   * Parameters merged into this message without being retained.
    */
   extraParams?: RealtimeExtraParams;
 }
 
 /**
- * 定义传输层向 Core 暴露的统一能力。
+ * Defines the transport capabilities exposed to the Core layer.
  */
 export interface StreamControlling {
 
   /**
-   * 监听当前实际结果流的原始轨道及音轨变化；清空时传 undefined，不改变订阅或播放音量。
+   * Observes the active result tracks and audio-track changes; undefined clears the binding without
+   * changing subscriptions or playback volume.
    */
-  setRemoteMediaListener(listener?: (tracks?: RemoteMediaTracks) => void): void;
+  setRemoteMediaListener(
+    listener?: (
+      tracks?: RemoteMediaTracks
+    ) => void
+  ): void;
 
   /**
-   * 监听本端上下行网络统计，传入 undefined 取消。
+   * Observes network statistics; undefined clears the listener.
    */
   setNetworkQualityListener(
     listener?: RealtimeNetworkQualityListener
   ): void;
 
   /**
-   * 当前是否存在正在启动或已经运行的生成任务。
+   * Whether a generation task is starting or running.
    */
   readonly hasGenerationTask: boolean;
 
   /**
-   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   * The generated audio playback volume, from 0 to 1.
    */
   readonly remoteAudioVolume: number;
 
   /**
-   * 设置远端生成音频播放音量，并应用到所有已订阅的远端音频。
+   * Sets the playback volume for all subscribed result audio.
    *
-   * @param volume 音量，取值范围为 `0...1`。
+   * @param volume - The playback volume, from 0 to 1.
    */
   setRemoteAudioVolume(
     volume: number
   ): void;
 
   /**
-   * 按视频格式配置本地视频编码参数（码率区间与编码策略）。
+   * Configures uplink encoding, including the bitrate range and policy.
    *
-   * 采集阶段不发布，编码参数只影响发送端，需在发布本地流之前配置。
+   * Encoding affects the sender, not capture; configure it before publishing local media.
    *
-   * @throws 格式无效、码率区间无效或 RTC 配置失败时抛出错误。
+   * @throws Rejects if the format or bitrate range is invalid, or RTC configuration fails.
    */
   updateUplinkVideoFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
 
   /**
-   * 保留最后成功应用的编码配置，只更新上行目标帧率。
+   * Updates only the uplink target frame rate, retaining the last successfully applied encoding
+   * configuration.
    */
   updateUplinkFrameRate(
     fps: number
   ): Promise<RealtimeVideoFormat>;
 
   /**
-   * 加入 RTC 房间并发布本地媒体流。
+   * Joins an RTC room and publishes local media.
    *
-   * @param connection RTC 房间、用户、凭据和目标机器人信息。
-   * @param includeLocalAudio 是否随本地视频一起发布本地音频。
-   * @param ensureActive 在异步边界校验当前连接操作仍然有效的回调。
-   * @param beforePublish 发布前的可选媒体就绪检查，不阻塞进房。
-   * @param measureRtcJoin 仅测量 RTC 适配器进房调用，不含房间消息配置与心跳启动。
-   * @throws 连接已取消，或 RTC 进房、房间配置与本地流发布失败时抛出错误。
+   * @param connection - The room, user, credentials, and result bot information.
+   * @param includeLocalAudio - Whether to publish local audio with video.
+   * @param ensureActive - Checks operation validity at asynchronous boundaries.
+   * @param beforePublish - An optional media-readiness check before publication that does not block
+   * joining.
+   * @param measureRtcJoin - Measures only the RTC adapter join call, excluding room messaging
+   * configuration and heartbeat startup.
+   * @throws Rejects if canceled or joining, room configuration, or publication fails.
    */
   connect(
     connection: RtcSessionConnection,
@@ -173,12 +181,12 @@ export interface StreamControlling {
   ): Promise<void>;
 
   /**
-   * 清理生成状态、本地发布和远端订阅，并离开当前 RTC 房间。
+   * Clears generation state, local publication, and remote subscriptions, then leaves the room.
    */
   disconnect(): Promise<void>;
 
   /**
-   * 将同一会话的新凭据应用到 RTC；断连时通过 signal 取消未完成的恢复。
+   * Applies new credentials for the same session; the signal cancels pending recovery when disconnected.
    */
   updateCredentials(
     connection: RtcSessionConnection,
@@ -186,54 +194,57 @@ export interface StreamControlling {
   ): Promise<void>;
 
   /**
-   * 建立生成任务并发送开始信令。
+   * Creates a generation task and sends its start message.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.restart 是否保留连接并替换当前生成任务，默认 false；不预先发送 stop。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.mirror 是否由后端镜像输入画面，默认 false。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.onStartSent start 发送成功后的回调，不等待生成确认。
-   * @param options.extraParams 合并到本次 start 的 params，不缓存。
-   * @returns 等待远端结果流确认的 Promise：机器人视频发布并完成
-   * 订阅后兑现；超时、取消或订阅失败时拒绝。
-   * @throws 配置无效时同步抛错；信令发送失败或确认超时通过 Promise 拒绝。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The generation conditions.
+   * @param options.restart - Replaces the running task while retaining the connection; defaults to false
+   * and does not send stop first.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.mirror - Whether the server mirrors the input; defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.onStartSent - Runs after start is sent, before generation confirmation.
+   * @param options.extraParams - Parameters merged into this start message without being retained.
+   * @returns A promise resolved after result video publication and subscription; it rejects on timeout,
+   * cancellation, or subscription failure.
+   * @throws Throws synchronously for an invalid task ID, an unready room, a pending start, or a running
+   * task without restart. The returned promise rejects if sending fails or confirmation times out.
    */
   beginGeneration(
     options: StreamGenerationOptions
   ): Promise<void>;
 
   /**
-   * 在远端首帧已经可显示后订阅当前生成流的音频。
+   * Subscribes to the active result stream's audio after its first frame is displayable.
    *
-   * @throws 当前生成流尚未确认，或 RTC 音量和订阅配置失败时抛出错误。
+   * @throws Rejects if generation is unconfirmed or RTC volume or subscription configuration fails.
    */
   activateRemoteAudio(): Promise<void>;
 
   /**
-   * 发送生成条件变更信令。
+   * Sends updated generation conditions.
    *
-   * @param options.taskID 当前生成任务标识。
-   * @param options.videoFormat 模型生成使用的视频规格。
-   * @param options.context 本次生成条件。
-   * @param options.restart 本次条件更新不使用该字段。
-   * @param options.targetSize 回传尺寸，缺省时不发送。
-   * @param options.mirror 本次条件更新不使用该字段。
-   * @param options.faceRestoration 是否回贴原始人脸，默认 false。
-   * @param options.onStartSent 本次条件更新不调用该回调。
-   * @param options.extraParams 合并到本次 change_condition 的 params，不缓存。
-   * @throws RTC 房间未就绪或条件变更信令发送失败时抛出错误。
+   * @param options.taskID - The generation task identifier.
+   * @param options.videoFormat - The generation video format.
+   * @param options.context - The updated generation conditions.
+   * @param options.restart - Unused for condition updates.
+   * @param options.targetSize - The returned video dimensions, omitted when unset.
+   * @param options.mirror - Unused for condition updates.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false.
+   * @param options.onStartSent - Not called for condition updates.
+   * @param options.extraParams - Parameters merged into this change_condition message without being
+   * retained.
+   * @throws Rejects if the room is not ready or sending fails.
    */
   updateGeneration(
     options: StreamGenerationOptions
   ): Promise<void>;
 
   /**
-   * 调整当前生成任务的回传尺寸，不重启生成。
+   * Updates returned video dimensions without restarting generation.
    *
-   * @throws 操作已取消、房间未就绪或信令发送失败时抛出错误。
+   * @throws Rejects if the operation is canceled, the room is not ready, or sending fails.
    */
   updateDownlinkVideoResolution(
     taskID: string,
@@ -242,18 +253,18 @@ export interface StreamControlling {
   ): Promise<void>;
 
   /**
-   * 停止生成任务并清理远端结果流；任务标识为空字符串时停止当前任务。
+   * Stops generation and clears its result stream; an empty identifier stops the current task.
    *
-   * @throws RTC 停止信令发送失败时抛出错误。
+   * @throws Rejects if the stop message cannot be sent.
    */
   stopGeneration(
     taskID: string
   ): Promise<void>;
 
   /**
-   * 发送生成任务的交互轨迹；空数组会被忽略。
+   * Sends interaction points; ignores an empty point list.
    *
-   * @throws RTC 房间未就绪或轨迹信令发送失败时抛出错误。
+   * @throws Rejects if the room is not ready or sending fails.
    */
   sendTracks(
     taskID: string,
@@ -261,21 +272,21 @@ export interface StreamControlling {
   ): Promise<void>;
 
   /**
-   * 设置房间业务消息监听器，传入空值时清除监听器。
+   * Sets the room message listener; an undefined value clears it.
    */
   setRoomListener(
     listener?: RoomListener
   ): void;
 
   /**
-   * 设置本地主视频流统计监听器，传入 undefined 清除。
+   * Sets the uplink video statistics listener; undefined clears it.
    */
   setUplinkVideoStatisticsListener(
     listener?: UplinkVideoStatisticsListener
   ): void;
 
   /**
-   * 监听当前实际生成结果流的统计，按已接受的远端用户标识过滤。
+   * Observes statistics for the accepted result publisher.
    */
   setDownlinkVideoStatisticsListener(
     listener?: DownlinkVideoStatisticsListener

@@ -29,189 +29,211 @@ import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
 import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/RealtimeExternalVideoSource";
 
 /**
- * 定义 SDK 对接入方提供的实时媒体与生成控制能力。
+ * The realtime media and generation capabilities exposed to your app.
  */
 export interface XmaxRealtimeManaging {
 
   /**
-   * 观察当前生成结果的原始 Web 音视频轨道，立即回放当前绑定。
-   * 不依赖 WebCodecs；适用于 MediaRecorder 等原生媒体流处理。
-   * 轨道仅借用；需要停止或修改时应先 clone()，不得停止 SDK 的原始轨道。
-   * 无结果流时回调 undefined；传 undefined 取消监听，不影响订阅、音量或生成。
-   * 可与原始帧监听并存，close() 时自动清除。
+   * Observes the result stream's original browser audio and video tracks, immediately replaying the
+   * current binding.
+   *
+   * Supports native APIs such as MediaRecorder without requiring WebCodecs. Tracks are borrowed; clone
+   * them before modifying or stopping them, and never stop the SDK's originals. Undefined reports no
+   * result stream or removes the listener when passed as the argument. Observation does not change
+   * subscriptions, volume, or generation, may coexist with frame observation, and is cleared on close().
    */
-  setRemoteMediaTracksListener(listener?: (tracks?: RemoteMediaTracks) => void): void;
+  setRemoteMediaTracksListener(
+    listener?: (
+      tracks?: RemoteMediaTracks
+    ) => void
+  ): void;
 
   /**
-   * 监听当前结果流的原始解码视频和播放音量处理前的 PCM 音频。
-   * 两轨共用接收端呈现时间轴，单位为微秒；按时间戳同步，不按回调到达时间配对。
-   * 视频帧交付后由接入方 close()；回调须保持轻量，队列超限或换流会标记不连续。
-   * 从用户手势调用并等待准备完成；不支持的浏览器或 RTC 平台会拒绝，不终止生成。
-   * 可在生成前或生成中设置；undefined 取消并释放资源，不改变音量、订阅和生成任务。
-   * 浏览器呈现回调可能漏帧，不保证交付全部接收或解码帧；没有音轨时不补静音包。
+   * Observes decoded remote video and PCM audio before playback-volume processing.
+   *
+   * Both tracks use receiver presentation timestamps in microseconds; synchronize by timestamp, not
+   * callback arrival. Your app must close delivered video frames and keep callbacks lightweight. Queue
+   * overflow or stream replacement marks discontinuity. Call from a user gesture and await preparation.
+   * Unsupported browsers or RTC providers reject without terminating generation. Observation may begin
+   * before or during generation; undefined releases observation resources without changing volume,
+   * subscriptions, or tasks. Browser presentation callbacks may skip frames; delivery of every received
+   * or decoded frame is not guaranteed. Missing audio is not replaced with synthetic silence.
    */
   setRemoteMediaFrameListener(
     listener?: RealtimeMediaFrameListener
   ): Promise<void>;
 
   /**
-   * 实时能力配置。
+   * The realtime capability configuration.
    */
   readonly options: RealtimeConfiguration;
 
   /**
-   * 当前实时连接与生成状态。
+   * The current connection and generation state.
    */
   readonly currentState: RealtimeState;
 
   /**
-   * 当前摄像头媒体规格，不随上行调档变化；没有摄像头流时为空。
+   * The camera media format, unaffected by uplink quality changes; undefined without a camera stream.
    */
   readonly currentCameraVideoFormat?: RealtimeVideoFormat;
 
   /**
-   * 当前摄像头尺寸匹配的预设；没有摄像头或尺寸未匹配预设时为空。
+   * The preset matching the camera dimensions; undefined without a camera or a matching preset.
    */
   readonly currentCameraPreset?: RealtimeCameraPreset;
 
   /**
-   * 更新预览就绪且未连接的摄像头规格，保留 SDK 轨道与视图绑定。
-   * 传入预设时保留当前帧率、码率和编码偏好，尺寸仍按模型规则解析。
+   * Updates a ready, disconnected camera's format while retaining its SDK track and view binding. A
+   * preset preserves frame rate, bitrate, and encoding preference; model sizing rules still apply.
    */
   updateCameraFormat(
     format: RealtimeVideoFormat | RealtimeCameraPreset
   ): Promise<void>;
 
   /**
-   * 当前连接成功应用的上行档位；未连接、断开或没有本地上行时为空。
+   * The successfully applied uplink level; undefined when disconnected or no local uplink exists.
    */
   readonly uplinkQualityLevel?: RealtimeQualityLevel;
 
   /**
-   * 当前连接成功提交的下行档位；尚未开始生成、未连接或断开时为空，实际回传可能稍晚生效。
+   * The submitted downlink level; undefined before generation or while disconnected. Returned media may
+   * reflect the change later.
    */
   readonly downlinkQualityLevel?: RealtimeQualityLevel;
 
   /**
-   * 在生成中指定上行编码档位，不改变媒体采集规格和生成画布。
-   * Agora、TRTC 的自动调档从新档位继续；VeRTC 仅应用手动档位。
+   * Sets the uplink encoding level during generation without changing capture format or the generation
+   * canvas. Automatic adaptation resumes from this level for Agora and TRTC; VeRTC applies manual levels
+   * only.
    */
   setUplinkQualityLevel(
     level: RealtimeQualityLevel
   ): Promise<void>;
 
   /**
-   * 在生成中指定下行回传档位；已启用自动调档时，从新档位继续判断。
-   * 发送成功表示请求已提交，不代表服务端已经返回新尺寸。
+   * Sets the downlink level during generation, continuing enabled adaptation from that level. Successful
+   * submission does not mean the server has returned the new dimensions.
    */
   setDownlinkQualityLevel(
     level: RealtimeQualityLevel
   ): Promise<void>;
 
   /**
-   * 手动升/降一档上行配置，需要正在生成且存在本地上行。
-   * Agora、VeRTC 调整分辨率、帧率和编码码率；TRTC 只调整帧率，保留尺寸和码率配置。
-   * 保留原始 L1 基准，不改变下行尺寸；已启用的自动调档保持开启。
-   * @param direction 升一档或降一档；到达 L1/L5 边界时不重复应用。
+   * Moves uplink quality one level during generation when local media is published. Agora and VeRTC
+   * adjust dimensions, frame rate, and bitrate; TRTC adjusts frame rate only. The L1 baseline, downlink
+   * size, and enabled adaptation remain unchanged.
+   *
+   * @param direction - The adjustment direction; L1/L5 boundaries do not reapply the same level.
    */
   adjustUplinkQuality(
     direction: "upgrade" | "downgrade"
   ): Promise<void>;
 
   /**
-   * 手动升/降一档下行输出尺寸，需要正在生成。
-   * 仅改变分辨率，成功发送后同步目标档位；已启用的自动调档保持开启。
-   * 到达 L1/L5 边界时不重复发送；发送成功不代表服务端已生效。
+   * Moves downlink output dimensions one level during generation. Only resolution changes; the level
+   * updates after successful submission and enabled adaptation continues. Boundaries do not resend the
+   * same level; submission does not confirm server-side application.
    */
   adjustDownlinkQuality(
     direction: "upgrade" | "downgrade"
   ): Promise<void>;
 
   /**
-   * 当前本地媒体预览音量，取值范围为 `0...1`。
+   * The local preview audio volume, from 0 to 1.
    */
   readonly localAudioVolume: number;
 
   /**
-   * 当前远端生成音频播放音量，取值范围为 `0...1`。
+   * The remote generated audio playback volume, from 0 to 1.
    */
   readonly remoteAudioVolume: number;
 
   /**
-   * 设置实时状态监听器。
-   * @param listener 实时状态回调；传入 `undefined` 时清除监听器。
+   * Sets the realtime state listener.
+   *
+   * @param listener - The callback; undefined removes it.
    */
   setStateListener(
     listener?: RealtimeStateListener
   ): Promise<void>;
 
   /**
-   * 监听上下行网络质量；立即回放最新快照，尚无采样或断开后回调 undefined。
-   * 独立于日志和远端生成流；传入 undefined 取消监听，监听器异常不影响主流程。
+   * Observes uplink and downlink network quality, immediately replaying the latest snapshot. Undefined
+   * reports no sample or disconnection, or removes the listener when supplied. Logging and generated
+   * media are independent; observer failures do not affect the lifecycle.
    */
   setNetworkQualityListener(
     listener?: RealtimeNetworkQualityListener
   ): Promise<void>;
 
   /**
-   * 监听启动耗时；立即回放当前快照，每完成一个阶段再次回调。
-   * 新一轮创建媒体源时重置；失败或终止后冻结，更新生成条件不重置。
-   * 首帧统计需要将远端轨道绑定到 SDK 视频视图，且不会阻塞 startGeneration。
-   * 传入 undefined 清除监听器；监听器异常不影响生成流程。
-   * 开启 performance 日志后，渲染预热完成时另向 console.info 输出启动汇总，不依赖监听器。
+   * Observes startup durations, replaying the snapshot immediately and after each completed stage. A new
+   * media source resets timing; failure or termination freezes completed stages. Condition updates do
+   * not reset it. First-frame timing requires an SDK video view and does not block startGeneration.
+   * Undefined removes the listener; observer failures do not affect generation. Performance logging
+   * independently emits one console.info summary after render warmup.
    */
   setTimingListener(
     listener?: RealtimeTimingListener
   ): Promise<void>;
 
   /**
-   * 监听上行分辨率、采集/编码/发送帧率、码率和丢包率，独立于日志开关。
-   * 设置后立即回放最新快照；未取得数据或停止/断开时回调 undefined。
-   * 传入 undefined 取消监听；监听器异常不影响生成流程。
+   * Observes uplink dimensions, capture/encoding/send frame rates, bitrate, and loss independently of
+   * logging. Replays the latest snapshot immediately; undefined reports missing statistics or
+   * stopped/disconnected media, or removes the listener when supplied. Observer failures do not affect
+   * generation.
    */
   setUplinkVideoStatisticsListener(
     listener?: UplinkVideoStatisticsListener
   ): Promise<void>;
 
   /**
-   * 监听下行分辨率、解码/RTC 渲染帧率、码率、丢包率和媒体 E2E 估算值。
-   * 独立于日志开关；立即回放最新快照，流消失或断开时回调 undefined。
-   * 传入 undefined 取消监听；监听器异常不影响生成流程。
+   * Observes downlink dimensions, decode/RTC-render frame rates, bitrate, loss, and estimated media E2E
+   * delay. Replays the latest snapshot independently of logging; undefined reports a cleared or missing
+   * stream, or removes the listener when supplied. Observer failures do not affect generation.
    */
   setDownlinkVideoStatisticsListener(
     listener?: DownlinkVideoStatisticsListener
   ): Promise<void>;
 
   /**
-   * 设置本地媒体预览音量。
-   * @throws 音量超出有效范围时抛出错误。
+   * Sets local media preview volume.
+   *
+   * @throws Rejects if the volume is outside the valid range.
    */
   setLocalAudioVolume(
     volume: number
   ): Promise<void>;
 
   /**
-   * 设置远端生成音频播放音量。
-   * 尚未连接或订阅远端流时保存配置，并在远端音频开始播放前应用。
-   * @throws 音量超出有效范围或 RTC 音量配置失败时抛出错误。
+   * Sets remote generated audio playback volume. Saves the setting before connection or subscription and
+   * applies it before remote playback begins.
+   *
+   * @throws Rejects if the volume is invalid or the RTC volume update fails.
    */
   setRemoteAudioVolume(
     volume: number
   ): Promise<void>;
 
   /**
-   * 创建本地相机流并开始预览。
+   * Creates a local camera stream and starts preview.
    *
-   * 将返回的轨道绑定到预览视图；收到有效帧且视图已绑定后进入 `ready`。
+   * Bind the returned track to a preview view; ready is entered after a valid frame arrives and the view
+   * is bound.
    *
-   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
-   * @param options.preset 替代 videoFormat，使用模型支持的摄像头预设和推荐帧率；两者必须且只能提供一个。
-   * @param options.position 前置或后置摄像头。
-   * @param options.useMicrophone 是否采集并发布麦克风音频。
-   * @param options.rotation 输入帧顺时针旋转角度，默认 0；非零角度目前仅支持 Agora，预览和上传均校正方向，镜像保持独立。
-   * @param options.enableFrameValidation 是否在发布前等待相机预热（固定 200ms），默认 true；false 跳过等待，不产生预热耗时。
-   * @returns 包含本地相机视频轨道的媒体流。
-   * @throws 模型不支持相机输入、配置无效、权限或采集启动失败时抛出错误。
+   * @param options.position - The front or rear camera.
+   * @param options.useMicrophone - Whether to capture and publish microphone audio.
+   * @param options.rotation - Clockwise input rotation, defaulting to 0; nonzero rotation currently
+   * requires Agora. Preview and upload are corrected independently of mirroring.
+   * @param options.enableFrameValidation - Whether to wait for a fixed 200 ms camera warmup before
+   * publishing; defaults to true. False skips the wait.
+   * @param options.videoFormat - The post-rotation target format, resolved using model sizing rules.
+   * @param options.preset - A preset with the recommended frame rate, instead of videoFormat. Supply
+   * exactly one.
+   * @returns A media stream containing the local camera video track.
+   * @throws Rejects for unsupported camera input, invalid configuration, denied permission, or capture
+   * startup failure.
    */
   createLocalCameraStream(
     options: {
@@ -220,21 +242,33 @@ export interface XmaxRealtimeManaging {
       rotation?: CameraRotation;
       enableFrameValidation?: boolean;
     } & (
-      | { videoFormat: RealtimeVideoFormat; preset?: never }
-      | { preset: RealtimeCameraPreset; videoFormat?: never }
-    )
+        | {
+          videoFormat: RealtimeVideoFormat;
+          preset?: never
+        }
+        | {
+          preset: RealtimeCameraPreset;
+          videoFormat?: never
+        }
+      )
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 从本地 File/Blob 创建文件视频源，支持 TRTC、Agora 和 VeRTC，不访问摄像头或麦克风。
-   * Canvas 保留完整内容并按媒体尺寸规则缩放，文件音频独立上行，本地预览始终静音。
-   * SDK 单独选择模型生成画布，仅在媒体与画布比例不一致时启用服务端 contain 补边。
-   * 应从用户点击事件直接调用以解锁播放；创建后停在首帧，startGeneration 时开始播放。
-   * @param options.file 包含可解码视频的本地 File 或 Blob。
-   * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从文件读取。
-   * @param options.loop 是否循环播放文件音视频，默认 true。
-   * @param options.includeAudio 是否发送文件音频，默认 true；无音轨文件输出静音，false 不创建音频轨。
-   * @throws 提供方不支持、文件/格式无效、浏览器无法解码或播放受限时抛错。
+   * Creates a local File/Blob video source for TRTC, Agora, or VeRTC without accessing capture devices.
+   *
+   * Canvas scaling preserves all content within media-sizing limits. File audio is published
+   * independently and local preview stays muted. The SDK selects the generation canvas separately and
+   * requests server-side contain padding only when aspect ratios differ. Call directly from a user
+   * gesture to unlock playback. Creation pauses on the first frame; startGeneration starts playback.
+   *
+   * @param options.file - A local File or Blob containing decodable video.
+   * @param options.videoFormat - Frame rate and encoding settings; width and height are compatibility
+   * inputs, while media dimensions come from the file.
+   * @param options.loop - Whether to loop audio and video; defaults to true.
+   * @param options.includeAudio - Whether to publish file audio; defaults to true. Files without audio
+   * produce silence; false creates no audio track.
+   * @throws Rejects for unsupported providers, invalid files or formats, decoding failure, or blocked
+   * playback.
    */
   createLocalVideoStream(
     options: {
@@ -246,13 +280,18 @@ export interface XmaxRealtimeManaging {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 从本地 File/Blob 创建图片视频流，支持 TRTC、Agora 和 VeRTC。
-   * 保留完整内容并按媒体尺寸规则缩放，持续发送同一静止画面，不上传文件、不采集摄像头或麦克风。
-   * SDK 单独选择模型生成画布，仅在媒体与画布比例不一致时启用服务端 contain 补边。
-   * 创建后可直接预览，仍需调用 startGeneration 开始生成；disconnect 保留图片源，close 释放全部资源。
-   * @param options.file 包含浏览器可解码图片的本地 File 或 Blob；动图仅取解码时的静止快照。
-   * @param options.videoFormat 帧率及编码配置；宽高保留兼容入参，实际媒体尺寸从图片读取。
-   * @throws 文件或格式无效、浏览器无法解码、Canvas 采集不可用或已有活动源时抛错。
+   * Creates a still-image video stream from a local File/Blob for TRTC, Agora, or VeRTC.
+   *
+   * Scaling preserves all image content within media-sizing limits. The same still frame is sent
+   * continuously without uploading the file or using capture devices. The generation canvas is selected
+   * separately, with server-side contain padding only when aspect ratios differ. Preview is available
+   * after creation; startGeneration is still required. Disconnect retains the source; close releases it.
+   *
+   * @param options.file - A browser-decodable image; animated images use one decoded still snapshot.
+   * @param options.videoFormat - Frame rate and encoding settings; width and height remain compatibility
+   * inputs, while media dimensions come from the image.
+   * @throws Rejects for invalid files or formats, decoding failure, missing Canvas capture, or an active
+   * media source.
    */
   createLocalImageStream(
     options: {
@@ -262,111 +301,127 @@ export interface XmaxRealtimeManaging {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 接收外部帧源，或兼容仅视频的原生轨入口；不申请设备权限，不播放输入音频。
-   * 传 source 时调用 start(sink)，支持可选 PCM；创建完成即 ready，不等待首帧。
-   * 外部帧按媒体规则限制面积并按 4 对齐，SDK 缩放并提供预览；方向和镜像由接入方负责。
-   * 传 videoTrack/videoFormat 时仅克隆视频轨，保持原有行为，不处理其像素或创建预览绑定。
-   * disconnect 保留源和预览，但丢弃音频；stopExternalVideoStream 或 close 使旧 sink 失效并调用 source.stop。
-   * 有音频时需从用户手势调用以解锁 AudioContext，要求安全上下文及 AudioWorklet。
-   * @param options.source 接入方拥有的外部音视频帧源，与 videoTrack/videoFormat 二选一。
-   * @param options.videoTrack 兼容入口：接入方拥有的 live 视频轨。
-   * @param options.videoFormat 兼容入口：原视频轨的尺寸、帧率及编码配置。
-   * @throws 配置无效、已有活动媒体、源启动或 RTC 准备失败时抛错并清理本次绑定。
+   * Binds an external frame source or a compatible video-only browser track without requesting device
+   * access or playing input audio.
+   *
+   * The source path calls start(sink), supports optional PCM, and becomes ready without waiting for a
+   * first frame. The SDK limits frame area, aligns dimensions to four pixels, scales frames, and
+   * supplies preview. Your app supplies upright, correctly mirrored pixels. The videoTrack/videoFormat
+   * path clones only the video track, without processing pixels or installing a preview binding.
+   * Disconnect retains source and preview but discards audio; stopExternalVideoStream or close
+   * invalidates the sink and calls source.stop(). Audio requires a user gesture, secure context, and
+   * AudioWorklet support.
+   *
+   * @param options.source - Your app's frame source, mutually exclusive with videoTrack/videoFormat.
+   * @param options.videoTrack - A live video track for the compatibility path.
+   * @param options.videoFormat - The compatibility track's source dimensions, frame rate, and encoding
+   * settings.
+   * @throws Rejects and cleans up this binding for invalid configuration, active media, source startup
+   * failure, or RTC preparation failure.
    */
   createExternalVideoStream(
     options: RealtimeExternalVideoStreamOptions
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 未连接时解绑外部源，清空预览并释放 SDK 输出，不接管接入方采集设备。
-   * 已连接时请先 disconnect；对其他媒体源不做操作。
+   * Unbinds a disconnected external source, clears preview, and releases SDK outputs without taking
+   * ownership of capture devices. Disconnect first if connected. Other source types are unchanged.
    */
   stopExternalVideoStream(): Promise<void>;
 
   /**
-   * 更新当前本地流的上行视频格式，立即应用于 RTC 编码器，不重连或重启生成。
-   * 传入完整格式；未指定的码率和编码偏好按 RealtimeVideoFormat 默认规则解析。
-   * 尺寸向下做 4 对齐，优先保持精确比例；帧率、码率及编码偏好保持传入配置。
-   * 成功后本地轨道的 videoFormat 记录对齐后的格式，后续重连继续使用该格式。
-   * 模型生成仍使用创建本地流时的格式；此接口不改变生成尺寸。
-   * 实际发送规格受设备、浏览器和网络影响，应通过统计回调确认。
-   * 上行自适应以本次成功应用的完整格式作为新的 L1 基准；Agora 按档位缩放尺寸和帧率，TRTC 仅调帧率。
+   * Updates local uplink encoding immediately without reconnecting or restarting generation.
    *
-   * @param videoFormat 本次完整的上行尺寸、帧率和编码配置。
-   * @throws 无本地相机、外部、图片或文件视频流、其他操作进行中、参数无效或 RTC 更新失败时抛错。
+   * Supply a complete format; omitted bitrate and encoding preferences use RealtimeVideoFormat defaults.
+   * Dimensions align downward to four pixels, preferring the exact aspect ratio; other supplied settings
+   * are retained. The local track records the aligned format for reconnection, while generation
+   * continues using the original media format. Actual transmission depends on device, browser, and
+   * network conditions; verify it through statistics. The applied format becomes the new adaptive L1
+   * baseline. Agora scales dimensions and frame rate; TRTC adjusts frame rate only.
+   *
+   * @param videoFormat - The complete uplink dimensions, frame rate, and encoding configuration.
+   * @throws Rejects without a local source, during conflicting operations, for invalid settings, or when
+   * the RTC update fails.
    */
   updateUplinkVideoFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
 
   /**
-   * 试验性上行调帧接口：连接建立后使用，保留最近应用的宽高、码率区间和编码偏好。
-   * 成功后更新本地轨道格式，重连沿用；不修改服务端生成或输出规格。
-   * 手动调用会重置上行质量样本，并以成功后的完整格式作为新的自适应 L1 基准。
-   * 仍会重新提交完整编码配置，不保证 RTC 内部自适应状态不受影响，需用实际统计验证。
+   * Updates uplink frame rate after connection, preserving the applied dimensions, bitrate bounds, and
+   * encoding preference. The updated track format persists across reconnection without changing
+   * generation or output dimensions. Manual updates reset quality samples and establish a new adaptive
+   * L1 baseline. This experimental operation resubmits the complete encoder configuration; RTC
+   * adaptation state may change. Verify actual results through statistics.
    */
   updateUplinkFrameRate(
     fps: number
   ): Promise<void>;
 
   /**
-   * 停止本地相机流并释放本地预览与 RTC 资源。
+   * Stops local camera capture and releases preview and RTC resources.
    */
   stopLocalCameraStream(): Promise<void>;
 
   /**
-   * 切换前后置摄像头。
+   * Switches between front and rear cameras.
    *
-   * 生成过程中调用时，SDK 会停止当前生成、切换摄像头，并使用缓存的生成
-   * 条件恢复生成；RTC 连接保持不变。连接或生成正在启动时不可切换。
+   * During generation, stops the task, switches capture, and restores generation with cached conditions
+   * while retaining the RTC connection. Switching is unavailable during connection or generation
+   * startup.
    *
-   * @returns 复用原视频轨道并更新摄像头位置后的本地媒体流。
+   * @returns The local stream with the same SDK video track and updated camera position.
    */
   switchCamera(): Promise<RealtimeMediaStream>;
 
   /**
-   * 使用当前 Manager 创建的本地流建立实时连接。
+   * Connects a local stream created by this manager.
    *
-   * 创建实时会话、加入 RTC 房间、发布本地媒体并启动会话心跳。
-   * 启用帧检测时，发布前并行等待相机预热（固定 200ms），避免把黑帧推给 RTC。
-   * 返回的远端媒体流在生成开始后承载远端生成画面。
+   * Creates a session, joins the RTC room, publishes local media, and starts heartbeats. Enabled camera
+   * validation waits for a fixed 200 ms warmup in parallel with connection, before publishing. The
+   * returned remote stream carries results once generation starts.
    *
-   * @param localStream 由当前 Manager 创建的摄像头、外部视频轨、本地图片或本地视频文件。
-   * @returns 远端生成结果占位的媒体流。
-   * @throws 本地流不属于当前 Manager、已有活动连接、会话创建或进房
-   * 发布失败时抛出错误；失败时自动释放连接资源并恢复本地预览。
+   * @param localStream - This manager's camera, external, local-image, or file-video stream.
+   * @returns A remote stream placeholder for generated media.
+   * @throws Rejects for foreign streams, an active connection, or session, join, or publication
+   * failures. Failure releases connection resources and restores local preview.
    */
   connect(
     localStream: RealtimeMediaStream
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 断开实时连接并保留当前本地媒体预览。
+   * Disconnects while retaining the current local media preview.
    */
   disconnect(): Promise<void>;
 
   /**
-   * 关闭当前实时生命周期并释放连接、本地媒体和 RTC Engine。
-   * 关闭期间重复调用会等待同一个释放任务；关闭完成后仍可重新创建本地流。
+   * Closes the lifecycle and releases connection, local media, and RTC resources. Concurrent calls await
+   * the same cleanup. Local streams can be created again after closure.
    */
   close(): Promise<void>;
 
   /**
-   * 按需建立连接并开始生成。
+   * Connects if needed and starts generation.
    *
-   * 尚未连接时先建立实时连接；已在生成时默认更新条件，restart 为 true 时重新开始生成。
-   * 首次生成必须提供条件上下文，之后缺省时复用最近一次缓存的上下文。
-   * 返回后请将远端流挂载到 SDK 视频视图；首帧及渲染预热完成后状态才进入 generating。
+   * Active generation updates conditions unless restart is true. The first task requires a context;
+   * later calls may reuse cached conditions. Mount the returned remote stream in an SDK video view;
+   * generating is entered only after the first frame and render warmup.
    *
-   * @param options.localStream 由当前 Manager 创建的摄像头、外部视频轨或本地文件。
-   * @param options.context 本次生成使用的条件上下文；缺省时复用缓存。
-   * @param options.restart 是否保留 RTC 连接并创建新任务发送 start，默认 false；不预先发送 stop。
-   * @param options.faceRestoration 是否启用原始人脸回贴，默认 false；正在生成时通过 change_condition 更新。
-   * @param options.extraParams 合并到本次 start 或 change_condition 的 params；不缓存，自动恢复时不携带，不允许覆盖 SDK 字段。
-   * @returns 可挂载的远端媒体流，不等待渲染预热；展示就绪以 generating 状态为准。
-   * @throws extraParams 包含非 JSON 数据、循环引用或 SDK 保留字段时，在连接或更新前抛出 invalidConfiguration。
-   * @throws 本地流不属于当前 Manager、缺少可用的条件上下文、信令发送
-   * 或生成确认失败时抛出错误；失败时自动停止生成任务并释放连接资源。
+   * @param options.localStream - This manager's local camera, external, image, or video-file stream.
+   * @param options.context - The generation conditions; omission reuses cached conditions.
+   * @param options.restart - Whether to retain RTC and start a new task without first sending stop;
+   * defaults to false.
+   * @param options.faceRestoration - Whether to restore the original face; defaults to false and updates
+   * active tasks through change_condition.
+   * @param options.extraParams - Additional start/change_condition parameters. Not cached or included in
+   * automatic recovery; SDK fields cannot be overridden.
+   * @returns A mountable remote stream without waiting for warmup; generating signals presentation
+   * readiness.
+   * @throws Rejects with invalidConfiguration for non-JSON, cyclic, or reserved extra parameters before
+   * connection or condition updates.
+   * @throws Rejects for foreign media, missing conditions, signaling failure, or unconfirmed generation,
+   * stopping the task and releasing connection resources.
    */
   startGeneration(
     options: {

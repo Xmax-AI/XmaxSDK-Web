@@ -12,23 +12,27 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import type { NonRealtimeTask } from "./NonRealtimeTask";
 
 /**
- * 服务端任务失败或终态结果不可用；保留最后的任务快照供接入方展示及恢复查询。
+ * A failed server task or unavailable terminal result, retaining the last snapshot for display and query
+ * recovery.
  */
 export class NonRealtimeTaskError extends XmaxError {
 
   /**
-   * 失败上下文
+   * The last task snapshot associated with the failure.
    */
   readonly task: NonRealtimeTask;
 
   /**
-   * 使用 API 错误分类，不虚构服务端未返回的业务错误码。
+   * Creates an API-category error without inventing a server business code.
    */
   constructor(
     task: NonRealtimeTask,
     message: string
   ) {
-    super(XmaxErrorCode.apiError, message);
+    super(
+      XmaxErrorCode.apiError,
+      message
+    );
     this.name = "NonRealtimeTaskError";
     this.task = task;
   }

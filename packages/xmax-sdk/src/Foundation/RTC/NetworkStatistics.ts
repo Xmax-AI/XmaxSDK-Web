@@ -9,76 +9,76 @@
 //
 
 /**
- * 实时连接的网络质量等级。
+ * Network-quality ratings for a realtime connection.
  */
 export enum RealtimeNetworkQualityLevel {
 
   /**
-   * 尚无有效的质量评估。
+   * No valid quality estimate is available.
    */
   unknown = "Unknown",
 
   /**
-   * 网络质量极好。
+   * Excellent network quality.
    */
   excellent = "Excellent",
 
   /**
-   * 网络质量良好。
+   * Good network quality.
    */
   good = "Good",
 
   /**
-   * 网络质量一般，可能影响实时播放。
+   * Reduced quality that may affect realtime playback.
    */
   poor = "Poor",
 
   /**
-   * 网络质量差，影响实时播放。
+   * Poor quality affecting realtime playback.
    */
   bad = "Bad",
 
   /**
-   * 网络质量极差，可能严重中断媒体传输。
+   * Very poor quality that may severely interrupt media transport.
    */
   veryBad = "VeryBad",
 
   /**
-   * 网络连接已断开。
+   * The network connection is down.
    */
   down = "Down",
 }
 
 /**
- * 本端 RTC 连接的网络统计，不依赖远端生成流是否已经到达。
+ * Local RTC connection quality, independent of remote result-stream arrival.
  */
 export interface RealtimeNetworkQuality {
 
   /**
-   * 上行网络质量等级，沿用 RTC 厂商的评估结果。
+   * The RTC provider's uplink quality rating.
    */
   readonly uplink: RealtimeNetworkQualityLevel;
 
   /**
-   * 所有下行连接的平均网络质量。
+   * The average quality of all downlink connections.
    */
   readonly downlink: RealtimeNetworkQualityLevel;
 }
 
 /**
- * undefined 表示尚无采样或连接已清理。
+ * Receives quality snapshots; undefined means no sample or a cleared connection.
  */
 export type RealtimeNetworkQualityListener = (
   statistics: RealtimeNetworkQuality | undefined
 ) => void;
 
 /**
- * RTC 厂商使用的 0～6 质量等级映射；无效等级统一为 unknown。
+ * RTC numeric quality ratings from 0 to 6, with invalid ratings mapped to unknown.
  */
 const RTC_QUALITY_LEVELS: readonly RealtimeNetworkQualityLevel[] = Object.values(RealtimeNetworkQualityLevel);
 
 /**
- * 将 RTC 数值等级转换为 SDK 网络质量枚举，不把无效样本当作好网络。
+ * Maps RTC numeric ratings without treating invalid samples as good network quality.
  */
 export function networkQualityLevel(
   value: number | undefined

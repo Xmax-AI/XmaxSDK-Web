@@ -15,7 +15,7 @@ import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 计算档位的浮点尺寸上限；最终对齐由媒体或编码尺寸规则完成。
+ * Computes floating-point dimension bounds; media or encoding rules perform final alignment.
  */
 export function qualityVideoMaximumSize(
   baseline: RealtimeVideoFormat,
@@ -32,11 +32,15 @@ export function qualityVideoMaximumSize(
   const shortSide = Math.min(baseline.width, baseline.height);
   const minimum = Math.min(shortSide, MINIMUM_QUALITY_SHORT_SIDE);
   const scale = Math.max(tier.scale, minimum / shortSide);
-  return { width: baseline.width * scale, height: baseline.height * scale };
+  return {
+    width: baseline.width * scale,
+    height: baseline.height * scale
+  };
 }
 
 /**
- * 计算上行 4 对齐尺寸；优先保持精确比例，兼容按宽高分别向下取整。
+ * Computes four-pixel-aligned uplink dimensions, preferring the exact aspect ratio with
+ * independent-rounding fallback.
  */
 export function qualityVideoSize(
   baseline: RealtimeVideoFormat,
@@ -46,41 +50,62 @@ export function qualityVideoSize(
   width: number;
   height: number
 } {
-  const maximum = qualityVideoMaximumSize(baseline, level);
+  const maximum = qualityVideoMaximumSize(
+    baseline,
+    level
+  );
   if (preserveAspectRatio) {
-    return alignedVideoSize(baseline, Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height), 4);
+    return alignedVideoSize(
+      baseline,
+      Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height),
+      4
+    );
   }
 
   const width = Math.floor(maximum.width / 4 + 1e-9) * 4;
   const height = Math.floor(maximum.height / 4 + 1e-9) * 4;
   if (width < 4 || height < 4) {
-    throw new XmaxError(XmaxErrorCode.invalidConfiguration, "No aligned video size is available within the size limits");
+    throw new XmaxError(
+      XmaxErrorCode.invalidConfiguration,
+      "No aligned video size is available within the size limits"
+    );
   }
-  return { width, height };
+  return {
+    width,
+    height
+  };
 }
 
 /**
- * 检查目标规格的默认码率与显式上传码率约束是否兼容。
+ * Checks whether default target bitrates are compatible with explicit uplink bounds.
  */
 export function supportsQualityEncoding(
   format: RealtimeVideoFormat
 ): boolean {
-  const defaults = EncodingBitratePolicy.resolve(format.width, format.height, format.fps);
+  const defaults = EncodingBitratePolicy.resolve(
+    format.width,
+    format.height,
+    format.fps
+  );
   const maximum = format.maximumBitrate ?? defaults.maximum;
   return (format.minimumBitrate ?? Math.min(500, maximum)) <= maximum;
 }
 
 /**
- * 以用户初始/手动配置为 L1，按统一比例缩小并对齐。
- * 不读取 RTC 实际发送统计，避免自动降档后丢失恢复上限。
- * 显式码率沿用用户约束；缺省码率保持 undefined，由编码层按目标尺寸和帧率解析。
+ * Derives aligned quality formats from the initial or manually selected L1 baseline. Does not use actual
+ * RTC send statistics, preserving the recovery ceiling. Explicit bitrate bounds remain unchanged;
+ * omitted bounds are resolved by the encoding layer.
  */
 export function qualityVideoFormat(
   baseline: RealtimeVideoFormat,
   level: number,
   preserveAspectRatio = true
 ): RealtimeVideoFormat {
-  const size = qualityVideoSize(baseline, level, preserveAspectRatio);
+  const size = qualityVideoSize(
+    baseline,
+    level,
+    preserveAspectRatio
+  );
   const tier = Object.values(QUALITY_TIERS)[level - 1]!;
   return new RealtimeVideoFormat({
     ...baseline,

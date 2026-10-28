@@ -13,27 +13,27 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { TrajectoryOverlayView } from "./TrajectoryOverlayView";
 
 /**
- * 远端轨道的交互绑定，向视图传递格式和任务可用性，不持有任务 ID。
+ * A remote track's interaction binding, sharing format and task availability without owning a task ID.
  */
 export class TrajectoryBinding {
 
   /**
-   * 绑定视图与可用性
+   * The view currently owning this interaction binding.
    */
   private overlay?: TrajectoryOverlayView;
 
   /**
-   * 当前绑定是否允许提交交互采样。
+   * Whether interaction samples may be submitted.
    */
   private enabled = false;
 
   /**
-   * 当前绑定是否仍属于有效轨道。
+   * Whether the binding still belongs to a valid track.
    */
   private valid = true;
 
   /**
-   * 注入采样回调及模型输入格式，不引用 Media Controller 实例。
+   * Creates a binding with a sample listener and model-input format.
    */
   constructor(
     private readonly listener: (
@@ -43,7 +43,7 @@ export class TrajectoryBinding {
   ) { }
 
   /**
-   * 一个远端绑定只由一个交互视图持有，迁移时取消旧视图的触点。
+   * Attaches one interaction view, cancelling the previous owner's pointers when ownership changes.
    */
   attach(
     overlay: TrajectoryOverlayView
@@ -55,11 +55,15 @@ export class TrajectoryBinding {
       this.overlay?.setBinding(undefined);
     }
     this.overlay = overlay;
-    overlay.setBinding(this, this.format, this.enabled);
+    overlay.setBinding(
+      this,
+      this.format,
+      this.enabled
+    );
   }
 
   /**
-   * 只解除当前所有者，旧视图迟到的 detach 不影响新视图。
+   * Detaches only the current owner so stale detach callbacks cannot affect a replacement.
    */
   detach(
     overlay: TrajectoryOverlayView
@@ -71,7 +75,7 @@ export class TrajectoryBinding {
   }
 
   /**
-   * 开始、更新或结束任务时同步交互能力，并取消旧手势。
+   * Updates task interaction availability or format and cancels obsolete gestures.
    */
   update(
     enabled: boolean,
@@ -79,11 +83,15 @@ export class TrajectoryBinding {
   ): void {
     this.enabled = enabled;
     this.format = format;
-    this.overlay?.setBinding(this, format, enabled);
+    this.overlay?.setBinding(
+      this,
+      format,
+      enabled
+    );
   }
 
   /**
-   * 转发当前视图采样；注销或停用后忽略。
+   * Forwards current-view samples unless disabled or invalidated.
    */
   submit(
     frame: InteractionFrame
@@ -94,7 +102,7 @@ export class TrajectoryBinding {
   }
 
   /**
-   * 注销绑定并释放视图交互资源，不允许旧引用重新挂载。
+   * Invalidates the binding and releases view interaction, preventing old references from reattaching.
    */
   invalidate(): void {
     this.valid = false;

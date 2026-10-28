@@ -9,93 +9,93 @@
 //
 
 /**
- * 上下行视频统计共用的媒体指标；缺失或无效指标为 undefined。
+ * Shared uplink/downlink media metrics. Missing or invalid metrics are undefined.
  */
 interface VideoStatistics {
 
   /**
-   * 视频实际宽度，单位为像素；本地为发送尺寸，远端为接收尺寸。
+   * The actual width, in pixels: sent dimensions locally and received dimensions remotely.
    */
   readonly width?: number;
 
   /**
-   * 视频实际高度，单位为像素；本地为发送尺寸，远端为接收尺寸。
+   * The actual height, in pixels: sent dimensions locally and received dimensions remotely.
    */
   readonly height?: number;
 
   /**
-   * 实际码率，单位 kbps。
+   * The actual bitrate, in kbps.
    */
   readonly bitrateKbps?: number;
 }
 
 /**
- * 本地视频流的上行运行统计。
+ * Runtime statistics for local outgoing video.
  */
 export interface UplinkVideoStatistics extends VideoStatistics {
 
   /**
-   * 实际采集帧率，单位 fps。
+   * The actual capture frame rate, in fps.
    */
   readonly captureFrameRate?: number;
 
   /**
-   * 实际编码帧率，单位 fps；厂商未提供时为空，不以发送帧率替代。
+   * The actual encoding frame rate, in fps; unavailable values are not replaced with send rate.
    */
   readonly encodeFrameRate?: number;
 
   /**
-   * 实际发送帧率，单位 fps。
+   * The actual send frame rate, in fps.
    */
   readonly sendFrameRate?: number;
 
   /**
-   * 本端到 RTC 云端的视频上行丢包率，范围为 0～100，单位 %。
+   * The local-to-RTC-cloud uplink video loss, from 0 to 100 percent.
    */
   readonly packetLossPercent?: number;
 }
 
 /**
- * undefined 表示当前没有可用统计（尚未发布、断开或停止）。
+ * Receives uplink snapshots; undefined means unpublished, stopped, or disconnected media.
  */
 export type UplinkVideoStatisticsListener = (
   statistics: UplinkVideoStatistics | undefined
 ) => void;
 
 /**
- * 一路远端主视频流的接收统计。
+ * Reception statistics for one remote main-video stream.
  */
 export interface DownlinkVideoStatistics extends VideoStatistics {
 
   /**
-   * RTC 用户标识。
+   * The RTC user ID.
    */
   readonly userID: string;
 
   /**
-   * 实际解码帧率，单位 fps。
+   * The actual decoding frame rate, in fps.
    */
   readonly decodeFrameRate?: number;
 
   /**
-   * RTC 渲染帧率，单位 fps。
+   * The RTC rendering frame rate, in fps.
    */
   readonly renderFrameRate?: number;
 
   /**
-   * RTC 云端到本端 SDK 的视频下行丢包率，范围为 0～100，单位 %。
+   * The RTC-cloud-to-local downlink video loss, from 0 to 100 percent.
    */
   readonly packetLossPercent?: number;
 
   /**
-   * RTC 媒体端到端延迟估算值，单位 ms；不代表完整 AI 处理链路耗时。
-   * 采用各厂商原生口径，Agora end2EndDelay 不包含编码与解码耗时。
+   * The provider's estimated media E2E delay, in milliseconds, not the complete AI processing latency.
+   * Agora end2EndDelay excludes encoding and decoding time.
    */
   readonly endToEndDelayMs?: number;
 }
 
 /**
- * undefined 表示当前结果流没有统计或已被清理。
+ * Receives downlink snapshots; undefined means the result stream has no statistics or was cleared.
  */
 export type DownlinkVideoStatisticsListener = (
   statistics: DownlinkVideoStatistics | undefined

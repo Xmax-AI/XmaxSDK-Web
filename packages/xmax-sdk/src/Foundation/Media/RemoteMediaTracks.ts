@@ -9,27 +9,27 @@
 //
 
 /**
- * 当前结果流的原始媒体轨，仅借用，不转移 RTC 轨道所有权。
+ * Original result-stream tracks borrowed without transferring RTC track ownership.
  */
 export interface RemoteMediaTracks {
 
   /**
-   * 生成任务的绑定标识，用于隔离同一 RTC 轨上的不同任务。
+   * The task binding ID separating tasks that reuse the same RTC tracks.
    */
   readonly bindingID: string;
 
   /**
-   * 实际结果流的 RTC 用户。
+   * The RTC user publishing the result stream.
    */
   readonly userID: string;
 
   /**
-   * 订阅到的远端原始视频轨。
+   * The subscribed original remote video track.
    */
   readonly videoTrack: MediaStreamTrack;
 
   /**
-   * 播放音量处理前的远端音轨；音频尚未发布或没有音轨时为空。
+   * The remote audio track before playback volume processing; absent until audio is published.
    */
   readonly audioTrack?: MediaStreamTrack;
 }

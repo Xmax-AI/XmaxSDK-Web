@@ -9,17 +9,17 @@
 //
 
 /**
- * 视频内容在渲染容器中的显示模式。
+ * Video layout within a rendering container.
  */
 export enum VideoContentMode {
 
   /**
-   * 等比完整显示，允许容器留空。
+   * Shows the entire image proportionally, allowing empty container space.
    */
   fit = "fit",
 
   /**
-   * 等比铺满容器，允许裁剪画面。
+   * Fills the container proportionally, allowing image cropping.
    */
   fill = "fill",
 }

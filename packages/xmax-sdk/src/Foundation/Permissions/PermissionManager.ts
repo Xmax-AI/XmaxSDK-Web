@@ -13,25 +13,29 @@ import { XmaxLogger } from "../Logging/XmaxLogger";
 import type { PermissionManaging } from "./PermissionManaging";
 
 /**
- * Web 权限管理。
+ * Preflights browser media permissions.
  *
- * Web 上权限通过 getUserMedia 隐式申请；这里用 Permissions API 做预检
- * （Safari 对 camera/microphone 查询支持不完整，查询不可用时跳过预检，
- * 由采集阶段的 DOMException 映射兜底）。
+ * getUserMedia requests permission during capture. Unsupported Permissions API queries are skipped,
+ * leaving capture-time DOMException mapping to report failures.
  */
 export class PermissionManager implements PermissionManaging {
 
   /**
-   * 确保相机权限可用。
-   * @throws 权限被拒绝或浏览器不支持媒体采集时抛出 `cameraPermissionDenied`。
+   * Checks camera permission availability.
+   *
+   * @throws Rejects with cameraPermissionDenied if permission is denied or capture is unsupported.
    */
   async ensureCameraPermission(): Promise<void> {
-    await this.ensurePermission("camera", XmaxErrorCode.cameraPermissionDenied);
+    await this.ensurePermission(
+      "camera",
+      XmaxErrorCode.cameraPermissionDenied
+    );
   }
 
   /**
-   * 确保麦克风权限可用。
-   * @throws 权限被拒绝或浏览器不支持媒体采集时抛出 `microphonePermissionDenied`。
+   * Checks microphone permission availability.
+   *
+   * @throws Rejects with microphonePermissionDenied if permission is denied or capture is unsupported.
    */
   async ensureMicrophonePermission(): Promise<void> {
     await this.ensurePermission(
@@ -41,10 +45,10 @@ export class PermissionManager implements PermissionManaging {
   }
 
   /**
-   * 通过 Permissions API 预检指定设备权限。
+   * Preflights device permission through the Permissions API.
    *
-   * @param name 设备权限名称。
-   * @param deniedCode 权限被拒绝时抛出的错误码。
+   * @param name - The media permission name.
+   * @param deniedCode - The error code for denied permission.
    */
   private async ensurePermission(
     name: "camera" | "microphone",
@@ -62,7 +66,7 @@ export class PermissionManager implements PermissionManaging {
       if (!permissions?.query) {
         return;
       }
-      // TS 标准库未包含 camera/microphone 描述名，按运行时能力调用。
+      // Query media permissions by runtime capability rather than DOM type-library coverage.
       const status = await permissions.query({
         name: name as PermissionName,
       });
@@ -76,7 +80,7 @@ export class PermissionManager implements PermissionManaging {
       if (error instanceof XmaxError) {
         throw error;
       }
-      // 浏览器不支持该权限查询（如部分 Safari 版本），跳过预检。
+      // Skip unsupported browser permission queries.
       XmaxLogger.permission.debug(
         () => `Permission query for ${name} is unavailable; skip pre-check`,
       );

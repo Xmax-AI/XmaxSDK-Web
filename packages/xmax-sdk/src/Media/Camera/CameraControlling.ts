@@ -15,54 +15,56 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 
 /**
- * 通知摄像头预览就绪，并提供异步处理时检查该预览仍有效的能力。
+ * Receives camera-preview readiness with a validity check for asynchronous handling.
  */
 export type CameraPreviewReadyHandler = (
   isCurrent: () => boolean
 ) => void;
 
 /**
- * 定义本地摄像头流、麦克风采集和预览资源管理能力。
+ * Local camera, microphone configuration, and preview resource management.
  */
 export interface CameraControlling {
 
   /**
-   * 当前本地相机视频轨道；尚未创建或已停止时为空。
+   * The active local camera track; undefined before creation or after stop.
    */
   readonly currentTrack?: RealtimeVideoTrack;
 
   /**
-   * 当前相机流是否配置为使用麦克风。
+   * Whether the current camera source requests microphone input.
    */
   readonly useMicrophone: boolean;
 
   /**
-   * 当前相机流是否启用发布前的预热等待。
+   * Whether pre-publication camera warmup is enabled.
    */
   readonly isFrameValidationEnabled: boolean;
 
   /**
-   * 发布前等待当前相机预热完成（固定 200ms）；取消或轨道被替换时拒绝。
+   * Waits for the fixed 200 ms warmup, rejecting cancellation or track replacement.
    */
   waitForValidCameraFrame(
     signal: AbortSignal
   ): Promise<void>;
 
   /**
-   * 设置当前相机流的一次性内部就绪处理；条件为已收到有效帧且预览已绑定。
+   * Sets one-shot readiness requiring a valid frame and an attached preview.
    */
   setPreviewReadyHandler(
     handler?: CameraPreviewReadyHandler
   ): void;
 
   /**
-   * 创建并启动本地相机流。
-   * @param options.videoFormat 旋转后的目标规格，尺寸按模型规则解析。
-   * @param options.position 前置或后置摄像头。
-   * @param options.useMicrophone 是否采集并发布麦克风音频。
-   * @param options.rotation 顺时针旋转角度，默认 0；非零角度目前仅支持 Agora。
-   * @param options.enableFrameValidation 是否等待相机预热，默认 true；切换设备和重新连接时保留。
-   * @throws 已有活动相机流、格式无效、权限不足或采集启动失败时抛出错误。
+   * Creates and starts local camera media.
+   *
+   * @param options.videoFormat - The post-rotation format, resolved by model rules.
+   * @param options.position - The camera position.
+   * @param options.useMicrophone - Whether to capture and publish microphone audio.
+   * @param options.rotation - Clockwise rotation; defaults to 0. Nonzero values currently require Agora.
+   * @param options.enableFrameValidation - Whether to wait for warmup; defaults to true and persists
+   * across switching and reconnection.
+   * @throws Rejects for active capture, invalid settings, denied permission, or capture-start failure.
    */
   createLocalCameraStream(
     options: {
@@ -75,20 +77,22 @@ export interface CameraControlling {
   ): Promise<RealtimeMediaStream>;
 
   /**
-   * 停止相机和麦克风采集，并释放当前轨道及本地预览资源。
+   * Stops camera and microphone capture and releases the track and local preview.
    */
   stopLocalCameraStream(): Promise<void>;
 
   /**
-   * 更新摄像头尺寸、采集帧率和编码元数据，保留 SDK 轨道与预览绑定。
+   * Updates camera dimensions, frame rate, and encoding metadata while retaining the SDK track and
+   * preview binding.
    */
   updateVideoFormat(
     videoFormat: RealtimeVideoFormat
   ): Promise<void>;
 
   /**
-   * 在前置和后置摄像头之间切换，保留当前视频轨道。
-   * @throws 相机流尚未启动或设备切换失败时抛出错误。
+   * Switches cameras while retaining the SDK track.
+   *
+   * @throws Rejects without active capture or if switching fails.
    */
   switchCamera(): Promise<RealtimeMediaStream>;
 }

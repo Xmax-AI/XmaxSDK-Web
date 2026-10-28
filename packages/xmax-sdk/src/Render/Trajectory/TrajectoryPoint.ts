@@ -9,22 +9,22 @@
 //
 
 /**
- * 单次按下到释放期间稳定的轨迹标识，不依赖浏览器复用的 pointerId。
+ * A press-to-release trajectory ID independent of browser pointer-ID reuse.
  */
 export type TrajectoryID = number;
 
 /**
- * 供视觉效果使用的触点；location 为视口 CSS 像素，timestamp 为毫秒。
+ * A visual-effect pointer sample, using CSS pixels for location and milliseconds for time.
  */
 export interface TrajectoryPoint {
 
   /**
-   * 同一触点在连续采样期间保持不变的轨迹标识。
+   * The ID retained across samples of the same trajectory.
    */
   readonly id: TrajectoryID;
 
   /**
-   * 触点在视口中的位置，单位为 CSS 像素。
+   * The pointer's viewport position, in CSS pixels.
    */
   readonly location: Readonly<{
     x: number;
@@ -32,7 +32,7 @@ export interface TrajectoryPoint {
   }>;
 
   /**
-   * 触点在视口中的归一化位置，横纵范围为 0–1。
+   * The normalized viewport position, with each coordinate from 0 to 1.
    */
   readonly normalizedLocation: Readonly<{
     x: number;
@@ -40,7 +40,7 @@ export interface TrajectoryPoint {
   }>;
 
   /**
-   * 触点采样时的单调时钟时间，单位为毫秒。
+   * The monotonic sampling time, in milliseconds.
    */
   readonly timestamp: number;
 }

@@ -21,171 +21,293 @@ import { ExternalFrameSink } from "./ExternalFrameSink";
 import type { RealtimeExternalVideoSource } from "./RealtimeExternalVideoSource";
 
 /**
- * 一次外部源绑定及 SDK 创建的媒体资源。
+ * An external-source binding and its SDK-owned output resources.
  */
 interface ExternalBinding {
 
   /**
-   * 接入方源与生命周期取消。
+   * The source owned by your app.
    */
   source: RealtimeExternalVideoSource;
+
+  /**
+   * Cancels setup and asynchronous work for this binding.
+   */
   abort: AbortController;
 
   /**
-   * SDK 拥有的视频输出、可选音频和输入端。
+   * The Canvas holding SDK video output.
    */
   canvas: HTMLCanvasElement;
+
+  /**
+   * The SDK-owned stream captured from the output Canvas.
+   */
   stream: MediaStream;
+
+  /**
+   * The video track exposed for preview and publication.
+   */
   track: RealtimeVideoTrack;
+
+  /**
+   * The PCM output graph created when the source declares audio.
+   */
   audio?: ExternalAudioFrameSource;
+
+  /**
+   * The frame receiver invalidated when this binding ends.
+   */
   sink?: ExternalFrameSink;
 
   /**
-   * 预览目标和轨道结束通知。
+   * The views previewing this binding.
    */
   targets: Set<VideoRenderTarget>;
+
+  /**
+   * The output-track end listener removed during cleanup.
+   */
   onEnded?: () => void;
 }
 
 /**
- * 外部帧源的绑定、预览与释放；不拥有接入方采集设备和输入帧。
+ * Binds, previews, and releases external frame sources without owning app capture devices or original
+ * frames.
  */
 export class ExternalFrameSourceController {
 
   /**
-   * 包含仍在准备的源，防止并发覆盖。
+   * The active or preparing binding, preventing concurrent replacement.
    */
   private binding?: ExternalBinding;
 
   /**
-   * 注入不可恢复错误的生命周期通知。
+   * Creates a controller with a terminal source-failure callback.
    */
-  constructor(private readonly onError: (error: XmaxError) => void) {}
+  constructor(
+    private readonly onError: (
+      error: XmaxError
+    ) => void
+  ) { }
 
   /**
-   * 是否持有准备中或已绑定的源。
+   * Whether a source is preparing or bound.
    */
   get isActive(): boolean {
     return this.binding !== undefined;
   }
 
   /**
-   * 可预览、发布的视频轨。
+   * The SDK video track available for preview and publication.
    */
   get currentTrack(): RealtimeVideoTrack | undefined {
     return this.binding?.track;
   }
 
   /**
-   * 源声明音频时创建的可发布音轨。
+   * The publishable audio track created when the source declares audio.
    */
   get audioTrack(): MediaStreamTrack | undefined {
     return this.binding?.audio?.track;
   }
 
   /**
-   * 准备媒体输出后调用 source.start；不等待首帧，失败或取消时调用 stop 解绑。
+   * Prepares output and calls source.start without waiting for a frame, stopping the binding on
+   * cancellation or failure.
    */
-  async create(source: RealtimeExternalVideoSource, media: MediaServicing, signal: AbortSignal): Promise<RealtimeMediaStream> {
+  async create(
+    source: RealtimeExternalVideoSource,
+    media: MediaServicing,
+    signal: AbortSignal
+  ): Promise<RealtimeMediaStream> {
     if (this.binding) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Close the current external frame source first");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Close the current external frame source first"
+      );
     }
     if (!source || typeof source.start !== "function" || typeof source.stop !== "function" ||
       (source.hasAudio !== undefined && typeof source.hasAudio !== "boolean")) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "A valid external video source is required");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "A valid external video source is required"
+      );
     }
+
     source.videoFormat.validate();
-    const size = media.resolveMediaSize(source.videoFormat, "external");
-    const sourceFormat = source.videoFormat.resized(source.videoFormat.width, source.videoFormat.height);
-    const format = sourceFormat.resized(size.width, size.height);
+    const size = media.resolveMediaSize(
+      source.videoFormat,
+      "external"
+    );
+    const sourceFormat = source.videoFormat.resized(
+      source.videoFormat.width,
+      source.videoFormat.height
+    );
+    const format = sourceFormat.resized(
+      size.width,
+      size.height
+    );
     if (signal.aborted) {
-      throw new XmaxError(XmaxErrorCode.cancelled, "External source creation cancelled");
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "External source creation cancelled"
+      );
     }
     if (typeof document === "undefined" || typeof VideoFrame === "undefined") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "External frames require a browser with VideoFrame support");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "External frames require a browser with VideoFrame support"
+      );
     }
+
     const canvas = document.createElement("canvas");
     canvas.width = size.width;
     canvas.height = size.height;
-    const context = canvas.getContext("2d", { alpha: false });
+    const context = canvas.getContext(
+      "2d",
+      { alpha: false }
+    );
     if (!context || typeof canvas.captureStream !== "function") {
-      throw new XmaxError(XmaxErrorCode.mediaError, "Canvas video capture is unavailable");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Canvas video capture is unavailable"
+      );
     }
     const stream = canvas.captureStream(format.fps);
     const native = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
     if (!native || native.readyState !== "live") {
       stream.getTracks().forEach(track => track.stop());
-      throw new XmaxError(XmaxErrorCode.mediaError, "Canvas did not provide a live external video track");
+      throw new XmaxError(
+        XmaxErrorCode.mediaError,
+        "Canvas did not provide a live external video track"
+      );
     }
-    const track = new RealtimeVideoTrack({ id: "external-frames", videoFormat: format });
+
+    const track = new RealtimeVideoTrack({
+      id: "external-frames",
+      videoFormat: format
+    });
     track.mediaStreamTrack = native;
-    const binding: ExternalBinding = { source, canvas, stream, track, abort: new AbortController(), targets: new Set() };
+    const binding: ExternalBinding = {
+      source,
+      canvas,
+      stream,
+      track,
+      abort: new AbortController(),
+      targets: new Set()
+    };
     this.binding = binding;
+
     const abort = () => binding.abort.abort();
-    signal.addEventListener("abort", abort, { once: true });
+    signal.addEventListener(
+      "abort",
+      abort,
+      { once: true }
+    );
     if (signal.aborted) {
       abort();
     }
+
     try {
       if (source.hasAudio) {
         binding.audio = new ExternalAudioFrameSource();
-        await binding.audio.prepare(binding.abort.signal, error => {
-          if (binding.sink) {
-            binding.sink.reportError(error);
-          } else {
-            binding.abort.abort();
-            if (this.binding === binding) {
-              this.onError(error);
+        await binding.audio.prepare(
+          binding.abort.signal,
+          error => {
+            if (binding.sink) {
+              binding.sink.reportError(error);
+            } else {
+              binding.abort.abort();
+              if (this.binding === binding) {
+                this.onError(error);
+              }
             }
           }
-        });
+        );
       }
-      const sink = new ExternalFrameSink(format, sourceFormat, context, native, binding.audio, error => {
-        if (this.binding === binding) {
-          this.onError(error);
-        }
-      });
-      binding.sink = sink;
-      binding.onEnded = () => sink.reportError(new XmaxError(XmaxErrorCode.mediaError, "External video output ended"));
-      native.addEventListener("ended", binding.onEnded);
-      VideoRenderRegistry.register(track, {
-        attachHandler: view => {
-          if (this.binding !== binding) {
-            return;
+
+      const sink = new ExternalFrameSink(
+        format,
+        sourceFormat,
+        context,
+        native,
+        binding.audio,
+        error => {
+          if (this.binding === binding) {
+            this.onError(error);
           }
-          view.isMirrored = false;
-          view.setMediaStream(stream);
-          binding.targets.add(view);
-        },
-        detachHandler: view => {
-          binding.targets.delete(view);
-          view.setMediaStream(null);
-        },
-      });
-      await waitForMediaOperation(Promise.resolve(source.start(sink)), binding.abort.signal, 10_000, "External source startup");
+        }
+      );
+      binding.sink = sink;
+      binding.onEnded = () => sink.reportError(new XmaxError(
+        XmaxErrorCode.mediaError,
+        "External video output ended"
+      ));
+      native.addEventListener(
+        "ended",
+        binding.onEnded
+      );
+
+      VideoRenderRegistry.register(
+        track,
+        {
+          attachHandler: view => {
+            if (this.binding !== binding) {
+              return;
+            }
+            view.isMirrored = false;
+            view.setMediaStream(stream);
+            binding.targets.add(view);
+          },
+          detachHandler: view => {
+            binding.targets.delete(view);
+            view.setMediaStream(null);
+          },
+        }
+      );
+
+      await waitForMediaOperation(
+        Promise.resolve(source.start(sink)),
+        binding.abort.signal,
+        10_000,
+        "External source startup"
+      );
       if (this.binding !== binding || binding.abort.signal.aborted || !sink.isRequestingFrames) {
-        throw new XmaxError(XmaxErrorCode.cancelled, "External source is no longer attached");
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "External source is no longer attached"
+        );
       }
-      return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
+
+      return new RealtimeMediaStream({
+        id: StreamID.local,
+        videoTrack: track
+      });
     } catch (error) {
       if (this.binding === binding) {
         await this.stop();
       }
       throw XmaxError.from(error);
     } finally {
-      signal.removeEventListener("abort", abort);
+      signal.removeEventListener(
+        "abort",
+        abort
+      );
     }
   }
 
   /**
-   * 跟随 RTC 实际发布状态，不发布时丢弃音频。
+   * Consumes audio only while RTC publication is active.
    */
-  setAudioPublished(published: boolean): void {
+  setAudioPublished(
+    published: boolean
+  ): void {
     this.binding?.audio?.setPublished(published && this.binding.sink?.isRequestingFrames === true);
   }
 
   /**
-   * 释放连接或本地媒体前同步拒绝后续帧。
+   * Synchronously rejects further frames before connection or media resources are released.
    */
   invalidate(): void {
     this.binding?.sink?.invalidate();
@@ -193,7 +315,7 @@ export class ExternalFrameSourceController {
   }
 
   /**
-   * 先使 sink 失效并释放 SDK 输出，再有界等待接入方停止回调。
+   * Invalidates the sink and releases SDK output before a bounded wait for the app's stop callback.
    */
   async stop(): Promise<void> {
     const binding = this.binding;
@@ -205,7 +327,10 @@ export class ExternalFrameSourceController {
     binding.sink?.invalidate();
     const native = binding.track.mediaStreamTrack;
     if (binding.onEnded) {
-      native?.removeEventListener("ended", binding.onEnded);
+      native?.removeEventListener(
+        "ended",
+        binding.onEnded
+      );
     }
     VideoRenderRegistry.unregister(binding.track);
     binding.track.mediaStreamTrack = undefined;
@@ -213,7 +338,7 @@ export class ExternalFrameSourceController {
       try {
         view.setMediaStream(null);
       } catch {
-        // 单个视图失败不阻断其他预览和媒体资源清理。
+        // One view's failure must not prevent cleanup of other previews or media resources.
       }
     }
     binding.targets.clear();
@@ -222,7 +347,12 @@ export class ExternalFrameSourceController {
     binding.canvas.height = 0;
     const results = await Promise.allSettled([
       binding.audio?.close(),
-      waitForMediaOperation(Promise.resolve().then(() => binding.source.stop()), new AbortController().signal, 2000, "External source stop"),
+      waitForMediaOperation(
+        Promise.resolve().then(() => binding.source.stop()),
+        new AbortController().signal,
+        2000,
+        "External source stop"
+      ),
     ]);
     for (const result of results) {
       if (result.status === "rejected") {

@@ -12,41 +12,40 @@ import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
 /**
- * 视频轨道身份及初始媒体信息。
+ * A video track's identity and initial media metadata.
  */
 export interface RealtimeVideoTrackInit {
 
   /**
-   * 视频轨道标识。
+   * The video track ID.
    */
   id: string;
 
   /**
-   * 轨道当前使用的视频格式。
+   * The track's current video format.
    */
   videoFormat?: RealtimeVideoFormat;
 
   /**
-   * 本地相机轨道的摄像头位置。
+   * The camera position for a local camera track.
    */
   position?: CameraPosition;
 }
 
 /**
- * 实时视频轨道及其动态元数据。
+ * A realtime video track with mutable media metadata.
  *
- * Web 版本额外持有 `MediaStreamTrack` 句柄（SDK 内部使用），
- * 渲染层通过它把画面绑定到 `<video>` 元素。
+ * The internal MediaStreamTrack handle binds its media to an HTML video element.
  */
 export class RealtimeVideoTrack {
 
   /**
-   * 视频轨道标识。
+   * The video track ID.
    */
   readonly id: string;
 
   /**
-   * 动态元数据
+   * The current video format and camera position.
    */
   private metadata: {
     videoFormat?: RealtimeVideoFormat;
@@ -54,13 +53,13 @@ export class RealtimeVideoTrack {
   };
 
   /**
-   * SDK 内部：轨道对应的 Web 媒体轨。
-   * 本地轨道在采集启动后可用；远端轨道在订阅成功后可用。
+   * The underlying browser media track used internally by XmaxSDK. Available after local capture starts
+   * or remote subscription succeeds.
    */
   mediaStreamTrack?: MediaStreamTrack;
 
   /**
-   * 创建实时视频轨道。
+   * Creates a realtime video track.
    */
   constructor(
     init: RealtimeVideoTrackInit
@@ -73,21 +72,23 @@ export class RealtimeVideoTrack {
   }
 
   /**
-   * 当前视频轨道使用的视频格式。
+   * The video format currently associated with the track.
    */
   get videoFormat(): RealtimeVideoFormat | undefined {
     return this.metadata.videoFormat;
   }
 
   /**
-   * 本地相机轨道当前使用的摄像头位置。
+   * The camera position currently associated with a local camera track.
    */
   get position(): CameraPosition | undefined {
     return this.metadata.position;
   }
 
   /**
-   * 更新轨道视频格式。 @internal
+   * Updates the track's video format.
+   *
+   * @internal
    */
   updateVideoFormat(
     videoFormat: RealtimeVideoFormat
@@ -96,7 +97,9 @@ export class RealtimeVideoTrack {
   }
 
   /**
-   * 更新轨道摄像头位置。 @internal
+   * Updates the track's camera position.
+   *
+   * @internal
    */
   updatePosition(
     position: CameraPosition

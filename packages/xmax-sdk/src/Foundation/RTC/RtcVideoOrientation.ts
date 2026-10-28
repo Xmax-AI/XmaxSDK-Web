@@ -9,37 +9,35 @@
 //
 
 /**
- * RTC 视频方向环境参数；缺省时读取浏览器全局对象（可注入，测试用）。
+ * Replaceable browser orientation data, defaulting to the current browser environment.
  */
 export interface RtcOrientationEnvironment {
 
   /**
-   * 浏览器报告的用户代理字符串。
+   * The browser's User-Agent string.
    */
   userAgent?: string;
 
   /**
-   * 设备支持的最大同时触点数。
+   * The device's maximum simultaneous touch count.
    */
   maxTouchPoints?: number;
 
   /**
-   * `screen.orientation.type`，如 `"portrait-primary"`。
+   * The screen.orientation.type value, such as portrait-primary.
    */
   orientationType?: string;
 
   /**
-   * 旧式 `window.orientation` 角度；无 `orientationType` 时使用。
+   * The legacy window.orientation angle used when orientationType is unavailable.
    */
   orientationDegrees?: number;
 }
 
 /**
- * 判断当前是否为移动端竖屏。
- *
- * TRTC、Agora 与 VeRTC 的移动端竖屏采集、编码路径存在宽高转置行为。
- * 为让上行方向与请求一致，传给厂商 SDK 的尺寸需反向转置；
- * 业务请求尺寸和实际视频统计保持原样。
+ * Determines whether mobile portrait encoding requires transposed dimensions. TRTC, Agora, and VeRTC
+ * capture/encoding paths may transpose mobile portrait dimensions. Adapter dimensions compensate while
+ * business requests and reported statistics remain unchanged.
  */
 export function shouldTransposeRtcVideoSize(
   environment?: RtcOrientationEnvironment,
@@ -51,7 +49,7 @@ export function shouldTransposeRtcVideoSize(
     environment?.maxTouchPoints ??
     (typeof navigator === "undefined" ? 0 : navigator.maxTouchPoints ?? 0);
 
-  // 桌面模式 UA 的 iPad 通过触控点数识别。
+  // Identify desktop-User-Agent iPads by their touch capability.
   const mobile =
     /Android|webOS|iPhone|iPad|iPod|Mobile/i.test(userAgent) ||
     (/Macintosh/i.test(userAgent) && maxTouchPoints > 1);
@@ -77,7 +75,7 @@ export function shouldTransposeRtcVideoSize(
 }
 
 /**
- * 移动端竖屏时返回转置后的宽高，其余情况原样返回。
+ * Returns transposed dimensions for mobile portrait input, leaving other orientations unchanged.
  */
 export function rtcOrientedVideoSize(
   size: {
@@ -90,6 +88,9 @@ export function rtcOrientedVideoSize(
   height: number
 } {
   return shouldTransposeRtcVideoSize(environment)
-    ? { width: size.height, height: size.width }
+    ? {
+      width: size.height,
+      height: size.width
+    }
     : size;
 }

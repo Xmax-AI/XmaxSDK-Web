@@ -11,41 +11,43 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 首帧后保持视频播放，等待预热结束再渐入；不缓存或改写媒体帧。
+ * Keeps video playing through initial warmup before fade-in, without buffering or modifying frames.
  */
 export class RenderWarmupController {
 
   /**
-   * 预热配置与生命周期
+   * The configured warmup duration, in milliseconds.
    */
   private durationMs?: number;
 
   /**
-   * 当前等待或定时任务的取消句柄。
+   * The pending warmup timer.
    */
   private timer?: ReturnType<typeof setTimeout>;
 
   /**
-   * 是否已经开始渲染预热。
+   * Whether warmup has started.
    */
   private started = false;
 
   /**
-   * 是否已经完成本次渲染预热。
+   * Whether the current warmup has completed.
    */
   private completed = false;
 
   /**
-   * 下一次渐入动画的时长，单位为毫秒。
+   * The next fade-in duration, in milliseconds.
    */
   private currentFadeInDurationMs = 300;
 
   /**
-   * 创建视图预热控制器，渐入配置不改变首帧或预热完成的时机。
+   * Creates a presentation warmup controller; fade settings do not change first-frame or
+   * warmup-completion timing.
    *
-   * @param element 需要控制预热显隐和渐入的媒体显示层。
-   * @param fadeInDurationMs 预热完成后的渐入时长，单位为毫秒，默认 300；0 表示直接显示。
-   * @throws 时长为负数或非有限数值时抛出 invalidConfiguration。
+   * @param element - The media layer whose visibility and fade are controlled.
+   * @param fadeInDurationMs - Fade duration after warmup, in milliseconds; defaults to 300. Zero
+   * displays immediately.
+   * @throws An invalidConfiguration error for negative or nonfinite durations.
    */
   constructor(
     private readonly element: HTMLElement,
@@ -55,33 +57,36 @@ export class RenderWarmupController {
   }
 
   /**
-   * 当前配置的渐入时长，单位为毫秒。
+   * The configured fade-in duration, in milliseconds.
    */
   get fadeInDurationMs(): number {
     return this.currentFadeInDurationMs;
   }
 
   /**
-   * 更新下一次渐入时长，不修改正在播放的动画或首帧预热。
+   * Updates the next fade without changing an active animation or first-frame warmup.
    */
   set fadeInDurationMs(
     fadeInDurationMs: number
   ) {
     if (!Number.isFinite(fadeInDurationMs) || fadeInDurationMs < 0) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "fadeInDurationMs must be a finite non-negative number");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "fadeInDurationMs must be a finite non-negative number"
+      );
     }
     this.currentFadeInDurationMs = fadeInDurationMs;
   }
 
   /**
-   * 媒体内容是否仍在等待首帧或预热完成。
+   * Whether presentation is waiting for a first frame or warmup completion.
    */
   get isPending(): boolean {
     return this.durationMs !== undefined && !this.completed;
   }
 
   /**
-   * 为新媒体隐藏画面；undefined 表示直接显示，不启用预热。
+   * Hides new media during warmup; undefined displays immediately without warmup.
    */
   prepare(
     durationMs?: number
@@ -98,7 +103,7 @@ export class RenderWarmupController {
   }
 
   /**
-   * 首帧就绪后开始一次性预热，结束时通知并渐入画面。
+   * Starts one warmup after first-frame readiness, then notifies and fades in.
    */
   start(
     onCompleted: () => void
@@ -108,20 +113,23 @@ export class RenderWarmupController {
     }
 
     this.started = true;
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      this.completed = true;
-      const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      this.element.style.transition = reduceMotion || this.fadeInDurationMs === 0
-        ? "none" : `opacity ${this.fadeInDurationMs}ms ease-in-out`;
-      this.element.style.opacity = "1";
-      this.element.style.pointerEvents = "";
-      onCompleted();
-    }, this.durationMs);
+    this.timer = setTimeout(
+      () => {
+        this.timer = undefined;
+        this.completed = true;
+        const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        this.element.style.transition = reduceMotion || this.fadeInDurationMs === 0
+          ? "none" : `opacity ${this.fadeInDurationMs}ms ease-in-out`;
+        this.element.style.opacity = "1";
+        this.element.style.pointerEvents = "";
+        onCompleted();
+      },
+      this.durationMs
+    );
   }
 
   /**
-   * 换流或卸载时取消预热和渐入，防止旧任务显示新画面。
+   * Cancels warmup and fade during replacement or unmounting so obsolete tasks cannot reveal new media.
    */
   reset(): void {
     clearTimeout(this.timer);

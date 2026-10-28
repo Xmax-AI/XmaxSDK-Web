@@ -9,17 +9,17 @@
 //
 
 /**
- * SDK 内部媒体流标识。
+ * Internal media stream identifiers.
  */
 export enum StreamID {
 
   /**
-   * 本地输入流。
+   * The local input stream.
    */
   local = "stream0",
 
   /**
-   * 远端生成结果流。
+   * The remote generation result stream.
    */
   remote = "stream1",
 }

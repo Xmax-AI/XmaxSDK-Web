@@ -13,27 +13,30 @@ import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * 创建实时 Manager 所需的业务配置。
+ * The configuration used to create a realtime manager.
  */
 export class RealtimeConfiguration {
 
   /**
-   * 实时生成使用的模型；未知名称原样透传到测试环境，媒体与 RTC 默认配置同 X2.1。
+   * The generation model. Custom IDs are forwarded unchanged to the development service and use X2.1
+   * media and RTC defaults.
    */
   readonly model: RealtimeModelName;
 
   /**
-   * 实时连接使用的 RTC 提供方，默认取模型支持列表的首项，创建后不可切换。
+   * The RTC provider, defaulting to the first provider supported by the model. It cannot change after
+   * creation.
    */
   readonly provider: RtcProvider;
 
   /**
-   * 是否自动调整上下行档位，默认 true。关闭时从 L1 启动且不读写历史档位，仍支持手动调档。
+   * Whether to adapt uplink and downlink quality automatically; defaults to true. When disabled, startup
+   * uses L1 without reading or updating quality history. Manual adjustment remains available.
    */
   readonly isAdaptiveQualityEnabled: boolean;
 
   /**
-   * 补全 RTC 和自动调档默认值，并校验模型名称与 RTC 提供方配置。
+   * Creates a realtime configuration and validates the model and RTC provider.
    */
   constructor(
     init: {
@@ -45,7 +48,10 @@ export class RealtimeConfiguration {
     const providers = supportedRtcProviders(init.model);
     this.provider = init.provider ?? providers[0]!;
     if (!Object.values(RtcProvider).includes(this.provider)) {
-      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Unsupported RTC provider");
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Unsupported RTC provider"
+      );
     }
     if (!providers.includes(this.provider)) {
       throw new XmaxError(

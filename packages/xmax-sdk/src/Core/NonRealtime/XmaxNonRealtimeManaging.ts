@@ -9,36 +9,41 @@
 //
 
 import type {
-  NonRealtimeTask, NonRealtimeTaskOptions, NonRealtimeTaskListOptions, NonRealtimeTaskPage,
+  NonRealtimeTask,
+  NonRealtimeTaskOptions,
+  NonRealtimeTaskListOptions,
+  NonRealtimeTaskPage,
 } from "../../Service/NonRealtime/NonRealtimeTask";
 
 /**
- * 本地任务等待选项；所有时间单位均为毫秒。
+ * Local task-waiting options. All durations are in milliseconds.
  */
 export interface NonRealtimeWaitOptions {
 
   /**
-   * 成功查询后等待多久再查询，默认 2000；必须为正数。
+   * The positive delay after each successful query; defaults to 2000.
    */
   intervalMs?: number;
 
   /**
-   * 总等待时限，必须为正数；省略时持续等待直至终态或取消。
+   * The positive overall timeout; omission waits until a terminal state or cancellation.
    */
   timeoutMs?: number;
 
   /**
-   * 连续瞬时查询错误允许重试的次数，默认 3；成功查询后重置，0 表示不重试。
+   * The allowed consecutive transient failures, reset after a successful query; defaults to 3. Zero
+   * disables retries.
    */
   maxConsecutiveRetries?: number;
 
   /**
-   * 停止轮询及正在进行的查询，不取消服务端任务或退款。
+   * Cancels local polling and pending queries without cancelling the server task or refunding charges.
    */
   signal?: AbortSignal;
 
   /**
-   * 每次成功查询的任务快照（含终态），不是生成百分比；回调异常不影响轮询。
+   * Receives every successful query snapshot, including terminal states, not a generation percentage.
+   * Observer failures do not affect polling.
    */
   onTaskUpdated?: (
     task: NonRealtimeTask
@@ -46,20 +51,21 @@ export interface NonRealtimeWaitOptions {
 }
 
 /**
- * 非实时视频任务能力；各任务和等待操作相互独立，不维护唯一的当前任务。
+ * Independent non-realtime tasks and wait operations, without a single current task.
  */
 export interface XmaxNonRealtimeManaging {
 
   /**
-   * 提交并立即返回任务；不等待生成，不自动上传资源，也不自动重试提交请求。
-   * 超时或响应解析失败不能证明服务端未创建任务，重复提交可能再次扣费。
+   * Submits a task without waiting for generation, uploading resources, or retrying submission. A
+   * timeout or invalid response does not prove that task creation failed; submitting again may incur
+   * another charge.
    */
   submitTask(
     options: NonRealtimeTaskOptions
   ): Promise<NonRealtimeTask>;
 
   /**
-   * 查询单个任务；服务端 error 状态原样返回，不作为 HTTP 查询失败抛出。
+   * Queries one task, returning server error states without rejecting the HTTP query.
    */
   getTask(
     taskUid: string,
@@ -69,22 +75,24 @@ export interface XmaxNonRealtimeManaging {
   ): Promise<NonRealtimeTask>;
 
   /**
-   * 批量查询最多 100 个 ID，去重后按请求顺序返回；任一任务无权限或不存在则整体失败。
+   * Queries up to 100 task IDs, deduplicated and returned in request order. The whole query fails if any
+   * task is missing or inaccessible.
    */
   getTasks(
     taskUids: readonly string[]
   ): Promise<readonly NonRealtimeTask[]>;
 
   /**
-   * 查询任务列表；默认第一页、每页 10 条，最多 100 条。
+   * Lists tasks, defaulting to page 1 with 10 items; at most 100 items per page.
    */
   listTasks(
     options?: NonRealtimeTaskListOptions
   ): Promise<NonRealtimeTaskPage>;
 
   /**
-   * 串行轮询直到 completed 且结果 URL 可用；任务 error 时抛出 NonRealtimeTaskError。
-   * 超时、取消只停止本地等待，之后可使用同一任务 ID 继续查询或等待。
+   * Polls serially until the task is completed and its result URL is available. A task error rejects
+   * with NonRealtimeTaskError. Timeout or cancellation ends only this local wait; the same task ID
+   * remains queryable.
    */
   waitForCompletion(
     taskUid: string,

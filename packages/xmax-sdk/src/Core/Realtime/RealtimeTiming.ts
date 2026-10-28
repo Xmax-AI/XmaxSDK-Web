@@ -15,38 +15,40 @@ import type {
 import { XmaxLogger, XmaxLoggerOption } from "../../Foundation/Logging/XmaxLogger";
 
 /**
- * @internal 观察媒体源首轮启动耗时，提供快照并在预热完成后输出性能日志。
- * 不参与生成流程的状态提交或等待。
+ * Observes a media source's initial startup and logs performance after render warmup. Does not commit
+ * lifecycle state or control generation waits.
+ *
+ * @internal
  */
 export class RealtimeTiming {
 
   /**
-   * 统计快照与观察者
+   * The immutable startup timing snapshot.
    */
   private snapshot: RealtimeTimingSnapshot = Object.freeze({});
 
   /**
-   * 启动耗时快照的业务监听器。
+   * The app's startup timing listener.
    */
   private listener?: RealtimeTimingListener;
 
   /**
-   * 当前启动周期与计时起点
+   * The revision identifying the current measurement cycle.
    */
   private sequence = 0;
 
   /**
-   * 当前启动周期是否仍在记录耗时。
+   * Whether the current cycle still accepts measurements.
    */
   private active = false;
 
   /**
-   * 当前计时起点，使用单调时钟的毫秒值。
+   * The startup origin on the monotonic clock, in milliseconds.
    */
   private startedAt = 0;
 
   /**
-   * 设置统计监听器并立即回放当前快照；传 undefined 取消监听。
+   * Sets the listener and immediately replays the snapshot; undefined removes it.
    */
   setListener(
     listener?: RealtimeTimingListener
@@ -56,15 +58,18 @@ export class RealtimeTiming {
   }
 
   /**
-   * 开始新的启动周期并清空旧快照，返回记录相机创建完成的一次性回调。
+   * Resets startup timing and returns a one-shot camera-creation completion callback.
    */
   startCamera(): () => void {
     this.start();
-    return this.measure("cameraMs", this.startedAt);
+    return this.measure(
+      "cameraMs",
+      this.startedAt
+    );
   }
 
   /**
-   * 开始新的启动周期；非摄像头源不产生相机耗时。
+   * Starts a new measurement cycle. Non-camera sources do not record camera duration.
    */
   start(): void {
     this.sequence += 1;
@@ -76,50 +81,68 @@ export class RealtimeTiming {
   }
 
   /**
-   * 开始等待用户授权系统媒体权限，返回授权决定时调用的记录函数。
-   * 仅在系统弹出授权请求时使用；已授权或未弹窗不记录该阶段。
+   * Starts measuring media-permission confirmation and returns its completion callback.
    */
   startPermission(): () => void {
-    return this.measure("permissionMs", performance.now());
+    return this.measure(
+      "permissionMs",
+      performance.now()
+    );
   }
 
   /**
-   * 开始创建业务会话的计时。
+   * Starts timing session creation.
    */
   startSession(): () => void {
-    return this.measure("sessionMs", performance.now());
+    return this.measure(
+      "sessionMs",
+      performance.now()
+    );
   }
 
   /**
-   * 开始 RTC 适配器进房调用的计时。
+   * Starts timing the RTC adapter's room-join call.
    */
   startRtcJoin(): () => void {
-    return this.measure("rtcJoinMs", performance.now());
+    return this.measure(
+      "rtcJoinMs",
+      performance.now()
+    );
   }
 
   /**
-   * 开始发布本地流计时，返回发布完成时调用的记录函数。
+   * Starts timing local publication and returns its completion callback.
    */
   startPublish(): () => void {
-    return this.measure("publishMs", performance.now());
+    return this.measure(
+      "publishMs",
+      performance.now()
+    );
   }
 
   /**
-   * 开始等待远端首帧提交合成器，不包含后续渲染预热。
+   * Starts waiting for the first remote frame submitted to the compositor, excluding render warmup.
    */
   startFirstFrame(): () => void {
-    return this.measure("firstFrameMs", performance.now());
+    return this.measure(
+      "firstFrameMs",
+      performance.now()
+    );
   }
 
   /**
-   * 首帧就绪后开始渲染预热；结束时记录预热及实际总耗时，不含渐入动画。
+   * Starts render warmup after the first frame and records warmup and total duration when completed,
+   * excluding fade-in.
    */
   startRenderWarmup(): () => void {
-    return this.measure("renderWarmupMs", performance.now());
+    return this.measure(
+      "renderWarmupMs",
+      performance.now()
+    );
   }
 
   /**
-   * 冻结本轮结果，令尚未完成的回调失效；下一轮创建媒体源时重置。
+   * Freezes completed values and invalidates pending callbacks until the next media source.
    */
   cancel(): void {
     this.active = false;
@@ -127,7 +150,7 @@ export class RealtimeTiming {
   }
 
   /**
-   * 创建当前周期的一次性计时回调；周期失效或该阶段已记录时忽略调用。
+   * Creates a one-shot callback ignored after cycle invalidation or stage completion.
    */
   private measure(
     key: Exclude<keyof RealtimeTimingSnapshot, "totalMs">,
@@ -148,7 +171,10 @@ export class RealtimeTiming {
 
       if (key === "renderWarmupMs") {
         const snapshot = this.snapshot;
-        XmaxLogger.realtime.info(() => this.format(snapshot), XmaxLoggerOption.performance);
+        XmaxLogger.realtime.info(
+          () => this.format(snapshot),
+          XmaxLoggerOption.performance
+        );
       }
 
       this.notify();
@@ -156,32 +182,56 @@ export class RealtimeTiming {
   }
 
   /**
-   * 按快照口径格式化启动汇总，未完成或未启用的阶段显示占位符。
+   * Formats the startup snapshot, using placeholders for incomplete or disabled stages.
    */
   private format(
     snapshot: RealtimeTimingSnapshot
   ): string {
     const stages = [
-      [XmaxLogger.localized("摄像头启动：", "Camera Startup: "), snapshot.cameraMs],
-      [XmaxLogger.localized("媒体授权：", "Media Permission: "), snapshot.permissionMs],
-      [XmaxLogger.localized("创建会话：", "Session Creation: "), snapshot.sessionMs],
-      [XmaxLogger.localized("RTC 进房：", "RTC Room Join: "), snapshot.rtcJoinMs],
-      [XmaxLogger.localized("发布本地流：", "Local Stream Publication: "), snapshot.publishMs],
-      [XmaxLogger.localized("首帧到达：", "First Frame Arrival: "), snapshot.firstFrameMs],
-      [XmaxLogger.localized("渲染预热：", "Render Warmup: "), snapshot.renderWarmupMs],
+      [XmaxLogger.localized(
+        "摄像头启动：",
+        "Camera Startup: "
+      ), snapshot.cameraMs],
+      [XmaxLogger.localized(
+        "媒体授权：",
+        "Media Permission: "
+      ), snapshot.permissionMs],
+      [XmaxLogger.localized(
+        "创建会话：",
+        "Session Creation: "
+      ), snapshot.sessionMs],
+      [XmaxLogger.localized(
+        "RTC 进房：",
+        "RTC Room Join: "
+      ), snapshot.rtcJoinMs],
+      [XmaxLogger.localized(
+        "发布本地流：",
+        "Local Stream Publication: "
+      ), snapshot.publishMs],
+      [XmaxLogger.localized(
+        "首帧到达：",
+        "First Frame Arrival: "
+      ), snapshot.firstFrameMs],
+      [XmaxLogger.localized(
+        "渲染预热：",
+        "Render Warmup: "
+      ), snapshot.renderWarmupMs],
     ] as const;
 
     return [
       "实时生成启动耗时 (Realtime Generation Startup Timing)",
       `└─ ${XmaxLogger.localized("总耗时：", "Total Duration: ")}${this.duration(snapshot.totalMs)}`,
-      ...stages.map(([label, duration], index) =>
+      ...stages.map((
+        [label, duration],
+        index
+      ) =>
         `   ${index === stages.length - 1 ? "└─" : "├─"} ${label}${this.duration(duration)}`,
       ),
     ].join("\n");
   }
 
   /**
-   * 毫秒值保留一位小数，缺失或无效值显示占位符。
+   * Formats milliseconds to one decimal place, using a placeholder for missing or invalid values.
    */
   private duration(
     milliseconds?: number
@@ -194,14 +244,14 @@ export class RealtimeTiming {
   }
 
   /**
-   * 分发不可变快照；隔离同步和异步观察者异常，避免影响媒体生命周期。
+   * Delivers immutable snapshots while isolating synchronous and asynchronous observer failures.
    */
   private notify(): void {
     try {
-      // 异步监听器也允许使用；观察者异常不得影响媒体生命周期。
+      // Asynchronous observer failures must not affect the media lifecycle.
       void Promise.resolve(this.listener?.(this.snapshot)).catch(() => { });
     } catch {
-      // 同步观察者异常同样隔离。
+      // Synchronous observer failures are isolated as well.
     }
   }
 }

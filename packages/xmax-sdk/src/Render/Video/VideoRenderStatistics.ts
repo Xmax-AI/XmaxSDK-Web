@@ -9,22 +9,22 @@
 //
 
 /**
- * 单个视频视图最近采样窗口的呈现帧率，不代表屏幕实际刷新帧率。
+ * A view's recent presentation rate, not the display panel's physical refresh rate.
  */
 export interface VideoRenderStatistics {
 
   /**
-   * 按浏览器 presentedFrames 增量计数的视频呈现来源。
+   * The video presentation source, measured by presentedFrames increments.
    */
   readonly source: "video";
 
   /**
-   * 视频呈现帧率，单位 fps。
+   * The video presentation rate, in fps.
    */
   readonly frameRate: number;
 
   /**
-   * 原帧呈现帧率，单位 fps。
+   * The original-video presentation rate, in fps.
    */
   readonly originalFrameRate: number;
 }
