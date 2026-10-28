@@ -22,7 +22,7 @@ import type {
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { CameraPosition } from "../../Media/Camera/CameraPosition";
-import { XmaxEnvironment } from "../../Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../../../Core/XmaxEnvironment";
 import type { RtcManaging, RtcCameraCaptureOptions, RtcRoomMessageDelivery } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";

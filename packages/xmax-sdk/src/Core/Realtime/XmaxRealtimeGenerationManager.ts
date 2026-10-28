@@ -15,7 +15,7 @@ import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraPa
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { StreamControlling } from "../../Stream/StreamControlling";
 import type { RoomEventTargetSize } from "../../Stream/Room/RoomEvent";
-import { RealtimeCoordinator } from "./RealtimeCoordinator";
+import { XmaxRealtimeLifecycleManager } from "./XmaxRealtimeLifecycleManager";
 import type { InteractionControlling } from "../../Media/Interaction/InteractionControlling";
 import type { RenderControlling } from "../../Render/RenderControlling";
 
@@ -235,7 +235,7 @@ export class XmaxRealtimeGenerationManager {
       extraParams: options.extraParams,
     });
     if (this.activeTaskID !== taskID) {
-      throw RealtimeCoordinator.cancelledError();
+      throw XmaxRealtimeLifecycleManager.cancelledError();
     }
     this.currentContext = context;
     this.interactionController.startInteraction(
@@ -317,7 +317,7 @@ export class XmaxRealtimeGenerationManager {
       );
       const abort = () => {
         cleanup();
-        reject(RealtimeCoordinator.cancelledError());
+        reject(XmaxRealtimeLifecycleManager.cancelledError());
       };
 
       confirmation.then(

@@ -20,7 +20,7 @@ import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
-import { apiBaseURL, realtimeApiBaseURL, nonRealtimeApiBaseURL } from "../Foundation/Runtime/XmaxEnvironment";
+import { apiBaseURL, realtimeApiBaseURL, nonRealtimeApiBaseURL } from "./XmaxEnvironment";
 import { NonRealtimeTaskService } from "../Service/NonRealtime/NonRealtimeTaskService";
 import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
 import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";

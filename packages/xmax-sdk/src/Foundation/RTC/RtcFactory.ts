@@ -8,7 +8,7 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../../Core/XmaxEnvironment";
 import { AgoraRtcManager } from "./Agora/AgoraRtcManager";
 import { RtcProvider } from "./RtcProvider";
 import { TrtcRtcManager } from "./TRTC/TrtcRtcManager";

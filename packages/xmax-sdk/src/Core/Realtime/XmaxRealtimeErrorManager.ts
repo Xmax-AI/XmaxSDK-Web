@@ -1,5 +1,5 @@
 //
-//  RealtimeErrorHandler.ts
+//  XmaxRealtimeErrorManager.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -10,12 +10,12 @@
 
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import { RealtimeTerminationScope } from "./RealtimeCoordinator";
+import { RealtimeTerminationScope } from "./XmaxRealtimeLifecycleManager";
 
 /**
  * Reports asynchronous realtime failures through logging and retains pending errors.
  */
-export class RealtimeErrorHandler {
+export class XmaxRealtimeErrorManager {
 
   /**
    * The pending failures awaiting lifecycle invalidation.

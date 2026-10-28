@@ -9,7 +9,7 @@ import { XmaxClient } from "../src/Core/XmaxClient";
 import { XmaxConfiguration } from "../src/Core/XmaxConfiguration";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { XmaxEnvironment, realtimeApiBaseURL, apiBaseURL } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment, realtimeApiBaseURL, apiBaseURL } from "../src/Core/XmaxEnvironment";
 
 describe("custom realtime models", () => {
   it.each(["future-model", "toString", "__proto__", "constructor"])("uses the test endpoint and preview media defaults without replacing the identifier %s", (model) => {

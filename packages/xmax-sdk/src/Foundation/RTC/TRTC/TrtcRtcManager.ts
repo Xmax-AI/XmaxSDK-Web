@@ -19,7 +19,7 @@ import {
   type RtcEngineLease,
 } from "./RtcEngineManager";
 import type { RtcEventListener } from "../RtcEventListener";
-import { networkQualityLevel } from "../NetworkStatistics";
+import { networkQualityLevel } from "../RtcQualityConverter";
 import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import type { RtcCameraCaptureOptions, RtcManaging } from "../RtcManaging";
 import { RtcStatsLogger } from "../RtcStatsLogger";

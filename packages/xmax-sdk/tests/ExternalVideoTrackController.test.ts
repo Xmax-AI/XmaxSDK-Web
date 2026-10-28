@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ExternalVideoController } from "../src/Media/Video/ExternalVideoController";
+import { ExternalVideoTrackController } from "../src/Media/External/ExternalVideoTrackController";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 
@@ -13,11 +13,11 @@ class VideoTrack extends EventTarget {
 const videoFormat = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 });
 const media = new MediaService();
 
-describe("ExternalVideoController", () => {
+describe("ExternalVideoTrackController", () => {
   it("owns only a clone, requires no DOM or preview, and removes ended listeners on stop", () => {
     const source = new VideoTrack();
     const onError = vi.fn();
-    const controller = new ExternalVideoController(onError);
+    const controller = new ExternalVideoTrackController(onError);
     const stream = controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat }, media);
     const clone = source.clone.mock.results[0]!.value;
     expect(stream.videoTrack?.mediaStreamTrack).toBe(clone);
@@ -38,7 +38,7 @@ describe("ExternalVideoController", () => {
     const source = new VideoTrack();
     if (invalid === "audio") source.kind = "audio";
     else source.readyState = "ended";
-    const controller = new ExternalVideoController(vi.fn());
+    const controller = new ExternalVideoTrackController(vi.fn());
     expect(() => controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat }, media)).toThrow("live video");
     expect(source.clone).not.toHaveBeenCalled();
   });
@@ -51,7 +51,7 @@ describe("ExternalVideoController", () => {
     [1281, 721, 732, 412],
   ])("resolves %s × %s as %s × %s without modifying the source track", (width, height, resolvedWidth, resolvedHeight) => {
     const source = new VideoTrack();
-    const controller = new ExternalVideoController(vi.fn());
+    const controller = new ExternalVideoTrackController(vi.fn());
     const format = new RealtimeVideoFormat({ width, height, fps: 24, maximumBitrate: 4000 });
     const stream = controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat: format }, media);
     expect(stream.videoTrack?.videoFormat).toMatchObject({ width: resolvedWidth, height: resolvedHeight, fps: 24, maximumBitrate: 4000 });
@@ -63,7 +63,7 @@ describe("ExternalVideoController", () => {
 
   it("validates media dimensions and frame rate before acquiring a clone", () => {
     const source = new VideoTrack();
-    const controller = new ExternalVideoController(vi.fn());
+    const controller = new ExternalVideoTrackController(vi.fn());
     for (const format of [new RealtimeVideoFormat({ ...videoFormat, fps: 0 }), new RealtimeVideoFormat({ ...videoFormat, width: 1 }),
       new RealtimeVideoFormat({ ...videoFormat, width: 0 }), new RealtimeVideoFormat({ ...videoFormat, width: Infinity })]) {
       expect(() => controller.create({ videoTrack: source as unknown as MediaStreamTrack, videoFormat: format }, media)).toThrow();
@@ -73,7 +73,7 @@ describe("ExternalVideoController", () => {
 
   it("rejects duplicate sources and releases a clone that ended during setup", () => {
     const source = new VideoTrack();
-    const controller = new ExternalVideoController(vi.fn());
+    const controller = new ExternalVideoTrackController(vi.fn());
     const options = { videoTrack: source as unknown as MediaStreamTrack, videoFormat };
     controller.create(options, media);
     expect(() => controller.create(options, media)).toThrow("Close the current");

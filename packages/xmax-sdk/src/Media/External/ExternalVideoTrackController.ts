@@ -1,5 +1,5 @@
 //
-//  ExternalVideoController.ts
+//  ExternalVideoTrackController.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -13,12 +13,12 @@ import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
+import { StreamID } from "../../Stream/StreamID";
 
 /**
  * Owns an external-video clone without capturing devices, processing pixels, or creating preview.
  */
-export class ExternalVideoController {
+export class ExternalVideoTrackController {
 
   /**
    * The SDK track associated with the external source.

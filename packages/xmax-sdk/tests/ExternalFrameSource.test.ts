@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExternalFrameSink } from "../src/Media/External/ExternalFrameSink";
+import { ExternalVideoFrameSink } from "../src/Media/External/ExternalVideoFrameSink";
 import type { RealtimeExternalAudioFrame as AudioData } from "../src/Foundation/Media/Audio/RealtimeExternalAudioFrame";
-import { ExternalFrameSourceController } from "../src/Media/External/ExternalFrameSourceController";
+import { ExternalVideoController } from "../src/Media/External/ExternalVideoController";
 import type { RealtimeExternalVideoSource, RealtimeExternalFrameSink } from "../src/Media/External/RealtimeExternalVideoSource";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { MediaService } from "../src/Service/Media/MediaService";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
 const sourceFormat = new RealtimeVideoFormat({ width: 3840, height: 2160, fps: 30 });
@@ -22,7 +22,7 @@ describe("external frame sink", () => {
 
   function setup(audio?: any) {
     const context = { drawImage: vi.fn() }, track = { requestFrame: vi.fn() }, error = vi.fn();
-    const sink = new ExternalFrameSink(resolved, sourceFormat, context as unknown as CanvasRenderingContext2D,
+    const sink = new ExternalVideoFrameSink(resolved, sourceFormat, context as unknown as CanvasRenderingContext2D,
       track as unknown as CanvasCaptureMediaStreamTrack, audio, error);
     return { sink, context, track, error };
   }
@@ -128,7 +128,7 @@ describe("external frame source lifecycle", () => {
     const canvas = { width: 0, height: 0, getContext: () => context, captureStream: vi.fn(() => stream) };
     vi.stubGlobal("document", { createElement: vi.fn(() => canvas) });
     vi.stubGlobal("VideoFrame", class {});
-    const error = vi.fn(), controller = new ExternalFrameSourceController(error);
+    const error = vi.fn(), controller = new ExternalVideoController(error);
     let sink: RealtimeExternalFrameSink | undefined;
     const source = { videoFormat: sourceFormat, start: vi.fn(async (value: RealtimeExternalFrameSink) => { sink = value; }), stop: vi.fn(async () => {}) };
     const create = () => controller.create(source, new MediaService(), new AbortController().signal);

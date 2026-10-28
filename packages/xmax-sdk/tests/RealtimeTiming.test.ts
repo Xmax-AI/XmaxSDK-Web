@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RealtimeTiming } from "../src/Core/Realtime/RealtimeTiming";
-import type { RealtimeTiming as RealtimeTimingSnapshot } from "../src/Service/Realtime/RealtimeTiming";
+import { RealtimeTiming } from "../src/Service/Realtime/RealtimeTiming";
+import type { RealtimeTiming as RealtimeTimingSnapshot } from "../src/Service/Realtime/RealtimeTimingSnapshot";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
-import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../src/Core/XmaxEnvironment";
 
 afterEach(() => {
   XmaxLogger.configure(XmaxLoggerOption.none);

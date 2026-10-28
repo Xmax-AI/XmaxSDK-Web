@@ -3,8 +3,8 @@ import { RenderController } from "../src/Render/RenderController";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { XmaxRealtimeConnectionManager } from "../src/Core/Realtime/XmaxRealtimeConnectionManager";
 import { XmaxRealtimeGenerationManager } from "../src/Core/Realtime/XmaxRealtimeGenerationManager";
-import { RealtimeCoordinator } from "../src/Core/Realtime/RealtimeCoordinator";
-import { RealtimeTiming } from "../src/Core/Realtime/RealtimeTiming";
+import { XmaxRealtimeLifecycleManager } from "../src/Core/Realtime/XmaxRealtimeLifecycleManager";
+import { RealtimeTiming } from "../src/Service/Realtime/RealtimeTiming";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
@@ -15,7 +15,7 @@ import { RealtimeSessionConnection, type RtcSessionConnection } from "../src/Ser
 import type { RealtimeSessionHeartbeatHandlers } from "../src/Service/Realtime/RealtimeSessionServicing";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import type { StreamControlling, StreamGenerationOptions } from "../src/Stream/StreamControlling";
 
@@ -31,7 +31,7 @@ function operation() {
   return {
     abort,
     signal: abort.signal,
-    ensureCurrent: () => { if (abort.signal.aborted) throw RealtimeCoordinator.cancelledError(); },
+    ensureCurrent: () => { if (abort.signal.aborted) throw XmaxRealtimeLifecycleManager.cancelledError(); },
   };
 }
 
@@ -400,7 +400,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const { manager, service, stream, options, events } = setup(provider);
     await manager.connect(options);
     stream.updateCredentials.mockImplementation(async (_connection, signal) => {
-      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(RealtimeCoordinator.cancelledError()), { once: true }));
+      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(XmaxRealtimeLifecycleManager.cancelledError()), { once: true }));
     });
     const refreshing = manager.refreshCredentials();
     await vi.waitFor(() => expect(stream.updateCredentials).toHaveBeenCalledOnce());

@@ -10,7 +10,7 @@
 
 import type { IAgoraRTCClient, NetworkQuality } from "agora-rtc-sdk-ng";
 import type { RtcEventListener } from "../RtcEventListener";
-import { networkQualityLevel } from "../NetworkStatistics";
+import { networkQualityLevel } from "../RtcQualityConverter";
 import { RtcStatsLogger } from "../RtcStatsLogger";
 import type { DownlinkVideoStatistics, UplinkVideoStatistics } from "../VideoStatistics";
 

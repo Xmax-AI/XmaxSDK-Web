@@ -9,7 +9,7 @@
 //
 
 import type { RemoteStream } from "../Foundation/RTC/RemoteStream";
-import type { RealtimeNetworkQualityListener } from "../Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../Service/Realtime/RealtimeNetworkQuality";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
 import type { RealtimeContext } from "../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../Service/Realtime/RealtimeExtraParams";

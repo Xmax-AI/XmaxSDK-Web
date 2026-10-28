@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
-import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
-import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { XmaxEnvironment } from "../src/Core/XmaxEnvironment";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import type { DownlinkVideoStatistics, UplinkVideoStatistics } from "../src/Foundation/RTC/VideoStatistics";
 
 describe("RtcStatsLogger", () => {

@@ -15,8 +15,8 @@ export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
 
 // Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
-export { RealtimeCameraPreset, cameraPresetSize } from "./Core/Realtime/RealtimeCameraPreset";
-export { RealtimeQualityLevel } from "./Core/Realtime/RealtimeQualityLevel";
+export { RealtimeCameraPreset, cameraPresetSize } from "./Service/Realtime/RealtimeCameraPreset";
+export { RealtimeQualityLevel } from "./Stream/Quality/RealtimeQualityLevel";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 
 // Core / NonRealtime
@@ -37,11 +37,11 @@ export type {
 export { NonRealtimeTaskError } from "./Service/NonRealtime/NonRealtimeTaskError";
 
 // Foundation
-export { RealtimeNetworkQualityLevel } from "./Foundation/RTC/NetworkStatistics";
+export { RealtimeNetworkQualityLevel } from "./Service/Realtime/RealtimeNetworkQuality";
 export type {
   RealtimeNetworkQuality,
   RealtimeNetworkQualityListener
-} from "./Foundation/RTC/NetworkStatistics";
+} from "./Service/Realtime/RealtimeNetworkQuality";
 export { XmaxError, XmaxErrorCode } from "./Foundation/Errors/XmaxError";
 export type { XmaxErrorListener } from "./Foundation/Errors/XmaxError";
 export { XmaxLogger, XmaxLoggerOption } from "./Foundation/Logging/XmaxLogger";
@@ -55,13 +55,13 @@ export type {
   DownlinkVideoStatistics,
   DownlinkVideoStatisticsListener,
 } from "./Foundation/RTC/VideoStatistics";
-export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Foundation/Runtime/XmaxEnvironment";
+export { XmaxEnvironment, apiBaseURL, realtimeApiBaseURL } from "./Core/XmaxEnvironment";
 
 // Service / Realtime
 export type {
   RealtimeTiming,
   RealtimeTimingListener,
-} from "./Service/Realtime/RealtimeTiming";
+} from "./Service/Realtime/RealtimeTimingSnapshot";
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
@@ -113,7 +113,7 @@ export type {
   StorageServicing,
   StorageUploadOptions,
 } from "./Service/Storage/StorageServicing";
-export { StoredFile } from "./Service/Storage/StoredFile";
+export { StoredFile } from "./Foundation/Storage/StoredFile";
 
 // Render
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";

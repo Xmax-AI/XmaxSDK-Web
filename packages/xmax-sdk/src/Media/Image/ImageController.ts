@@ -1,5 +1,5 @@
 //
-//  LocalImageController.ts
+//  ImageController.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -13,8 +13,9 @@ import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
-import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
+import { StreamID } from "../../Stream/StreamID";
+import { type VideoRenderTarget } from "../../Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Render/Video/VideoRenderRegistry";
 
 /**
  * Image decoding, still-video output, and preview resources.
@@ -71,7 +72,7 @@ interface LocalImageSource {
  * Scales a local image proportionally into a silent still-video stream without uploads or device
  * capture.
  */
-export class LocalImageController {
+export class ImageController {
 
   /**
    * The active image source, including pending decoding.

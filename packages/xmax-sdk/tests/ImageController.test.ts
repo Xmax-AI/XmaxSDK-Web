@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LocalImageController } from "../src/Media/Image/LocalImageController";
+import { ImageController } from "../src/Media/Image/ImageController";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import * as ModelDefinition from "../src/Service/Realtime/RealtimeModel";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
 class ImageStub extends EventTarget {
@@ -19,7 +19,7 @@ class ImageStub extends EventTarget {
   removeAttribute = vi.fn();
 }
 
-const controllers: LocalImageController[] = [];
+const controllers: ImageController[] = [];
 const options = {
   file: new Blob(["image fixture"], { type: "image/png" }),
   videoFormat: new RealtimeVideoFormat({ width: 1280, height: 720, fps: 30 }),
@@ -35,7 +35,7 @@ function setup() {
   const objectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:image");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const onError = vi.fn();
-  const controller = new LocalImageController(onError);
+  const controller = new ImageController(onError);
   controllers.push(controller);
   const signal = new AbortController();
   const create = (overrides = {}) => controller.create({ ...options, ...overrides }, new MediaService(), signal.signal);
@@ -52,7 +52,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("LocalImageController", () => {
+describe("ImageController", () => {
   it.each([[1280, 720, 1280, 720], [720, 1280, 720, 1280], [600, 600, 600, 600], [3840, 2160, 1920, 1080]])(
     "resolves %s×%s to %s×%s, freezes the image and releases preview resources",
     async (width, height, targetWidth, targetHeight) => {

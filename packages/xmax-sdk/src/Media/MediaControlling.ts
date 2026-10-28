@@ -9,9 +9,9 @@
 //
 
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
-import type { LocalVideoController } from "./Video/LocalVideoController";
+import type { VideoController } from "./Video/VideoController";
 import type { RealtimeExternalVideoStreamOptions } from "./External/RealtimeExternalVideoSource";
-import type { LocalImageController } from "./Image/LocalImageController";
+import type { ImageController } from "./Image/ImageController";
 import type { InteractionControlling } from "./Interaction/InteractionControlling";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeMediaStream } from "../Service/Realtime/RealtimeMediaStream";
@@ -72,7 +72,7 @@ export interface MediaControlling extends InteractionControlling {
    * Creates and unlocks file-video playback; prepareSource initializes RTC.
    */
   createLocalVideoStream(
-    options: Parameters<LocalVideoController["create"]>[0],
+    options: Parameters<VideoController["create"]>[0],
     signal: AbortSignal
   ): Promise<RealtimeMediaStream>;
 
@@ -80,7 +80,7 @@ export interface MediaControlling extends InteractionControlling {
    * Creates still-image video output; prepareSource initializes RTC.
    */
   createLocalImageStream(
-    options: Parameters<LocalImageController["create"]>[0],
+    options: Parameters<ImageController["create"]>[0],
     signal: AbortSignal
   ): Promise<RealtimeMediaStream>;
 

@@ -3,7 +3,8 @@ import type { IAgoraRTCClient } from "agora-rtc-sdk-ng";
 import type { LocalVideoStats, RemoteVideoStats } from "@volcengine/rtc";
 import { AgoraRtcStatistics } from "../src/Foundation/RTC/Agora/AgoraRtcStatistics";
 import { VeRtcStatistics } from "../src/Foundation/RTC/VeRTC/VeRtcStatistics";
-import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
+import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
 

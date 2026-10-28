@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { QualityController, type QualityChange } from "../src/Stream/Quality/QualityController";
-import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
+import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 
 function setup() {
   let now = 0;

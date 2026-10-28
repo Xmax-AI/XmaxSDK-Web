@@ -5,7 +5,7 @@ import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import { VeRtcManager } from "../src/Foundation/RTC/VeRTC/VeRtcManager";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
-import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../src/Core/XmaxEnvironment";
 import { RealtimeModel, supportedRtcProviders } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 

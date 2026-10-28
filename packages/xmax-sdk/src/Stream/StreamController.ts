@@ -14,7 +14,7 @@ import { RemoteStream } from "../Foundation/RTC/RemoteStream";
 import { toRoomJoinConfiguration } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../Foundation/RTC/VideoStatistics";
-import type { RealtimeNetworkQualityListener } from "../Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../Service/Realtime/RealtimeNetworkQuality";
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";

@@ -10,7 +10,7 @@
 
 import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
-import type { RealtimeNetworkQualityListener } from "../../Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/RealtimeNetworkQuality";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
@@ -22,10 +22,10 @@ import type {
 } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
-import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTiming";
+import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTimingSnapshot";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
-import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
-import type { RealtimeQualityLevel } from "./RealtimeQualityLevel";
+import type { RealtimeCameraPreset } from "../../Service/Realtime/RealtimeCameraPreset";
+import type { RealtimeQualityLevel } from "../../Stream/Quality/RealtimeQualityLevel";
 import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/RealtimeExternalVideoSource";
 
 /**

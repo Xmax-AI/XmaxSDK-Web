@@ -1,5 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VeRtcManager, VERTC_APP_ID } from "../src/Foundation/RTC/VeRTC/VeRtcManager";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";

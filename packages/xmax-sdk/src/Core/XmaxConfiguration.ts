@@ -10,7 +10,7 @@
 
 import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 import { XmaxLoggerOption } from "../Foundation/Logging/XmaxLogger";
-import { XmaxEnvironment } from "../Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "./XmaxEnvironment";
 
 /**
  * Client authentication, service environment, and logging options.

@@ -4,7 +4,7 @@ import { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVideoView
 import { XmaxRealtimeDualVideoView } from "../src/Render/Video/XmaxRealtimeDualVideoView";
 import { RenderController } from "../src/Render/RenderController";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 
 class ElementStub extends EventTarget {

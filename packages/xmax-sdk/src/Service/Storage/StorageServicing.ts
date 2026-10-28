@@ -8,7 +8,7 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { StoredFile } from "./StoredFile";
+import type { StoredFile } from "../../Foundation/Storage/StoredFile";
 
 /**
  * Options for uploading an image or video.

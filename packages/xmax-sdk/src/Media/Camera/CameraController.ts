@@ -16,13 +16,13 @@ import type { PermissionManaging } from "../../Foundation/Permissions/Permission
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
 import { TrtcRtcManager } from "../../Foundation/RTC/TRTC/TrtcRtcManager";
-import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Render/Video/VideoRenderRegistry";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
+import { StreamID } from "../../Stream/StreamID";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraControlling";
 
 /**

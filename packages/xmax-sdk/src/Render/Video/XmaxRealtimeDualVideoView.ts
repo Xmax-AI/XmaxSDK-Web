@@ -11,7 +11,7 @@
 import { VideoContentMode } from "../../Foundation/Media/Video/VideoContentMode";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { XmaxRealtimeVideoView } from "./XmaxRealtimeVideoView";
-import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "./VideoRenderRegistry";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
 
 /**

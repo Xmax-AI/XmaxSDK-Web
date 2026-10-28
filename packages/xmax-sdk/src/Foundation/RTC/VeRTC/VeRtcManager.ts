@@ -20,7 +20,7 @@ import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../V
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import type { DownlinkVideoStatistics } from "../VideoStatistics";
 import { VeRtcStatistics } from "./VeRtcStatistics";
-import { networkQualityLevel } from "../NetworkStatistics";
+import { networkQualityLevel } from "../RtcQualityConverter";
 import { RtcStatsLogger } from "../RtcStatsLogger";
 
 /**

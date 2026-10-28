@@ -1,5 +1,5 @@
 //
-//  RealtimeCoordinator.ts
+//  XmaxRealtimeLifecycleManager.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -15,7 +15,7 @@ import {
   RealtimeState,
   type RealtimeStateListener,
 } from "../../Service/Realtime/RealtimeState";
-import type { RealtimeErrorHandler } from "./RealtimeErrorHandler";
+import type { XmaxRealtimeErrorManager } from "./XmaxRealtimeErrorManager";
 
 /**
  * Realtime operation kinds; only one operation is admitted at a time.
@@ -225,7 +225,7 @@ class OperationLease implements RealtimeOperationToken {
    */
   ensureCurrent(): void {
     if (!this.valid) {
-      throw this.terminalError ?? RealtimeCoordinator.cancelledError();
+      throw this.terminalError ?? XmaxRealtimeLifecycleManager.cancelledError();
     }
   }
 }
@@ -311,12 +311,12 @@ let operationSequence = 0;
  * Coordinates operation admission, state commits, and scoped cleanup. Promise chains and operation
  * leases serialize work within the JavaScript event loop.
  */
-export class RealtimeCoordinator {
+export class XmaxRealtimeLifecycleManager {
 
   /**
    * The handler that reports lifecycle failures.
    */
-  private readonly errorHandler: RealtimeErrorHandler;
+  private readonly errorManager: XmaxRealtimeErrorManager;
 
   /**
    * The callback that releases resources for a termination scope.
@@ -350,11 +350,11 @@ export class RealtimeCoordinator {
    */
   constructor(
     options: {
-      errorHandler: RealtimeErrorHandler;
+      errorManager: XmaxRealtimeErrorManager;
       cleanup: RealtimeCleanupHandler;
     }
   ) {
-    this.errorHandler = options.errorHandler;
+    this.errorManager = options.errorManager;
     this.cleanup = options.cleanup;
   }
 
@@ -408,7 +408,7 @@ export class RealtimeCoordinator {
         XmaxErrorCode.invalidConfiguration,
         "Another realtime operation is in progress; wait for it to finish",
       );
-      await this.errorHandler.report(error);
+      await this.errorManager.report(error);
       throw error;
     }
 
@@ -603,7 +603,7 @@ export class RealtimeCoordinator {
             new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
           );
         }
-        throw RealtimeCoordinator.cancelledError();
+        throw XmaxRealtimeLifecycleManager.cancelledError();
       }
       const terminationTask =
         operation.terminationTask ??
@@ -616,7 +616,7 @@ export class RealtimeCoordinator {
         ));
       await terminationTask;
       this.finish(operation);
-      throw operation.lease.failure ?? RealtimeCoordinator.cancelledError();
+      throw operation.lease.failure ?? XmaxRealtimeLifecycleManager.cancelledError();
     }
 
     const resolvedError = XmaxError.from(error);
@@ -641,7 +641,7 @@ export class RealtimeCoordinator {
           new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
         );
       }
-      await this.errorHandler.report(resolvedError);
+      await this.errorManager.report(resolvedError);
       throw resolvedError;
     }
 
@@ -761,12 +761,12 @@ export class RealtimeCoordinator {
         : undefined;
       this.state = finalState;
       this.termination = undefined;
-      this.errorHandler.invalidatePendingFailures(requestedTarget);
+      this.errorManager.invalidatePendingFailures(requestedTarget);
       if (listener) {
         listener(finalState);
       }
       if (pending.error) {
-        await this.errorHandler.report(pending.error);
+        await this.errorManager.report(pending.error);
       }
       return;
     }

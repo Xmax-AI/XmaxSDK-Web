@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
+import { VideoController } from "../src/Media/Video/VideoController";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat, RealtimeVideoEncoderPreference } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeModel, resolutionBuckets } from "../src/Service/Realtime/RealtimeModel";
 import * as ModelDefinition from "../src/Service/Realtime/RealtimeModel";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 
 class Video extends EventTarget {
@@ -48,13 +48,13 @@ function setup() {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:local-test");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const onError = vi.fn();
-  const controller = new LocalVideoController(onError);
+  const controller = new VideoController(onError);
   controllers.push(controller);
   const signal = new AbortController();
   return { controller, video, videoTrack, audioTrack, stream, canvas, context, audio, audioFactory, audioSource, audioDestination, revoke, onError, signal };
 }
 
-const controllers: LocalVideoController[] = [];
+const controllers: VideoController[] = [];
 const options = {
   file: new Blob(["video fixture"]),
   videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
@@ -70,7 +70,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-describe("LocalVideoController", () => {
+describe("VideoController", () => {
   it.each([
     [1280, 720, 1280, 720],
     [720, 1280, 720, 1280],

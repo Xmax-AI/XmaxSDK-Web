@@ -8,7 +8,7 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import { XmaxEnvironment } from "../Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../../Core/XmaxEnvironment";
 
 /**
  * Log-category flags that can be combined as a bitmask.

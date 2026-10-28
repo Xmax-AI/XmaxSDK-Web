@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { XmaxConfiguration } from "../src/Core/XmaxConfiguration";
-import { XmaxEnvironment, apiBaseURL } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment, apiBaseURL } from "../src/Core/XmaxEnvironment";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { RealtimeModel, modelBaseURL } from "../src/Service/Realtime/RealtimeModel";

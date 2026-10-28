@@ -11,7 +11,8 @@
 import type { InteractionFrame } from "../Media/Interaction/InteractionFrame";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
-import { VideoRenderRegistry, type VideoRenderTarget } from "../Service/Realtime/VideoRenderBinding";
+import { type VideoRenderTarget } from "./Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "./Video/VideoRenderRegistry";
 import type { RenderControlling } from "./RenderControlling";
 import { TrajectoryBinding } from "./Trajectory/TrajectoryBinding";
 import { TrajectoryRegistry } from "./Trajectory/TrajectoryRegistry";

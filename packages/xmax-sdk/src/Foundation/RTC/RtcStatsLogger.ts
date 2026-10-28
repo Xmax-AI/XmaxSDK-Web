@@ -9,7 +9,7 @@
 //
 
 import { XmaxLogger, XmaxLoggerOption } from "../Logging/XmaxLogger";
-import { RealtimeNetworkQualityLevel, type RealtimeNetworkQuality } from "./NetworkStatistics";
+import { RealtimeNetworkQualityLevel, type RealtimeNetworkQuality } from "../../Service/Realtime/RealtimeNetworkQuality";
 import type { DownlinkVideoStatistics, UplinkVideoStatistics } from "./VideoStatistics";
 
 /**

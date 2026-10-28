@@ -1,5 +1,5 @@
 //
-//  ExternalFrameSourceController.ts
+//  ExternalVideoController.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -15,9 +15,10 @@ import { waitForMediaOperation } from "../../Foundation/Media/MediaOperation";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
-import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
-import { ExternalFrameSink } from "./ExternalFrameSink";
+import { StreamID } from "../../Stream/StreamID";
+import { type VideoRenderTarget } from "../../Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Render/Video/VideoRenderRegistry";
+import { ExternalVideoFrameSink } from "./ExternalVideoFrameSink";
 import type { RealtimeExternalVideoSource } from "./RealtimeExternalVideoSource";
 
 /**
@@ -58,7 +59,7 @@ interface ExternalBinding {
   /**
    * The frame receiver invalidated when this binding ends.
    */
-  sink?: ExternalFrameSink;
+  sink?: ExternalVideoFrameSink;
 
   /**
    * The views previewing this binding.
@@ -75,7 +76,7 @@ interface ExternalBinding {
  * Binds, previews, and releases external frame sources without owning app capture devices or original
  * frames.
  */
-export class ExternalFrameSourceController {
+export class ExternalVideoController {
 
   /**
    * The active or preparing binding, preventing concurrent replacement.
@@ -227,7 +228,7 @@ export class ExternalFrameSourceController {
         );
       }
 
-      const sink = new ExternalFrameSink(
+      const sink = new ExternalVideoFrameSink(
         format,
         sourceFormat,
         context,

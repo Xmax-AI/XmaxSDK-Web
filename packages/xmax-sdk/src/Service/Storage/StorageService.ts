@@ -11,7 +11,7 @@
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
 import type { ApiServicing } from "../Network/ApiServicing";
-import { StoredFile } from "./StoredFile";
+import { StoredFile } from "../../Foundation/Storage/StoredFile";
 import type { StorageServicing, StorageUploadOptions } from "./StorageServicing";
 
 /**

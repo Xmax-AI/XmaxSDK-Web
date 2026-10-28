@@ -1,5 +1,5 @@
 //
-//  LocalVideoController.ts
+//  VideoController.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -14,8 +14,9 @@ import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
-import { VideoRenderRegistry, type VideoRenderTarget } from "../../Service/Realtime/VideoRenderBinding";
+import { StreamID } from "../../Stream/StreamID";
+import { type VideoRenderTarget } from "../../Render/Video/VideoRenderBinding";
+import { VideoRenderRegistry } from "../../Render/Video/VideoRenderRegistry";
 
 /**
  * One file player and its audio/video output resources.
@@ -93,7 +94,7 @@ interface LocalVideoSource {
  * drives both tracks; preview remains muted. Preparation pauses on the first frame until generation
  * starts.
  */
-export class LocalVideoController {
+export class VideoController {
 
   /**
    * The current file source, including preparation state.

@@ -1,4 +1,4 @@
-import { ExternalFrameSourceController } from "../../src/Media/External/ExternalFrameSourceController";
+import { ExternalVideoController } from "../../src/Media/External/ExternalVideoController";
 import { RemoteMediaFrameController } from "../../src/Render/Video/RemoteMediaFrameController";
 import type { RealtimeExternalFrameSink, RealtimeExternalVideoSource } from "../../src/Media/External/RealtimeExternalVideoSource";
 import { RealtimeVideoFormat } from "../../src/Service/Realtime/RealtimeVideoFormat";
@@ -62,7 +62,7 @@ button.onclick = async () => {
   button.disabled = true;
   result.textContent = "Checking video, PCM, publish, disconnect and reconnect…";
   const errors: string[] = [];
-  const input = new ExternalFrameSourceController(error => errors.push(error.message));
+  const input = new ExternalVideoController(error => errors.push(error.message));
   const output = new RemoteMediaFrameController();
   const source = new Source();
   let phase = "off", video = 0, audio = 0, before = false, during = false, after = false, resumed = false;

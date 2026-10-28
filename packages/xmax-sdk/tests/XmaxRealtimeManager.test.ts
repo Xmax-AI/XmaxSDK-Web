@@ -4,19 +4,20 @@ import type { RemoteMediaTracks } from "../src/Foundation/Media/RemoteMediaTrack
 import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
 import { QualityHistory } from "../src/Stream/Quality/QualityHistory";
 import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
-import { LocalVideoController } from "../src/Media/Video/LocalVideoController";
-import { LocalImageController } from "../src/Media/Image/LocalImageController";
-import { ExternalFrameSourceController } from "../src/Media/External/ExternalFrameSourceController";
+import { VideoController } from "../src/Media/Video/VideoController";
+import { ImageController } from "../src/Media/Image/ImageController";
+import { ExternalVideoController } from "../src/Media/External/ExternalVideoController";
 import type { RealtimeExternalVideoSource } from "../src/Media/External/RealtimeExternalVideoSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RealtimeNetworkQualityListener } from "../src/Foundation/RTC/NetworkStatistics";
-import { networkQualityLevel, RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../src/Service/Realtime/RealtimeNetworkQuality";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
+import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
-import { RealtimeCameraPreset, cameraPresetSize } from "../src/Core/Realtime/RealtimeCameraPreset";
-import { RealtimeQualityLevel } from "../src/Core/Realtime/RealtimeQualityLevel";
+import { RealtimeCameraPreset, cameraPresetSize } from "../src/Service/Realtime/RealtimeCameraPreset";
+import { RealtimeQualityLevel } from "../src/Stream/Quality/RealtimeQualityLevel";
 import { RealtimeModel, supportedVideoFormats } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
@@ -30,10 +31,10 @@ import type {
 import { RealtimeConnectionState } from "../src/Service/Realtime/RealtimeState";
 import { RealtimeVideoEncoderPreference, RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../src/Service/Realtime/StreamID";
-import type { RealtimeTiming } from "../src/Service/Realtime/RealtimeTiming";
+import { StreamID } from "../src/Stream/StreamID";
+import type { RealtimeTiming } from "../src/Service/Realtime/RealtimeTimingSnapshot";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../src/Foundation/RTC/VideoStatistics";
-import { VideoRenderRegistry } from "../src/Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
 import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import type {
   StreamControlling,
@@ -1312,17 +1313,17 @@ describe("XmaxRealtimeManager external video", () => {
     track.mediaStreamTrack = { kind: "video" } as MediaStreamTrack;
     const audio = { kind: "audio" } as MediaStreamTrack;
     const input: RealtimeExternalVideoSource = { videoFormat, hasAudio, start: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-    vi.spyOn(ExternalFrameSourceController.prototype, "isActive", "get").mockImplementation(() => active);
-    vi.spyOn(ExternalFrameSourceController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
-    vi.spyOn(ExternalFrameSourceController.prototype, "audioTrack", "get").mockImplementation(() => active && hasAudio ? audio : undefined);
-    const create = vi.spyOn(ExternalFrameSourceController.prototype, "create").mockImplementation(async () => {
+    vi.spyOn(ExternalVideoController.prototype, "isActive", "get").mockImplementation(() => active);
+    vi.spyOn(ExternalVideoController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(ExternalVideoController.prototype, "audioTrack", "get").mockImplementation(() => active && hasAudio ? audio : undefined);
+    const create = vi.spyOn(ExternalVideoController.prototype, "create").mockImplementation(async () => {
       active = true;
       await input.start({} as any);
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     });
-    const audioPublished = vi.spyOn(ExternalFrameSourceController.prototype, "setAudioPublished").mockImplementation(() => {});
-    vi.spyOn(ExternalFrameSourceController.prototype, "invalidate").mockImplementation(() => {});
-    vi.spyOn(ExternalFrameSourceController.prototype, "stop").mockImplementation(async () => {
+    const audioPublished = vi.spyOn(ExternalVideoController.prototype, "setAudioPublished").mockImplementation(() => {});
+    vi.spyOn(ExternalVideoController.prototype, "invalidate").mockImplementation(() => {});
+    vi.spyOn(ExternalVideoController.prototype, "stop").mockImplementation(async () => {
       if (active) { active = false; await input.stop(); }
     });
     const provider = s.manager.options.provider;
@@ -1571,16 +1572,16 @@ describe("XmaxRealtimeManager local video", () => {
     const track = new RealtimeVideoTrack({ id: "local-file", videoFormat: options.videoFormat });
     track.mediaStreamTrack = video;
     let active = false;
-    vi.spyOn(LocalVideoController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
-    vi.spyOn(LocalVideoController.prototype, "isActive", "get").mockImplementation(() => active);
-    vi.spyOn(LocalVideoController.prototype, "audioTrack", "get").mockImplementation(() => active && includeAudio ? audio : undefined);
-    const create = vi.spyOn(LocalVideoController.prototype, "create").mockImplementation(async () => {
+    vi.spyOn(VideoController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(VideoController.prototype, "isActive", "get").mockImplementation(() => active);
+    vi.spyOn(VideoController.prototype, "audioTrack", "get").mockImplementation(() => active && includeAudio ? audio : undefined);
+    const create = vi.spyOn(VideoController.prototype, "create").mockImplementation(async () => {
       active = true;
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     });
-    const start = vi.spyOn(LocalVideoController.prototype, "start").mockResolvedValue();
-    const pause = vi.spyOn(LocalVideoController.prototype, "pause").mockImplementation(() => {});
-    const stop = vi.spyOn(LocalVideoController.prototype, "stop").mockImplementation(async () => { active = false; });
+    const start = vi.spyOn(VideoController.prototype, "start").mockResolvedValue();
+    const pause = vi.spyOn(VideoController.prototype, "pause").mockImplementation(() => {});
+    const stop = vi.spyOn(VideoController.prototype, "stop").mockImplementation(async () => { active = false; });
     const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
     const s = makeManager(model);
     if (provider !== RtcProvider.trtc) {
@@ -1712,7 +1713,7 @@ describe("XmaxRealtimeManager local video", () => {
   it("rejects adapters without external track support before creating resources", async () => {
     const s = makeManager();
     Object.assign(s.rtc, { setExternalMediaTracks: undefined });
-    const create = vi.spyOn(LocalVideoController.prototype, "create");
+    const create = vi.spyOn(VideoController.prototype, "create");
     await expect(s.manager.createLocalVideoStream(options)).rejects.toThrow("does not support local video");
     expect(create).not.toHaveBeenCalled();
     expect(s.rtc.initialize).not.toHaveBeenCalled();
@@ -1742,13 +1743,13 @@ describe("XmaxRealtimeManager local image", () => {
     const track = new RealtimeVideoTrack({ id: "local-image", videoFormat: options.videoFormat });
     track.mediaStreamTrack = video;
     let active = false;
-    vi.spyOn(LocalImageController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
-    vi.spyOn(LocalImageController.prototype, "isActive", "get").mockImplementation(() => active);
-    const create = vi.spyOn(LocalImageController.prototype, "create").mockImplementation(async () => {
+    vi.spyOn(ImageController.prototype, "currentTrack", "get").mockImplementation(() => active ? track : undefined);
+    vi.spyOn(ImageController.prototype, "isActive", "get").mockImplementation(() => active);
+    const create = vi.spyOn(ImageController.prototype, "create").mockImplementation(async () => {
       active = true;
       return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
     });
-    const stop = vi.spyOn(LocalImageController.prototype, "stop").mockImplementation(() => { active = false; });
+    const stop = vi.spyOn(ImageController.prototype, "stop").mockImplementation(() => { active = false; });
     const model = { [RtcProvider.trtc]: "test-trtc", [RtcProvider.agora]: RealtimeModel.x2_1, [RtcProvider.vertc]: "test-vertc" }[provider];
     const s = makeManager(model);
     if (provider !== RtcProvider.trtc) {

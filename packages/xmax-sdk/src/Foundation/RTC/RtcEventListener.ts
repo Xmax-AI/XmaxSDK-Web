@@ -9,7 +9,7 @@
 //
 
 import type { DownlinkVideoStatistics, UplinkVideoStatisticsListener } from "./VideoStatistics";
-import type { RealtimeNetworkQualityListener } from "./NetworkStatistics";
+import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/RealtimeNetworkQuality";
 
 /**
  * Receives RTC media events and room signaling. Room messages use TRTC custom messages, Agora

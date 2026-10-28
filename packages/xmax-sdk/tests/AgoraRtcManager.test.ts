@@ -1,9 +1,9 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IAgoraRTC, IAgoraRTCRemoteUser, LastmileProbeResult } from "agora-rtc-sdk-ng";
 import { AgoraRtcManager } from "../src/Foundation/RTC/Agora/AgoraRtcManager";
-import { XmaxEnvironment } from "../src/Foundation/Runtime/XmaxEnvironment";
+import { XmaxEnvironment } from "../src/Core/XmaxEnvironment";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";

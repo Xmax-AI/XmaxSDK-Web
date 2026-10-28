@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  RealtimeCoordinator,
+  XmaxRealtimeLifecycleManager,
   RealtimeOperationKind,
   RealtimeTerminationScope,
   type RealtimeCleanupResult,
-} from "../src/Core/Realtime/RealtimeCoordinator";
-import { RealtimeErrorHandler } from "../src/Core/Realtime/RealtimeErrorHandler";
+} from "../src/Core/Realtime/XmaxRealtimeLifecycleManager";
+import { XmaxRealtimeErrorManager } from "../src/Core/Realtime/XmaxRealtimeErrorManager";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import {
   RealtimeConnectionState,
@@ -20,8 +20,8 @@ function makeCoordinator(options?: {
   states?: RealtimeState[];
 }) {
   const states = options?.states ?? [];
-  const coordinator = new RealtimeCoordinator({
-    errorHandler: new RealtimeErrorHandler(),
+  const lifecycleManager = new XmaxRealtimeLifecycleManager({
+    errorManager: new XmaxRealtimeErrorManager(),
     cleanup:
       options?.cleanup ??
       (async () => ({ hasLocalMedia: false })),
@@ -29,45 +29,45 @@ function makeCoordinator(options?: {
   const listener: RealtimeStateListener = (state) => {
     states.push(state);
   };
-  return { coordinator, states, listener };
+  return { lifecycleManager, states, listener };
 }
 
-describe("RealtimeCoordinator", () => {
+describe("XmaxRealtimeLifecycleManager", () => {
   it("enters generating only for the current ready task and ignores late completion", async () => {
-    const { coordinator, states, listener } = makeCoordinator();
-    await coordinator.setStateListener(listener);
-    await coordinator.run(RealtimeOperationKind.generation, undefined, token => coordinator.commit(
+    const { lifecycleManager, states, listener } = makeCoordinator();
+    await lifecycleManager.setStateListener(listener);
+    await lifecycleManager.run(RealtimeOperationKind.generation, undefined, token => lifecycleManager.commit(
       new RealtimeState({ connectionState: RealtimeConnectionState.starting, sessionID: "session", taskID: "task" }), token,
     ));
-    await coordinator.remotePreviewDidBecomeReady("old-session", "task", () => true);
-    await coordinator.remotePreviewDidBecomeReady("session", "old-task", () => true);
-    await coordinator.remotePreviewDidBecomeReady("session", "task", () => false);
-    expect(coordinator.currentState.connectionState).toBe(RealtimeConnectionState.starting);
-    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
-    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
+    await lifecycleManager.remotePreviewDidBecomeReady("old-session", "task", () => true);
+    await lifecycleManager.remotePreviewDidBecomeReady("session", "old-task", () => true);
+    await lifecycleManager.remotePreviewDidBecomeReady("session", "task", () => false);
+    expect(lifecycleManager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
+    await lifecycleManager.remotePreviewDidBecomeReady("session", "task", () => true);
+    await lifecycleManager.remotePreviewDidBecomeReady("session", "task", () => true);
     expect(states.filter(state => state.connectionState === RealtimeConnectionState.generating)).toHaveLength(1);
-    await coordinator.disconnect();
-    await coordinator.remotePreviewDidBecomeReady("session", "task", () => true);
-    expect(coordinator.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await lifecycleManager.disconnect();
+    await lifecycleManager.remotePreviewDidBecomeReady("session", "task", () => true);
+    expect(lifecycleManager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
   });
 
   it("starts in idle state", () => {
-    const { coordinator } = makeCoordinator();
-    expect(coordinator.currentState.connectionState).toBe(
+    const { lifecycleManager } = makeCoordinator();
+    expect(lifecycleManager.currentState.connectionState).toBe(
       RealtimeConnectionState.idle,
     );
   });
 
   it("emits the current state immediately when a listener is set", async () => {
-    const { coordinator, states, listener } = makeCoordinator();
-    await coordinator.setStateListener(listener);
+    const { lifecycleManager, states, listener } = makeCoordinator();
+    await lifecycleManager.setStateListener(listener);
     expect(states).toHaveLength(1);
     expect(states[0]?.connectionState).toBe(RealtimeConnectionState.idle);
   });
 
   it("runs an operation and returns its value", async () => {
-    const { coordinator } = makeCoordinator();
-    const value = await coordinator.run(
+    const { lifecycleManager } = makeCoordinator();
+    const value = await lifecycleManager.run(
       RealtimeOperationKind.media,
       undefined,
       async (token) => {
@@ -79,9 +79,9 @@ describe("RealtimeCoordinator", () => {
   });
 
   it("rejects a second concurrent operation", async () => {
-    const { coordinator } = makeCoordinator();
+    const { lifecycleManager } = makeCoordinator();
     let release!: () => void;
-    const blocking = coordinator.run(
+    const blocking = lifecycleManager.run(
       RealtimeOperationKind.media,
       undefined,
       () =>
@@ -91,7 +91,7 @@ describe("RealtimeCoordinator", () => {
     );
 
     await expect(
-      coordinator.run(RealtimeOperationKind.media, undefined, async () => 2),
+      lifecycleManager.run(RealtimeOperationKind.media, undefined, async () => 2),
     ).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
 
     release();
@@ -99,15 +99,15 @@ describe("RealtimeCoordinator", () => {
   });
 
   it("moves from preparing to ready when the local preview becomes ready", async () => {
-    const { coordinator, states, listener } = makeCoordinator();
-    await coordinator.setStateListener(listener);
+    const { lifecycleManager, states, listener } = makeCoordinator();
+    await lifecycleManager.setStateListener(listener);
 
-    await coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
-      await coordinator.commit(
+    await lifecycleManager.run(RealtimeOperationKind.media, undefined, async (token) => {
+      await lifecycleManager.commit(
         new RealtimeState({ connectionState: RealtimeConnectionState.preparing }),
         token,
       );
-      await coordinator.localPreviewDidBecomeReady(() => true);
+      await lifecycleManager.localPreviewDidBecomeReady(() => true);
     });
 
     expect(states.map((s) => s.connectionState)).toEqual([
@@ -118,30 +118,30 @@ describe("RealtimeCoordinator", () => {
   });
 
   it("ignores a stale preview-ready notification", async () => {
-    const { coordinator } = makeCoordinator();
-    await coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
-      await coordinator.commit(
+    const { lifecycleManager } = makeCoordinator();
+    await lifecycleManager.run(RealtimeOperationKind.media, undefined, async (token) => {
+      await lifecycleManager.commit(
         new RealtimeState({ connectionState: RealtimeConnectionState.preparing }),
         token,
       );
-      await coordinator.localPreviewDidBecomeReady(() => false);
+      await lifecycleManager.localPreviewDidBecomeReady(() => false);
     });
-    expect(coordinator.currentState.connectionState).toBe(
+    expect(lifecycleManager.currentState.connectionState).toBe(
       RealtimeConnectionState.preparing,
     );
   });
 
   it("terminate(all) runs cleanup and finishes idle with the given reason", async () => {
     const cleanupScopes: RealtimeTerminationScope[] = [];
-    const { coordinator, states, listener } = makeCoordinator({
+    const { lifecycleManager, states, listener } = makeCoordinator({
       cleanup: async (scope) => {
         cleanupScopes.push(scope);
         return { hasLocalMedia: false };
       },
     });
-    await coordinator.setStateListener(listener);
+    await lifecycleManager.setStateListener(listener);
 
-    await coordinator.terminate(RealtimeTerminationScope.all);
+    await lifecycleManager.terminate(RealtimeTerminationScope.all);
 
     expect(cleanupScopes).toEqual([RealtimeTerminationScope.all]);
     const last = states[states.length - 1];
@@ -151,11 +151,11 @@ describe("RealtimeCoordinator", () => {
 
   it("failed operation with failure scope triggers termination with failure reason", async () => {
     const failure = new XmaxError(XmaxErrorCode.mediaError, "capture failed");
-    const { coordinator, states, listener } = makeCoordinator();
-    await coordinator.setStateListener(listener);
+    const { lifecycleManager, states, listener } = makeCoordinator();
+    await lifecycleManager.setStateListener(listener);
 
     await expect(
-      coordinator.run(
+      lifecycleManager.run(
         RealtimeOperationKind.media,
         RealtimeTerminationScope.all,
         async () => {
@@ -170,10 +170,10 @@ describe("RealtimeCoordinator", () => {
   });
 
   it("media failure without failure scope restores idle from preparing", async () => {
-    const { coordinator } = makeCoordinator();
+    const { lifecycleManager } = makeCoordinator();
     await expect(
-      coordinator.run(RealtimeOperationKind.media, undefined, async (token) => {
-        await coordinator.commit(
+      lifecycleManager.run(RealtimeOperationKind.media, undefined, async (token) => {
+        await lifecycleManager.commit(
           new RealtimeState({
             connectionState: RealtimeConnectionState.preparing,
           }),
@@ -182,21 +182,21 @@ describe("RealtimeCoordinator", () => {
         throw new XmaxError(XmaxErrorCode.cameraPermissionDenied, "denied");
       }),
     ).rejects.toMatchObject({ code: XmaxErrorCode.cameraPermissionDenied });
-    expect(coordinator.currentState.connectionState).toBe(
+    expect(lifecycleManager.currentState.connectionState).toBe(
       RealtimeConnectionState.idle,
     );
   });
 
   it("disconnect is a no-op while idle/preparing/ready", async () => {
     const cleanupCalls: RealtimeTerminationScope[] = [];
-    const { coordinator, states, listener } = makeCoordinator({
+    const { lifecycleManager, states, listener } = makeCoordinator({
       cleanup: async (scope) => {
         cleanupCalls.push(scope);
         return { hasLocalMedia: true };
       },
     });
-    await coordinator.setStateListener(listener);
-    await coordinator.disconnect();
+    await lifecycleManager.setStateListener(listener);
+    await lifecycleManager.disconnect();
     expect(cleanupCalls).toHaveLength(0);
     expect(states).toHaveLength(1);
   });

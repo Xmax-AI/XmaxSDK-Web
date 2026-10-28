@@ -1,5 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { RealtimeNetworkQualityLevel } from "../src/Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";

@@ -10,7 +10,7 @@
 
 import { QUALITY_TIERS } from "./QualityTiers";
 import { DEFAULT_POLICY, type QualityPolicy } from "./QualityPolicy";
-import { RealtimeNetworkQualityLevel } from "../../Foundation/RTC/NetworkStatistics";
+import { RealtimeNetworkQualityLevel } from "../../Service/Realtime/RealtimeNetworkQuality";
 
 /**
  * The ordered L1–L5 presets used for adjacent transitions.

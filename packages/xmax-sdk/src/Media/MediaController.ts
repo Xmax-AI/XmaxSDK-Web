@@ -14,10 +14,10 @@ import type { MediaServicing } from "../Service/Media/MediaServicing";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import { CameraController } from "./Camera/CameraController";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
-import { LocalVideoController } from "./Video/LocalVideoController";
-import { ExternalVideoController } from "./Video/ExternalVideoController";
-import { ExternalFrameSourceController } from "./External/ExternalFrameSourceController";
-import { LocalImageController } from "./Image/LocalImageController";
+import { VideoController } from "./Video/VideoController";
+import { ExternalVideoTrackController } from "./External/ExternalVideoTrackController";
+import { ExternalVideoController } from "./External/ExternalVideoController";
+import { ImageController } from "./Image/ImageController";
 import { InteractionController } from "./Interaction/InteractionController";
 import type { InteractionListener } from "./Interaction/InteractionControlling";
 import type { InteractionFrame } from "./Interaction/InteractionFrame";
@@ -37,22 +37,22 @@ export class MediaController implements MediaControlling {
   /**
    * The local-file playback and audio/video output controller.
    */
-  private readonly video: LocalVideoController;
+  private readonly video: VideoController;
 
   /**
    * The still-image video-output controller.
    */
-  private readonly image: LocalImageController;
+  private readonly image: ImageController;
 
   /**
    * The external-track ownership and termination controller.
    */
-  private readonly external: ExternalVideoController;
+  private readonly external: ExternalVideoTrackController;
 
   /**
    * The external-frame-source, audio, and preview controller.
    */
-  private readonly externalFrames: ExternalFrameSourceController;
+  private readonly externalFrames: ExternalVideoController;
 
   /**
    * The coordinate-mapping and serialized interaction sender.
@@ -87,10 +87,10 @@ export class MediaController implements MediaControlling {
       mediaService: dependencies.mediaService,
       errorListener: dependencies.onCameraError,
     });
-    this.video = new LocalVideoController(dependencies.onVideoError);
-    this.image = new LocalImageController(dependencies.onImageError);
-    this.external = new ExternalVideoController(dependencies.onExternalError);
-    this.externalFrames = new ExternalFrameSourceController(dependencies.onExternalError);
+    this.video = new VideoController(dependencies.onVideoError);
+    this.image = new ImageController(dependencies.onImageError);
+    this.external = new ExternalVideoTrackController(dependencies.onExternalError);
+    this.externalFrames = new ExternalVideoController(dependencies.onExternalError);
     this.interaction = new InteractionController(dependencies.interactionListener);
   }
 

@@ -18,10 +18,10 @@ import { connectionAppID } from "../../Service/Realtime/RealtimeSessionConnectio
 import { RealtimeSession } from "../../Service/Realtime/RealtimeSession";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { StreamID } from "../../Service/Realtime/StreamID";
+import { StreamID } from "../../Stream/StreamID";
 import type { RemoteStreamBinding, StreamControlling } from "../../Stream/StreamControlling";
-import type { RealtimeTiming } from "./RealtimeTiming";
-import { RealtimeCoordinator } from "./RealtimeCoordinator";
+import type { RealtimeTiming } from "../../Service/Realtime/RealtimeTiming";
+import { XmaxRealtimeLifecycleManager } from "./XmaxRealtimeLifecycleManager";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 
 /**
@@ -296,7 +296,7 @@ export class XmaxRealtimeConnectionManager {
     signal: AbortSignal
   ): Promise<void> {
     if (signal.aborted) {
-      throw RealtimeCoordinator.cancelledError();
+      throw XmaxRealtimeLifecycleManager.cancelledError();
     }
 
     const mediaTrack = this.activeRemoteTrack?.mediaStreamTrack;
@@ -325,7 +325,7 @@ export class XmaxRealtimeConnectionManager {
       };
       const abort = () => {
         cleanup();
-        reject(RealtimeCoordinator.cancelledError());
+        reject(XmaxRealtimeLifecycleManager.cancelledError());
       };
 
       const timer = setTimeout(

@@ -1,5 +1,5 @@
 //
-//  ExternalFrameSink.ts
+//  ExternalVideoFrameSink.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -18,7 +18,7 @@ import type { RealtimeExternalFrameSink } from "./RealtimeExternalVideoSource";
  * Validates source timestamps and schedules frames on a shared clock; unbinding permanently invalidates
  * this sink.
  */
-export class ExternalFrameSink implements RealtimeExternalFrameSink {
+export class ExternalVideoFrameSink implements RealtimeExternalFrameSink {
 
   /**
    * Whether the binding still accepts input.

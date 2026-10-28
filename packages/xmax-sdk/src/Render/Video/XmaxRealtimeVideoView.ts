@@ -14,7 +14,7 @@ import type { VideoRenderStatistics } from "./VideoRenderStatistics";
 import { RenderStatisticsController } from "./RenderStatisticsController";
 import { RenderWarmupController } from "./RenderWarmupController";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
-import { VideoRenderRegistry } from "../../Service/Realtime/VideoRenderBinding";
+import { VideoRenderRegistry } from "./VideoRenderRegistry";
 import { TrajectoryRegistry } from "../Trajectory/TrajectoryRegistry";
 import { TrajectoryOverlayView } from "../Trajectory/TrajectoryOverlayView";
 import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectoryEffectRenderer";
