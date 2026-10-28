@@ -193,165 +193,51 @@ React applications use their own React installation; non-React applications do n
 
 ## Quick Start
 
-### Configure permissions
-
-Serve your application over HTTPS or localhost and allow camera access. For an
-embedded application, configure the iframe permissions:
-
-```html
-<iframe src="https://your-app.example" allow="camera; microphone; autoplay"></iframe>
-```
-
-<br>
-
-### Generate and display video
-
-Add a container with an explicit size:
-
-```html
-<div id="video-container" style="width: 100%; height: 70vh;"></div>
-```
-
-Run the following in an async function called from a user action, such as clicking
-a Start button:
+Create a camera stream, start realtime generation, and display the result:
 
 ```javascript
 import {
-  CameraPosition,
-  RealtimeCameraPreset,
-  RealtimeConfiguration,
-  RealtimeContext,
-  RealtimeModel,
-  VideoContentMode,
-  XmaxClient,
-  XmaxConfiguration,
+  CameraPosition, RealtimeConfiguration, RealtimeContext, RealtimeModel,
+  RealtimeCameraPreset, XmaxClient, XmaxConfiguration, XmaxEnvironment,
   XmaxRealtimeDualVideoView,
-} from "@xmaxai/web-sdk";
+} from '@xmaxai/web-sdk'
 
-const client = new XmaxClient(
-  new XmaxConfiguration({ apiKey: "YOUR_TEMPORARY_XMAX_API_KEY" })
-);
+// Initialize the client
+const client = new XmaxClient(new XmaxConfiguration({
+  apiKey: '<YOUR_XMAX_API_KEY>',
+  environment: XmaxEnvironment.global,
+}))
 
+// Initialize the realtime manager
 const realtime = client.createRealtimeManager(
   new RealtimeConfiguration({ model: RealtimeModel.x2_1 })
-);
+)
 
+// Create the video view
+const videoView = new XmaxRealtimeDualVideoView()
+videoView.attach(container) // container is a sized element on your page
+
+// Create a camera stream and bind the preview
 const localStream = await realtime.createLocalCameraStream({
-  preset: RealtimeCameraPreset.resolution1080x1920,
+  preset: RealtimeCameraPreset.resolution1920x1080,
   position: CameraPosition.front,
   useMicrophone: false,
-});
+})
+videoView.localTrack = localStream.videoTrack
 
-const videoView = new XmaxRealtimeDualVideoView({
-  localTrack: localStream.videoTrack,
-  videoContentMode: VideoContentMode.fill,
-});
-
-videoView.element.style.width = "100%";
-videoView.element.style.height = "100%";
-const container = document.getElementById("video-container");
-if (!container) {
-  throw new Error("Missing #video-container element");
-}
-videoView.attach(container);
-
+// Once the preview is ready, start generation and display the result
 const remoteStream = await realtime.startGeneration({
   localStream,
   context: new RealtimeContext({
     prompt: "视频中角色替换成参考图中角色",
-    referencePath: "https://cdn.22duck.cn/images/source/charx/chatx_image1.jpg",
+    referencePath: "https://cdn.22duck.cn/images/source/charx/charx_real_image7.png?presetVersion=20260909",
   }),
-});
+})
+videoView.remoteTrack = remoteStream.videoTrack
 
-videoView.remoteTrack = remoteStream.videoTrack;
+// Run the following when generation is no longer needed
+await realtime.close()
 ```
-
-The view displays the local preview until generated video is ready, with dragging
-and touch interaction enabled by default. Set `remoteVideoFadeInDuration` to
-customize the fade-in duration in seconds; the default is `0.3`.
-
-<br>
-
-### Using React
-
-Use `XmaxRealtimeDualVideo` from the optional React entry point. Store the local
-and remote tracks in component state and update them as streams become available:
-
-```jsx
-import { XmaxRealtimeDualVideo } from "@xmaxai/web-sdk/react";
-import { VideoContentMode } from "@xmaxai/web-sdk";
-
-<XmaxRealtimeDualVideo
-  localTrack={localTrack}
-  remoteTrack={remoteTrack}
-  videoContentMode={VideoContentMode.fill}
-  style={{ width: "100%", height: "100%" }}
-/>
-```
-
-See the [React guide](./materials/usage.md#react) for a state-binding example.
-
-<br>
-
-### Listen for events
-
-Register the listeners you need after creating `realtime`, before starting media
-or generation:
-
-| Listener | Purpose |
-| --- | --- |
-| `setStateListener` | Observe realtime states and termination reasons. |
-| `setRemoteMediaFrameListener` | Receive generated audio and video frames for recording or processing. |
-| `setNetworkQualityListener` | Monitor uplink and downlink network quality. |
-| `setTimingListener` | Observe startup-stage durations. |
-
-For example, monitor state changes and errors:
-
-```javascript
-await realtime.setStateListener((state) => {
-  console.log("State:", state.connectionState);
-  if (state.reason?.kind === "failure") {
-    console.error("Error:", state.reason.error.code, state.reason.error.message);
-  }
-});
-```
-
-Handle async API failures with `try/catch`. Failures that end the workflow are also
-reported through `state.reason` after cleanup. Bind the local track to an SDK video
-view to reach `ready`; bind the returned remote track to reach `generating` after
-the first frame and render warmup. Use `generating` to dismiss your loading UI.
-
-<br>
-
-### Resource Cleanup
-
-- **`disconnect()` — Stop Remote Generation**
-
-  Ends the remote session while keeping the local camera stream
-  and preview active. Use this when ending the online session but staying on the
-  current screen. You can start a new session later using the same local stream:
-
-  ```javascript
-  await realtime.disconnect();
-  ```
-
-- **`close()` — Full Teardown & Release**
-
-  Ends the remote session, stops local media capture, and releases all engine
-  resources. Use this when leaving or dismissing the generation screen:
-
-  ```javascript
-  await realtime.close();
-  ```
-
-> **Note:** These methods are alternatives, not sequential steps. When exiting a
-> screen, call `close()` directly—there is no need to call `disconnect()` first.
-
-<br>
-
-> [!TIP]
-> For image and video inputs, encoding, reference images, interaction, and media
-> callbacks, see the [usage guide](./materials/usage.md).
 
 <br>
 
