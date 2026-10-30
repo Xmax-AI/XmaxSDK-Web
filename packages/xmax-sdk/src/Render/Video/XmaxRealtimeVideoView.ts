@@ -19,6 +19,9 @@ import { TrajectoryRegistry } from "../Trajectory/TrajectoryRegistry";
 import { TrajectoryOverlayView } from "../Trajectory/TrajectoryOverlayView";
 import { DefaultTrajectoryEffectRenderer } from "../Trajectory/DefaultTrajectoryEffectRenderer";
 import type { TrajectoryEffectRendering } from "../Trajectory/TrajectoryEffectRendering";
+import { AgoraBeautyController, resolvedBeautyOptions } from "../Beauty/AgoraBeautyController";
+import type { VideoBeautyOptions } from "../Beauty/VideoBeautyOptions";
+import { XmaxError } from "../../Foundation/Errors/XmaxError";
 
 /**
  * The mapping from SDK layout modes to browser object-fit values.
@@ -115,6 +118,28 @@ export class XmaxRealtimeVideoView {
   private readonly warmupController: RenderWarmupController;
 
   /**
+   * The unmodified display source, retained while beauty processing supplies a separate output.
+   */
+  private sourceStream: MediaStream | null = null;
+
+  /**
+   * The view's optional beauty strengths; undefined disables processing.
+   */
+  private storedBeautyOptions?: Readonly<Required<VideoBeautyOptions>>;
+
+  /**
+   * The current display-only processor.
+   */
+  private beautyController?: AgoraBeautyController;
+
+  /**
+   * Reports beauty failures after restoring original playback, without changing generation state.
+   */
+  beautyErrorHandler?: (
+    error: XmaxError
+  ) => void;
+
+  /**
    * Whether the view has been detached.
    */
   private detached = false;
@@ -205,6 +230,31 @@ export class XmaxRealtimeVideoView {
    */
   get fadeInDurationMs(): number {
     return this.warmupController.fadeInDurationMs;
+  }
+
+  /**
+   * Display-only beauty strengths. Undefined disables processing; dependencies load only when enabled.
+   * Original media callbacks and recordings retain the unmodified video.
+   */
+  get beautyOptions(): Readonly<VideoBeautyOptions> | undefined {
+    return this.storedBeautyOptions;
+  }
+
+  /**
+   * Updates or disables beauty processing. Invalid strengths throw synchronously; asynchronous failures
+   * restore original playback and report through beautyErrorHandler.
+   */
+  set beautyOptions(
+    options: VideoBeautyOptions | undefined
+  ) {
+    this.storedBeautyOptions = options ? resolvedBeautyOptions(options) : undefined;
+    if (!this.storedBeautyOptions) {
+      this.stopBeauty();
+    } else if (this.beautyController) {
+      this.beautyController.update(this.storedBeautyOptions);
+    } else {
+      this.startBeauty();
+    }
   }
 
   /**
@@ -393,6 +443,7 @@ export class XmaxRealtimeVideoView {
       this.prepareRenderWarmup();
       this.armFrameDisplayNotification();
     }
+    this.startBeauty();
   }
 
   /**
@@ -400,6 +451,7 @@ export class XmaxRealtimeVideoView {
    */
   detach(): void {
     this.detached = true;
+    this.stopBeauty();
     this.disposeTrajectory();
     this.statisticsController.stop();
     this.cancelFrameDisplayNotification();
@@ -416,10 +468,12 @@ export class XmaxRealtimeVideoView {
   setMediaStream(
     stream: MediaStream | null
   ): void {
-    if (this.videoElement.srcObject === stream) {
+    if (this.sourceStream === stream) {
       return;
     }
 
+    this.stopBeauty();
+    this.sourceStream = stream;
     this.statisticsController.stop();
     this.cancelFrameDisplayNotification();
     this.hasNotifiedFrameDisplay = false;
@@ -431,6 +485,7 @@ export class XmaxRealtimeVideoView {
       this.prepareRenderWarmup();
       this.armFrameDisplayNotification();
       this.startRenderStatistics();
+      this.startBeauty();
     }
   }
 
@@ -479,6 +534,7 @@ export class XmaxRealtimeVideoView {
    * Unbinds the current track and clears presentation.
    */
   private detachCurrentTrack(): void {
+    this.stopBeauty();
     this.warmupController.reset();
     this.disposeTrajectory();
     this.statisticsController.stop();
@@ -488,6 +544,76 @@ export class XmaxRealtimeVideoView {
     }
     this.cancelFrameDisplayNotification();
     this.videoElement.srcObject = null;
+    this.sourceStream = null;
+  }
+
+  /**
+   * Starts lazy processing while the original source continues playing and drives startup readiness.
+   */
+  private startBeauty(): void {
+    const options = this.storedBeautyOptions;
+    const source = this.sourceStream;
+    if (!options || !source || this.detached || this.beautyController) {
+      return;
+    }
+    const track = source.getVideoTracks()[0];
+    if (!track) {
+      return;
+    }
+    const controller = new AgoraBeautyController(
+      output => {
+        if (this.beautyController === controller && !this.detached) {
+          this.videoElement.srcObject = new MediaStream([output]);
+        }
+      },
+      error => this.failBeauty(
+        controller,
+        error
+      )
+    );
+    this.beautyController = controller;
+    void controller.start(
+      track,
+      options
+    ).catch(error => this.failBeauty(
+      controller,
+      XmaxError.from(error)
+    ));
+  }
+
+  /**
+   * Restores original playback before releasing effect resources, preserving warmup and interaction.
+   */
+  private stopBeauty(): void {
+    const controller = this.beautyController;
+    if (!controller) {
+      return;
+    }
+    this.beautyController = undefined;
+    this.videoElement.srcObject = this.sourceStream;
+    void controller.dispose().catch(() => {
+      XmaxLogger.render.warning(() => "美颜资源释放失败 (Beauty Cleanup Failed)");
+    });
+  }
+
+  /**
+   * Disables a failed effect without propagating failure to the media or generation lifecycle.
+   */
+  private failBeauty(
+    controller: AgoraBeautyController,
+    error: XmaxError
+  ): void {
+    if (this.beautyController !== controller) {
+      return;
+    }
+    this.stopBeauty();
+    this.storedBeautyOptions = undefined;
+    XmaxLogger.render.warning(() => "美颜已关闭，恢复原始画面 (Beauty Disabled; Original Video Restored)");
+    try {
+      this.beautyErrorHandler?.(error);
+    } catch {
+      // App observers must not interrupt original playback.
+    }
   }
 
   /**

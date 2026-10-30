@@ -54,6 +54,9 @@ importers:
       '@volcengine/rtc':
         specifier: 4.69.3
         version: 4.69.3
+      agora-extension-beauty-effect:
+        specifier: 1.1.1
+        version: 1.1.1
       agora-rtc-sdk-ng:
         specifier: 4.24.8
         version: 4.24.8
@@ -711,6 +714,9 @@ packages:
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
+
+  agora-extension-beauty-effect@1.1.1:
+    resolution: {integrity: sha512-vkaB7XjmAIXNVk+i+FgiR+EZwl4EovRcPGMzgya4TQUmQXLzr8uJ9wG+/M2brlEigveB2tRZ370pAqrUJ4GHSw==}
 
   agora-rtc-sdk-ng@4.24.8:
     resolution: {integrity: sha512-TkHDu1HxYcjfbvpmOfOAucSgMJRlphODQlVN6fwAMCh7yIKt6J4O3wITNCvUkEVi9aaZTjeJOZ+onFUu/zlnuw==}
@@ -1811,6 +1817,8 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  agora-extension-beauty-effect@1.1.1: {}
 
   agora-rtc-sdk-ng@4.24.8:
     dependencies:

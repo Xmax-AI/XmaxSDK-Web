@@ -17,6 +17,7 @@ import {
   type DownlinkVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
+  type VideoBeautyOptions,
 } from "@xmaxai/web-sdk";
 import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
@@ -26,6 +27,7 @@ import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
+import { ResultBeautyControl } from "./ResultBeautyControl";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
@@ -86,6 +88,17 @@ export function App() {
   const [errorText, setErrorText] = useState("");
   const [busy, setBusy] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
+  const [beautyEnabled, setBeautyEnabled] = useState(false);
+  const [beautySettings, setBeautySettings] = useState<Required<VideoBeautyOptions>>({
+    smoothness: 0.3,
+    lightening: 0.2,
+    sharpness: 0.2,
+    redness: 0.1,
+  });
+  const beautyOptions = useMemo<VideoBeautyOptions | undefined>(
+    () => beautyEnabled ? beautySettings : undefined,
+    [beautyEnabled, beautySettings],
+  );
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>("idle");
   const [recordingResult, setRecordingResult] = useState<RecordingResult>();
   const recorderRef = useRef<RemoteRecorder>();
@@ -527,6 +540,7 @@ export function App() {
     setRemoteVideoStatistics(undefined);
     setNetworkStatistics(undefined);
     setStateText(RealtimeConnectionState.idle);
+    setBeautyEnabled(false);
     setErrorText("");
     void realtime?.close();
   }
@@ -814,6 +828,8 @@ export function App() {
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
+          <ResultBeautyControl enabled={beautyEnabled} options={beautySettings}
+            disabled={!remoteStream || busy} onEnabledChange={setBeautyEnabled} onOptionsChange={setBeautySettings} />
           <RecordingControl status={recordingStatus} disabled={stateText !== RealtimeConnectionState.generating}
             onToggle={() => void handleToggleRecording()} />
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
@@ -849,6 +865,11 @@ export function App() {
                 <div className="remoteVideo" key={remoteStream.id}>
                   <XmaxRealtimeVideo
                     track={remoteStream.videoTrack}
+                    beautyOptions={beautyOptions}
+                    onBeautyError={error => {
+                      setBeautyEnabled(false);
+                      setErrorText(error.message);
+                    }}
                     isInteractionEnabled
                     style={{ width: "100%", height: "100%" }}
                   />

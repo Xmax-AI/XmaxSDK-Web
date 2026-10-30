@@ -495,6 +495,18 @@ button:disabled,
   font-weight: 500;
 }
 
+.resultEffectStrengthHeading {
+  margin-top: 12px;
+}
+
+.remoteVolumePopover input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.remoteVolumePopover input[type="range"]:disabled {
+  opacity: 0.45;
+}
+
 .remoteVolumePopover input[type="range"] {
   -webkit-appearance: none;
   appearance: none;

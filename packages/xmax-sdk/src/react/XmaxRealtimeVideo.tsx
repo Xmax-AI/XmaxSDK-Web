@@ -14,6 +14,8 @@ import {
   type RealtimeVideoTrack,
   type TrajectoryEffectRendering,
   type VideoRenderStatistics,
+  type VideoBeautyOptions,
+  type XmaxError,
 } from "../index";
 import {
   useEffect,
@@ -40,6 +42,18 @@ export interface XmaxRealtimeVideoProps {
    * Whether display is mirrored without affecting publication.
    */
   mirrored?: boolean;
+
+  /**
+   * Optional display-only beauty; undefined disables it. Original tracks and recordings are unchanged.
+   */
+  beautyOptions?: VideoBeautyOptions;
+
+  /**
+   * Reports beauty failures after the view restores original video, without stopping generation.
+   */
+  onBeautyError?: (
+    error: XmaxError
+  ) => void;
 
   /**
    * The current view's presentation statistics, cleared on replacement or detachment and independent of
@@ -108,6 +122,30 @@ export function XmaxRealtimeVideo(
       }
     },
     [props.onRenderStatistics]
+  );
+
+  useEffect(
+    () => {
+      if (viewRef.current) {
+        viewRef.current.beautyErrorHandler = props.onBeautyError;
+      }
+    },
+    [props.onBeautyError]
+  );
+
+  useEffect(
+    () => {
+      const view = viewRef.current;
+      if (view) {
+        try {
+          view.beautyOptions = props.beautyOptions;
+        } catch (error) {
+          view.beautyOptions = undefined;
+          view.beautyErrorHandler?.(error as XmaxError);
+        }
+      }
+    },
+    [props.beautyOptions]
   );
 
   useEffect(

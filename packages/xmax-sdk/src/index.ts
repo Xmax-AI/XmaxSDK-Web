@@ -116,6 +116,7 @@ export type {
 export { StoredFile } from "./Foundation/Storage/StoredFile";
 
 // Render
+export type { VideoBeautyOptions } from "./Render/Beauty/VideoBeautyOptions";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
 export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeDualVideoView } from "./Render/Video/XmaxRealtimeDualVideoView";
