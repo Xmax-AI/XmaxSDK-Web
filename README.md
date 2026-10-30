@@ -189,6 +189,8 @@ npm install @xmaxai/web-sdk
 The package includes optional React components at `@xmaxai/web-sdk/react`.
 React applications use their own React installation; non-React applications do not need React.
 
+For HTML pages without a build tool, see the [browser distribution](materials/browser.md).
+
 <br>
 
 ## Quick Start

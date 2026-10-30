@@ -25,6 +25,8 @@
   ],
   "scripts": {
     "build": "tsup",
+    "build:browser": "tsup --config tsup.browser.config.ts",
+    "test:browser": "npm run build:browser && node scripts/verify-browser.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepack": "cp ../../README.md ./README.md",
