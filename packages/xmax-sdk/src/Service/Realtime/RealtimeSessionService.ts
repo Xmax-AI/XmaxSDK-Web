@@ -236,17 +236,20 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   }
 
   /**
-   * Starts periodic heartbeats for a session, replacing any existing heartbeat loop.
+   * Sends the first heartbeat with the measured allowance, then continues without that field. An
+   * in-flight credential refresh settles before the first request so it cannot consume the allowance.
    */
   startHeartbeat(
     sessionID: string,
     handlers: RealtimeSessionHeartbeatHandlers,
+    firstHeartbeatGraceSeconds?: number,
   ): void {
     const version = ++this.heartbeatVersion;
     void this.runHeartbeat(
       version,
       sessionID,
-      handlers
+      handlers,
+      firstHeartbeatGraceSeconds
     );
   }
 
@@ -283,14 +286,25 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     version: number,
     sessionID: string,
     handlers: RealtimeSessionHeartbeatHandlers,
+    firstHeartbeatGraceSeconds?: number,
   ): Promise<void> {
     while (this.heartbeatVersion === version) {
-      await this.sleep(this.heartbeatIntervalMs);
-      if (this.heartbeatVersion !== version) {
-        return;
-      }
       try {
-        const session = await this.heartbeatSession(sessionID);
+        if (firstHeartbeatGraceSeconds !== undefined) {
+          const pending = this.refreshes.get(sessionID);
+          if (pending) {
+            await pending;
+            if (this.heartbeatVersion !== version) {
+              return;
+            }
+            continue;
+          }
+        }
+        const session = await this.heartbeatSession(
+          sessionID,
+          firstHeartbeatGraceSeconds
+        );
+        firstHeartbeatGraceSeconds = undefined;
         if (this.heartbeatVersion !== version) {
           return;
         }
@@ -307,20 +321,36 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
         );
         return;
       }
+      if (this.heartbeatVersion !== version) {
+        return;
+      }
+      await this.sleep(this.heartbeatIntervalMs);
     }
   }
 
   /**
-   * Requests a single heartbeat without requiring complete connection parameters.
+   * Requests a heartbeat with an optional first-generation allowance. Concurrent credential refreshes
+   * share the pending request.
    */
   heartbeatSession(
-    sessionID: string
+    sessionID: string,
+    firstHeartbeatGraceSeconds?: number
   ): Promise<RealtimeSession> {
+    if (firstHeartbeatGraceSeconds !== undefined &&
+      (!Number.isSafeInteger(firstHeartbeatGraceSeconds) || firstHeartbeatGraceSeconds < 0)) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "firstHeartbeatGraceSeconds must be a non-negative safe integer",
+      );
+    }
     const pending = this.refreshes.get(sessionID);
     if (pending) {
       return pending;
     }
-    const operation = this.performHeartbeat(sessionID);
+    const operation = this.performHeartbeat(
+      sessionID,
+      firstHeartbeatGraceSeconds
+    );
     this.refreshes.set(
       sessionID,
       operation
@@ -337,11 +367,13 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * Merges partial heartbeat credentials without recreating cache entries for closed sessions.
    */
   private async performHeartbeat(
-    sessionID: string
+    sessionID: string,
+    firstHeartbeatGraceSeconds?: number
   ): Promise<RealtimeSession> {
     const previous = this.credentials.get(sessionID);
     const payload = await this.apiService.put<SessionPayload>(
       `/session/${sessionID}/heartbeat`,
+      firstHeartbeatGraceSeconds === undefined ? undefined : { firstHeartbeatGraceSeconds },
     );
     const incoming = RealtimeSessionService.decodeConnectionPayload(payload.modelExtra);
     if (payload.modelExtra != null && !incoming) {

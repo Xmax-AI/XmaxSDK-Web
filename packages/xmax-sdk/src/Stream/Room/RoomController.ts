@@ -23,6 +23,12 @@ import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { RoomHeartbeat } from "./RoomHeartbeat";
 import { RoomMessageCodec } from "./RoomMessageCodec";
+import { RoomCommandController } from "./RoomCommandController";
+
+/**
+ * Discards service ACKs for the temporary retry test. Restore false before release.
+ */
+const TEMPORARY_IGNORE_COMMAND_ACKS = false;
 
 /**
  * The lifecycle state of an RTC room.
@@ -73,6 +79,11 @@ type RoomState =
 export interface RoomControllerOptions {
 
   /**
+   * Overrides receipt suppression when exercising a controlled ACK-loss simulation.
+   */
+  ignoreCommandAcks?: boolean;
+
+  /**
    * The RTC engine and room transport.
    */
   rtcManager: RtcManaging;
@@ -117,7 +128,22 @@ export class RoomController implements RoomControlling {
   private readonly customCodec: boolean;
 
   /**
-   * The task chain that serializes control messages.
+   * The room's command receipt, retry, and supersession controller.
+   */
+  private readonly commands: RoomCommandController;
+
+  /**
+   * Whether the current diagnostic session deliberately ignores service receipts.
+   */
+  private readonly ignoreCommandAcks: boolean;
+
+  /**
+   * The expected service sender, when identified by the session response.
+   */
+  private botID?: string;
+
+  /**
+   * The transport chain for ordinary controls and multipart snapshots, independent of command ACK waits.
    */
   private sendTail: Promise<void> = Promise.resolve();
 
@@ -147,6 +173,14 @@ export class RoomController implements RoomControlling {
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
     this.codec = options.codec ?? new RoomMessageCodec();
     this.customCodec = options.codec !== undefined;
+    this.ignoreCommandAcks = options.ignoreCommandAcks ?? TEMPORARY_IGNORE_COMMAND_ACKS;
+    this.commands = new RoomCommandController((
+      message,
+      signal
+    ) => this.sendCommandAttempt(
+      message,
+      signal
+    ));
   }
 
   /**
@@ -207,6 +241,7 @@ export class RoomController implements RoomControlling {
         kind: "joined",
         userID: connection.userID
       };
+      this.botID = connection.botID;
       this.heartbeat.start(connection.userID);
     } catch (error) {
       if (
@@ -242,7 +277,7 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * Sends a generation-start message.
+   * Sends a generation-start message with background retries, without waiting for a service ACK.
    *
    * @param options.taskID - The generation task identifier.
    * @param options.videoFormat - The generation video format.
@@ -251,6 +286,7 @@ export class RoomController implements RoomControlling {
    * @param options.mirror - Whether the server mirrors the input; defaults to false.
    * @param options.faceRestoration - Whether to restore the original face; defaults to false.
    * @param options.extraParams - Parameters merged into this start message without being retained.
+   * @param options.onSent - Runs once after the first successful send, without waiting for the ACK.
    * @throws Rejects if the room is not ready or sending fails.
    */
   startGeneration(
@@ -263,11 +299,16 @@ export class RoomController implements RoomControlling {
       faceRestoration?: boolean;
       paddingContain?: boolean;
       extraParams?: RealtimeExtraParams;
+      onSent?: () => Promise<void>;
     }
   ): Promise<void> {
-    return this.send(
-      RoomEvent.start({
-        userID: this.requireUserID(),
+    const userID = this.requireUserID();
+    const sending = this.commands.send(
+      "start",
+      options.taskID,
+      xid => RoomEvent.start({
+        xid,
+        userID,
         taskID: options.taskID,
         videoFormat: options.videoFormat,
         context: options.context,
@@ -279,10 +320,11 @@ export class RoomController implements RoomControlling {
         ...this.downlinkBitrates(options.targetSize ?? options.videoFormat),
       }),
     );
+    return sending.then(() => options.onSent?.());
   }
 
   /**
-   * Sends updated generation conditions.
+   * Sends updated conditions with background retries, without waiting for a service ACK.
    *
    * @param options.taskID - The generation task identifier.
    * @param options.videoFormat - The generation video format.
@@ -304,9 +346,13 @@ export class RoomController implements RoomControlling {
       extraParams?: RealtimeExtraParams;
     }
   ): Promise<void> {
-    return this.send(
-      RoomEvent.changeCondition({
-        userID: this.requireUserID(),
+    const userID = this.requireUserID();
+    return this.commands.send(
+      "change_condition",
+      options.taskID,
+      xid => RoomEvent.changeCondition({
+        xid,
+        userID,
         taskID: options.taskID,
         videoFormat: options.videoFormat,
         context: options.context,
@@ -331,13 +377,18 @@ export class RoomController implements RoomControlling {
     }
   ): Promise<void> {
     options.ensureActive();
-    return this.send(
-      RoomEvent.changeTargetSize({
-        userID: this.requireUserID(),
+    const userID = this.requireUserID();
+    return this.commands.send(
+      "change_target_size",
+      options.taskID,
+      xid => RoomEvent.changeTargetSize({
+        xid,
+        userID,
         taskID: options.taskID,
         targetSize: options.targetSize,
         ...this.downlinkBitrates(options.targetSize),
       }),
+      options.ensureActive,
     );
   }
 
@@ -370,6 +421,7 @@ export class RoomController implements RoomControlling {
   stopGeneration(
     taskID: string
   ): Promise<void> {
+    this.cancelGenerationCommands(taskID);
     if (!taskID || this.state.kind !== "joined") {
       return Promise.resolve();
     }
@@ -377,6 +429,15 @@ export class RoomController implements RoomControlling {
       userID: this.state.userID,
       taskID
     }));
+  }
+
+  /**
+   * Cancels retries and queued updates before task cleanup awaits other media operations.
+   */
+  cancelGenerationCommands(
+    taskID: string
+  ): void {
+    this.commands.cancel(taskID || undefined);
   }
 
   /**
@@ -413,6 +474,8 @@ export class RoomController implements RoomControlling {
    */
   private async performLeave(): Promise<void> {
     this.state = { kind: "idle" };
+    this.commands.cancel();
+    this.botID = undefined;
     this.heartbeat.stop();
     this.codec.reset();
     this.sendTail = Promise.resolve();
@@ -449,6 +512,19 @@ export class RoomController implements RoomControlling {
       return;
     }
 
+    if (message.event === "xid_ack") {
+      if (this.state.kind === "joined" && senderUserID !== ownUserID &&
+        (!this.botID || senderUserID === this.botID)) {
+        if (this.ignoreCommandAcks) {
+          XmaxLogger.room.info(() =>
+            `RTC command ACK ignored for retry test: xid: ${message.xid}, count: ${message.count}`);
+        } else {
+          this.commands.acknowledge(message);
+        }
+      }
+      return;
+    }
+
     this.listener?.onRoomMessage(
       senderUserID,
       message
@@ -456,8 +532,43 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * Serializes acknowledged control messages; snapshots wait for prior controls without blocking later
-   * controls.
+   * Sends a complete command attempt with independent fragment IDs. Each fragment checks cancellation;
+   * service acknowledgement may cancel the remaining attempts before native send promises settle.
+   */
+  private async sendCommandAttempt(
+    message: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const state = this.state;
+    if (signal.aborted || state.kind !== "joined") {
+      throw new XmaxError(
+        XmaxErrorCode.cancelled,
+        "RTC command was cancelled"
+      );
+    }
+    XmaxLogger.room.info(
+      () =>
+        `发送房间信令 (Outbound Room Signaling)\n` +
+        `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(JSON.parse(message), null, 2)}`,
+    );
+    for (const packet of this.codec.encodeOutgoing(message)) {
+      if (signal.aborted || state !== this.state || state.kind !== "joined") {
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "RTC command was cancelled"
+        );
+      }
+      await this.rtcManager.sendRoomMessage(
+        packet,
+        "concurrent",
+        signal
+      );
+    }
+  }
+
+  /**
+   * Serializes ordinary transport sends; snapshots wait for prior sends without blocking later controls.
+   * Retried generation commands use their independent receipt scheduler.
    */
   private send(
     message: string,

@@ -243,6 +243,14 @@ await realtime.close()
 
 <br>
 
+Session HTTP heartbeats begin when the session first enters `generating`, then continue
+every 10 seconds after the preceding heartbeat finishes. The SDK measures the time from
+connection startup, before creating the session, until entering `generating`, including
+render warmup and any wait before generation starts. The first heartbeat sends this duration
+as `firstHeartbeatGraceSeconds`, rounded up to whole seconds; later heartbeats omit it.
+This value is calculated automatically and is not sent when creating a session.
+The backend determines how the reported duration affects session expiry and billing.
+
 ## Example Project
 
 A complete React application is available in

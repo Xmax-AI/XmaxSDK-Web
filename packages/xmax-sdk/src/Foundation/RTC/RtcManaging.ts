@@ -16,9 +16,10 @@ import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
 
 /**
  * Message delivery policies: ordered awaits each result; latest replaces unsent snapshots; barrier also
- * discards earlier unsent snapshots.
+ * discards earlier unsent snapshots. Concurrent commands retain every send without serially waiting
+ * for native acknowledgements; service-level receipt is handled by the room layer.
  */
-export type RtcRoomMessageDelivery = "ordered" | "latest" | "barrier";
+export type RtcRoomMessageDelivery = "ordered" | "latest" | "barrier" | "concurrent";
 
 /**
  * Camera capture settings.
@@ -224,11 +225,13 @@ export interface RtcManaging {
    * @param message - UTF-8 text subject to the adapter's byte limit.
    * @param delivery - The ordering and replacement policy. Latest may return after enqueueing, without
    * confirming remote receipt.
+   * @param signal - Cancels unsent work and completion waits; already transmitted data cannot be recalled.
    * @throws Rejects if no room is joined or the message is oversized.
    */
   sendRoomMessage(
     message: string,
     delivery?: RtcRoomMessageDelivery,
+    signal?: AbortSignal,
   ): Promise<void>;
 
   /**

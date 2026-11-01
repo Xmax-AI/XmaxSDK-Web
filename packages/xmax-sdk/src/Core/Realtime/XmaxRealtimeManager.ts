@@ -1366,9 +1366,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * Connects a local stream created by this manager.
    *
-   * Creates a session, joins the RTC room, publishes local media, and starts heartbeats. Enabled camera
-   * validation waits for a fixed 200 ms warmup in parallel with connection, before publishing. The
-   * returned remote stream carries results once generation starts.
+   * Creates a session, joins the RTC room, and publishes local media. HTTP heartbeats start when the
+   * session enters generating. Enabled camera validation waits for a fixed 200 ms warmup in parallel
+   * with connection, before publishing. The returned remote stream carries results once generation
+   * starts.
    *
    * @param localStream - This manager's camera, external, local-image, or file-video stream.
    * @returns A remote stream placeholder for generated media.
@@ -1408,6 +1409,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * Active generation updates conditions unless restart is true. The first task requires a context;
    * later calls may reuse cached conditions. Mount the returned remote stream in an SDK video view;
    * generating is entered only after the first frame and render warmup.
+   *
+   * RTC control messages retry in the background until acknowledged or their six-second retry budget
+   * ends. Missing ACKs do not delay this operation or change generation and rendering readiness.
    *
    * @param options.localStream - This manager's local camera, external, image, or video-file stream.
    * @param options.context - The generation conditions; omission reuses cached conditions.
@@ -1672,7 +1676,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * Creates the session, joins and publishes, starts heartbeats, and prepares remote rendering.
+   * Creates the session, joins and publishes, and prepares remote rendering without starting HTTP heartbeats.
    *
    * @param localStream - The local stream owned by this manager.
    * @param token - The current operation lease.

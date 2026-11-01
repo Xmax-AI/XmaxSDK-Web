@@ -20,6 +20,7 @@ import type { RenderControlling } from "../../Render/RenderControlling";
 import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import { RealtimeSessionService } from "../../Service/Realtime/RealtimeSessionService";
+import { RealtimeConnectionState } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
 import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/RealtimeNetworkQuality";
 import type { UplinkVideoStatisticsListener, DownlinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
@@ -262,7 +263,7 @@ export class XmaxRealtimeFactory {
       (dependencies?.apiService
         ? new RealtimeSessionService({
           apiService: dependencies.apiService,
-          provider: options.provider
+          provider: options.provider,
         })
         : undefined);
     let connectionManager: XmaxRealtimeConnectionManager;
@@ -348,6 +349,11 @@ export class XmaxRealtimeFactory {
 
     lifecycleManager = new XmaxRealtimeLifecycleManager({
       errorManager,
+      onStateChanged: state => {
+        if (state.connectionState === RealtimeConnectionState.generating && state.sessionID) {
+          connectionManager.startHeartbeat(state.sessionID);
+        }
+      },
       cleanup: (
         scope,
         taskID

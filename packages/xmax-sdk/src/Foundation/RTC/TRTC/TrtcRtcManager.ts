@@ -21,7 +21,7 @@ import {
 import type { RtcEventListener } from "../RtcEventListener";
 import { networkQualityLevel } from "../RtcQualityConverter";
 import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
-import type { RtcCameraCaptureOptions, RtcManaging } from "../RtcManaging";
+import type { RtcCameraCaptureOptions, RtcManaging, RtcRoomMessageDelivery } from "../RtcManaging";
 import { RtcStatsLogger } from "../RtcStatsLogger";
 import type { UplinkVideoStatistics, DownlinkVideoStatistics } from "../VideoStatistics";
 import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
@@ -775,8 +775,13 @@ export class TrtcRtcManager implements RtcManaging {
    * @throws Rejects outside a room or when encoded text exceeds 1000 bytes.
    */
   async sendRoomMessage(
-    message: string
+    message: string,
+    _delivery?: RtcRoomMessageDelivery,
+    signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "RTC room message was cancelled");
+    }
     const engine = this.requireEngine();
     if (!this.isInRoom) {
       throw new XmaxError(

@@ -90,7 +90,8 @@ export interface StreamGenerationOptions {
   paddingContain?: boolean;
 
   /**
-   * Runs after start is sent without waiting for confirmation; not called for condition updates.
+   * Runs once after start is sent without waiting for the service receipt ACK or media confirmation;
+   * not called for condition updates.
    */
   onStartSent?: () => Promise<void>;
 
@@ -206,8 +207,8 @@ export interface StreamControlling {
    * @param options.faceRestoration - Whether to restore the original face; defaults to false.
    * @param options.onStartSent - Runs after start is sent, before generation confirmation.
    * @param options.extraParams - Parameters merged into this start message without being retained.
-   * @returns A promise resolved after result video publication and subscription; it rejects on timeout,
-   * cancellation, or subscription failure.
+   * @returns A promise resolved after sending start and result video publication and subscription;
+   * receipt ACKs do not gate the result. It rejects on media timeout, cancellation, or send failure.
    * @throws Throws synchronously for an invalid task ID, an unready room, a pending start, or a running
    * task without restart. The returned promise rejects if sending fails or confirmation times out.
    */
@@ -223,7 +224,7 @@ export interface StreamControlling {
   activateRemoteAudio(): Promise<void>;
 
   /**
-   * Sends updated generation conditions.
+   * Sends updated generation conditions without waiting for a service receipt ACK.
    *
    * @param options.taskID - The generation task identifier.
    * @param options.videoFormat - The generation video format.

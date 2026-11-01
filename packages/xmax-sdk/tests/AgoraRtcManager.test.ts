@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IAgoraRTC, IAgoraRTCRemoteUser, LastmileProbeResult } from "agora-rtc-sdk-ng";
@@ -85,6 +86,54 @@ afterEach(async () => {
 });
 
 describe("AgoraRtcManager", () => {
+  it("submits scheduled command retries without waiting for preceding gateway promises", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    const heartbeat = new RoomHeartbeat({ rtcManager: s.manager });
+    vi.spyOn(heartbeat, "start").mockImplementation(() => {});
+    const room = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
+    await room.join(credentials, () => {});
+    let finishInitial!: () => void;
+    s.client.sendStreamMessage.mockImplementation(() => new Promise(() => {}))
+      .mockImplementationOnce(() => new Promise<void>(resolve => { finishInitial = resolve; }));
+    const command = room.changeTargetSize({ taskID: "task", targetSize: { width: 640, height: 480 }, ensureActive: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(3);
+    const payload = JSON.parse(s.client.sendStreamMessage.mock.calls[0]![0]);
+    room.handleIncomingMessage("bot", JSON.stringify({ event: "xid_ack", xid: payload.xid, count: 2 }));
+    finishInitial();
+    await command;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledTimes(3);
+    await room.leave();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("removes an aborted command queued behind an unrelated ordered send before it reaches the wire", async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    await s.manager.initialize();
+    await s.manager.joinRoom(credentials);
+    let finish!: () => void;
+    s.client.sendStreamMessage.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const first = s.manager.sendRoomMessage("first");
+    await vi.advanceTimersByTimeAsync(0);
+    const abort = new AbortController();
+    const obsolete = s.manager.sendRoomMessage("obsolete", "concurrent", abort.signal);
+    const rejected = expect(obsolete).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    abort.abort();
+    await rejected;
+    finish();
+    await first;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.client.sendStreamMessage).toHaveBeenCalledOnce();
+    await s.manager.leaveRoom();
+  });
   it("updates preview capture through the camera SDK without joining or publishing", async () => {
     const s = setup();
     await s.manager.initialize();
@@ -757,8 +806,13 @@ describe("AgoraRtcManager", () => {
     vi.spyOn(heartbeat, "start").mockImplementation(() => {});
     const bindings = vi.fn();
     const onCredentialsRequired = vi.fn();
+    const roomController = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
+    s.client.sendStreamMessage.mockImplementation(async message => {
+      const command = JSON.parse(message);
+      if (command.xid) roomController.handleIncomingMessage("bot", JSON.stringify({ event: "xid_ack", xid: command.xid, count: 1 }));
+    });
     const stream = new StreamController({ rtcManager: s.manager,
-      roomController: new RoomController({ rtcManager: s.manager, heartbeat }), remoteStreamListener: bindings, onCredentialsRequired });
+      roomController, remoteStreamListener: bindings, onCredentialsRequired });
     await stream.connect({ ...credentials, botID: "bot" }, false, () => {});
     stream.setRemoteAudioVolume(0);
     await stream.beginGeneration({ taskID: "same-task", videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1024, fps: 30 }),
@@ -838,7 +892,7 @@ describe("AgoraRtcManager", () => {
     await s.manager.initialize();
     const heartbeat = new RoomHeartbeat({ rtcManager: s.manager });
     vi.spyOn(heartbeat, "start").mockImplementation(() => {});
-    const room = new RoomController({ rtcManager: s.manager, heartbeat });
+    const room = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
     await room.join(credentials, () => {});
     s.client.sendStreamMessage.mockImplementation(() => new Promise<void>(resolve => { setTimeout(resolve, 100); }));
     const interaction = new InteractionController((taskID, points) => room.sendTracks(taskID, points));

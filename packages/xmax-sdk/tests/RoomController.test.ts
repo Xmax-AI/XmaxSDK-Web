@@ -1,5 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
@@ -10,6 +10,7 @@ import { RealtimePoint } from "../src/Service/Realtime/RealtimePoint";
 import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RoomController } from "../src/Stream/Room/RoomController";
+import { createRoomCommandPeer } from "./RoomCommandPeer";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { RoomMessageCodec } from "../src/Stream/Room/RoomMessageCodec";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
@@ -21,6 +22,7 @@ class RtcManagingStub implements RtcManaging {
   joinRoomCalls: RtcRoomJoinConfiguration[] = [];
   leaveRoomCalls = 0;
   sentMessages: string[] = [];
+  reply?: (message: string) => void;
   eventListener?: RtcEventListener;
   failNextJoin?: XmaxError;
 
@@ -64,6 +66,7 @@ class RtcManagingStub implements RtcManaging {
   setRemoteAudioVolume(): void {}
   async sendRoomMessage(message: string, _delivery?: RtcRoomMessageDelivery): Promise<void> {
     this.sentMessages.push(message);
+    this.reply?.(message);
   }
   setEventListener(listener?: RtcEventListener): void {
     this.eventListener = listener;
@@ -148,10 +151,11 @@ describe("downlink bitrate signaling", () => {
   });
 });
 
-function makeController() {
+function makeController(options?: { ignoreCommandAcks?: boolean }) {
   const rtc = new RtcManagingStub();
   const heartbeat = new RoomHeartbeatStub({ rtcManager: rtc });
-  const controller = new RoomController({ rtcManager: rtc, heartbeat });
+  const controller = new RoomController({ rtcManager: rtc, heartbeat, ignoreCommandAcks: options?.ignoreCommandAcks ?? false });
+  rtc.reply = createRoomCommandPeer(message => controller.handleIncomingMessage("bot001", message));
   return { controller, rtc, heartbeat };
 }
 
@@ -314,7 +318,7 @@ describe("RoomController", () => {
       const raw = rtc.sentMessages[0]!;
       const payload = JSON.parse(raw);
       expect(raw).toBe(JSON.stringify(payload));
-      expect(info).toHaveBeenCalledTimes(1);
+      expect(info).toHaveBeenCalledTimes(2);
       const args = info.mock.calls[0]!;
       expect(args[args.length - 1]).toContain(
         `发送房间信令 (Outbound Room Signaling)\n└─ 内容：\n${JSON.stringify(payload, null, 2)}`,
@@ -536,6 +540,7 @@ describe("VeRTC room protocol", () => {
   it("preserves existing JSON fields and sends a long prompt without chunking", async () => {
     const { controller, rtc, heartbeat } = makeController();
     const credentials = { provider: RtcProvider.vertc as const, appID: "app", roomID: "000123", userID: "ve-user", roomToken: "token", botID: "bot" };
+    rtc.reply = createRoomCommandPeer(message => controller.handleIncomingMessage("bot", message));
     await controller.join(credentials, noopEnsureActive);
     expect(rtc.joinRoomCalls[0]).toEqual(credentials);
     expect(heartbeat.startedUserIDs).toEqual(["ve-user"]);
@@ -551,5 +556,132 @@ describe("VeRTC room protocol", () => {
     controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "ve-user", uid: "task" }));
     expect(incoming).toHaveBeenCalledOnce();
     await controller.leave();
+  });
+});
+
+describe("room command receipt", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+  it("filters broadcast ACKs by recipient, sender and pending xid without forwarding them as business events", async () => {
+    const { controller, rtc } = makeController();
+    rtc.reply = undefined;
+    await controller.join(connection, noopEnsureActive);
+    const listener = vi.fn();
+    controller.setListener({ onRoomMessage: listener });
+    const sent = vi.fn(async () => {});
+    const start = controller.startGeneration({ taskID: "task", videoFormat, context, onSent: sent });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toHaveBeenCalledOnce();
+    const { xid } = JSON.parse(rtc.sentMessages[0]!);
+    const ack = { event: "xid_ack", xid, count: 1 };
+    controller.handleIncomingMessage("rtc-user-001", JSON.stringify(ack));
+    controller.handleIncomingMessage("unrelated-user", JSON.stringify(ack));
+    controller.handleIncomingMessage("bot001", JSON.stringify({ ...ack, user_id: "other-client" }));
+    controller.handleIncomingMessage("bot001", JSON.stringify({ ...ack, xid: "other-xid" }));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(rtc.sentMessages).toHaveLength(2);
+    controller.handleIncomingMessage("bot001", JSON.stringify({ ...ack, count: 2 }));
+    await start;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(rtc.sentMessages).toHaveLength(2);
+    expect(listener).not.toHaveBeenCalled();
+    await controller.leave();
+  });
+
+  it("queues only behind the initial transport send, without waiting for start ACK", async () => {
+    const { controller, rtc } = makeController();
+    rtc.reply = undefined;
+    await controller.join(connection, noopEnsureActive);
+    let release!: () => void;
+    vi.spyOn(rtc, "sendRoomMessage").mockImplementationOnce(async message => {
+      rtc.sentMessages.push(message);
+      await new Promise<void>(resolve => { release = resolve; });
+    });
+    const start = controller.startGeneration({ taskID: "task", videoFormat, context });
+    await vi.advanceTimersByTimeAsync(0);
+    const first = controller.changeGenerationCondition({ taskID: "task", videoFormat, context: new RealtimeContext({ prompt: "b" }) });
+    const superseded = expect(first).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    const latest = controller.changeGenerationCondition({ taskID: "task", videoFormat, context: new RealtimeContext({ prompt: "c" }) });
+    await superseded;
+    await controller.sendTracks("task", [new RealtimePoint({ x: 0.2, y: 0.3 })]);
+    expect(rtc.sentMessages.map(raw => JSON.parse(raw).event)).toEqual(["start", "tracks"]);
+    const initial = JSON.parse(rtc.sentMessages[0]!);
+    release();
+    await start;
+    await latest;
+    const update = JSON.parse(rtc.sentMessages.at(-1)!);
+    expect(update).toMatchObject({ event: "change_condition", params: { prompt: "c" } });
+    expect(update.xid).not.toBe(initial.xid);
+    await controller.stopGeneration("task");
+    expect(JSON.parse(rtc.sentMessages.at(-1)!)).not.toHaveProperty("xid");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(rtc.sentMessages).toHaveLength(4);
+    await controller.leave();
+  });
+
+  it("stops remaining fragments before an obsolete start can send after task cancellation", async () => {
+    const { controller, rtc } = makeController();
+    rtc.reply = undefined;
+    await controller.join(connection, noopEnsureActive);
+    let release!: () => void;
+    const original = rtc.sendRoomMessage.bind(rtc);
+    vi.spyOn(rtc, "sendRoomMessage").mockImplementation(original).mockImplementationOnce(async message => {
+      rtc.sentMessages.push(message);
+      await new Promise<void>(resolve => { release = resolve; });
+    });
+    const start = controller.startGeneration({ taskID: "task", videoFormat,
+      context: new RealtimeContext({ prompt: "large prompt ".repeat(500) }) });
+    const cancelled = expect(start).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(rtc.sentMessages).toHaveLength(1);
+    await controller.stopGeneration("task");
+    await cancelled;
+    release();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(rtc.sentMessages).toHaveLength(2);
+    expect(JSON.parse(rtc.sentMessages[1]!).event).toBe("stop");
+    await controller.leave();
+  });
+
+  it("reframes each full retry independently while keeping the logical xid and parameters unchanged", async () => {
+    const { controller, rtc } = makeController();
+    rtc.reply = undefined;
+    await controller.join(connection, noopEnsureActive);
+    const start = controller.startGeneration({ taskID: "task", videoFormat,
+      context: new RealtimeContext({ prompt: "long text ".repeat(200) }) });
+    await vi.advanceTimersByTimeAsync(1000);
+    const receiver = new RoomMessageCodec();
+    const messages: any[] = [];
+    const fragments = new Set<string>();
+    for (const raw of rtc.sentMessages) {
+      fragments.add(JSON.parse(raw).eventId);
+      const parsed = receiver.processIncoming("client", raw);
+      if (parsed) messages.push(parsed);
+    }
+    expect(messages).toHaveLength(3);
+    expect(fragments.size).toBe(3);
+    expect(messages[0]).toEqual(messages[1]);
+    expect(messages[1]).toEqual(messages[2]);
+    controller.handleIncomingMessage("bot001", JSON.stringify({ event: "xid_ack", xid: messages[0].xid, count: 3 }));
+    await start;
+    await controller.leave();
+  });
+
+  it("keeps successful start and updates successful when all ACKs are deliberately discarded", async () => {
+    const { controller, rtc } = makeController({ ignoreCommandAcks: true });
+    await controller.join(connection, noopEnsureActive);
+    await controller.startGeneration({ taskID: "task", videoFormat, context });
+    await controller.changeGenerationCondition({ taskID: "task", videoFormat, context });
+    await controller.changeTargetSize({ taskID: "task", targetSize: { width: 640, height: 480 }, ensureActive: noopEnsureActive });
+    await vi.advanceTimersByTimeAsync(6000);
+    const messages = rtc.sentMessages.map(raw => JSON.parse(raw));
+    for (const event of ["start", "change_condition", "change_target_size"]) {
+      const attempts = messages.filter(message => message.event === event);
+      expect(attempts).toHaveLength(6);
+      expect(new Set(attempts.map(message => message.xid)).size).toBe(1);
+    }
+    await controller.leave();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

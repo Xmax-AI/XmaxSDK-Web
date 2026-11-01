@@ -9,6 +9,7 @@ import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeSessionConnection } from "../src/Service/Realtime/RealtimeSessionConnection";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RoomController } from "../src/Stream/Room/RoomController";
+import { createRoomCommandPeer } from "./RoomCommandPeer";
 import { RoomHeartbeat } from "../src/Stream/Room/RoomHeartbeat";
 import { StreamController } from "../src/Stream/StreamController";
 import type { RemoteStreamBinding } from "../src/Stream/StreamControlling";
@@ -41,6 +42,7 @@ class RtcManagingStub implements RtcManaging {
 
   // 消息与事件
   sentMessages: string[] = [];
+  reply = createRoomCommandPeer(message => this.eventListener?.onCustomMessageReceived("bot001", message));
   failNextSend = false;
   eventListener?: RtcEventListener;
 
@@ -108,6 +110,7 @@ class RtcManagingStub implements RtcManaging {
       throw new XmaxError(XmaxErrorCode.rtcError, "send failed");
     }
     this.sentMessages.push(message);
+    this.reply(message);
   }
   setEventListener(listener?: RtcEventListener): void {
     this.eventListener = listener;
@@ -133,10 +136,11 @@ const videoFormat = new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 
 const context = new RealtimeContext({ prompt: "a cat" });
 const noopEnsureActive = () => {};
 
-function makeStream(options?: { generationTimeoutMs?: number }) {
+function makeStream(options?: { generationTimeoutMs?: number; ignoreCommandAcks?: boolean }) {
   const rtc = new RtcManagingStub();
   const roomController = new RoomController({
     rtcManager: rtc,
+    ignoreCommandAcks: options?.ignoreCommandAcks ?? false,
     heartbeat: new RoomHeartbeatStub({ rtcManager: rtc }),
   });
   const bindings: Array<RemoteStreamBinding | null> = [];
@@ -160,6 +164,29 @@ function emitRemoteVideo(
 }
 
 describe("StreamController", () => {
+  it("starts rendering with no ACK and keeps the task active after background retries expire", async () => {
+    vi.useFakeTimers();
+    const { controller, rtc, errors } = makeStream({ ignoreCommandAcks: true });
+    try {
+      await controller.connect(connection, false, noopEnsureActive);
+      const pending = controller.beginGeneration({ taskID: "no-ack", videoFormat, context });
+      await vi.advanceTimersByTimeAsync(0);
+      emitRemoteVideo(rtc, "bot001", true);
+      await pending;
+      expect(controller.hasGenerationTask).toBe(true);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(controller.hasGenerationTask).toBe(true);
+      expect(errors).toEqual([]);
+      expect(rtc.sentMessages.filter(raw => JSON.parse(raw).event === "start")).toHaveLength(6);
+      await controller.updateGeneration({ taskID: "no-ack", videoFormat, context: new RealtimeContext({ prompt: "still running" }) });
+      expect(JSON.parse(rtc.sentMessages.at(-1)!).event).toBe("change_condition");
+      await controller.disconnect();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await controller.disconnect();
+      vi.useRealTimers();
+    }
+  });
   it("measures only RTC join before media preparation and publication", async () => {
     const { controller, rtc } = makeStream();
     const events: string[] = [];
@@ -223,6 +250,8 @@ describe("StreamController", () => {
     sent();
     await vi.waitFor(() => expect(play).toHaveBeenCalledOnce());
     expect(rtc.subscribeRemoteVideoCalls).toHaveLength(0);
+    const message = JSON.parse(vi.mocked(rtc.sendRoomMessage).mock.calls[0]![0]);
+    rtc.eventListener?.onCustomMessageReceived("bot001", JSON.stringify({ event: "xid_ack", xid: message.xid, count: 1 }));
     emitRemoteVideo(rtc, "bot001", true);
     await generating;
     await controller.disconnect();

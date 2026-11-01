@@ -48,21 +48,26 @@ export interface RealtimeSessionServicing {
   ): Promise<RealtimeSession>;
 
   /**
-   * Requests one heartbeat and returns current credentials for RTC token renewal.
+   * Requests a heartbeat and returns current credentials. The optional allowance is reserved for the
+   * first generation heartbeat; token-renewal requests omit it.
    */
   heartbeatSession(
-    sessionID: string
+    sessionID: string,
+    firstHeartbeatGraceSeconds?: number
   ): Promise<RealtimeSession>;
 
   /**
-   * Starts periodic heartbeats, replacing any existing heartbeat.
+   * Sends the first heartbeat immediately, then starts periodic heartbeats, replacing any existing loop.
    *
    * @param sessionID - The session ID.
    * @param handlers - The failure and credential-refresh callbacks.
+   * @param firstHeartbeatGraceSeconds - The measured startup duration, rounded up to whole seconds;
+   * included only in the first request.
    */
   startHeartbeat(
     sessionID: string,
     handlers: RealtimeSessionHeartbeatHandlers,
+    firstHeartbeatGraceSeconds?: number,
   ): void;
 
   /**

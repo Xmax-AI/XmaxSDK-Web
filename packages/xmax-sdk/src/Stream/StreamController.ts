@@ -523,7 +523,7 @@ export class StreamController implements StreamControlling {
    * @param options.faceRestoration - Whether to restore the original face; defaults to false.
    * @param options.onStartSent - Runs after start is sent, before generation confirmation.
    * @param options.extraParams - Parameters merged into this start message without being retained.
-   * @returns A promise that waits for the remote result stream to confirm generation.
+   * @returns A promise that waits for sending and the remote result stream, independently of receipt ACKs.
    * @throws Throws synchronously for an invalid task ID, an unready room, a pending start, or a running
    * task without restart. The returned promise rejects if sending fails or confirmation times out.
    */
@@ -586,6 +586,7 @@ export class StreamController implements StreamControlling {
     void confirmation.catch(() => { });
 
     try {
+      const state = this.state;
       const sending = this.roomController.startGeneration({
         taskID,
         videoFormat: options.videoFormat,
@@ -595,13 +596,13 @@ export class StreamController implements StreamControlling {
         faceRestoration: options.faceRestoration ?? false,
         paddingContain: options.paddingContain,
         extraParams: options.extraParams,
+        onSent: async () => {
+          if (this.state === state && state.generationTaskID === taskID) {
+            await options.onStartSent?.();
+          }
+        },
       });
-      const state = this.state;
       const sent = Promise.resolve(sending).then(async () => {
-        if (this.state !== state || state.generationTaskID !== taskID) {
-          return;
-        }
-        await options.onStartSent?.();
         if (this.state !== state || state.generationTaskID !== taskID) {
           return;
         }
@@ -1100,6 +1101,8 @@ export class StreamController implements StreamControlling {
     if (taskID && taskID !== currentTaskID) {
       return "";
     }
+
+    this.roomController.cancelGenerationCommands(currentTaskID);
 
     const waiter = this.state.generationWaiter;
     const remoteAudioUserIDs = [...this.state.subscribedRemoteAudioUserIDs];

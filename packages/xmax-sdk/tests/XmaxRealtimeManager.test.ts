@@ -1,4 +1,5 @@
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
+import type { ApiServicing } from "../src/Service/Network/ApiServicing";
 import { RemoteMediaFrameController } from "../src/Render/Video/RemoteMediaFrameController";
 import type { RemoteMediaTracks } from "../src/Foundation/Media/RemoteMediaTracks";
 import { TrajectoryRegistry } from "../src/Render/Trajectory/TrajectoryRegistry";
@@ -271,6 +272,7 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
   failCreate?: XmaxError;
   heartbeatSessionID?: string;
   heartbeatHandlers?: RealtimeSessionHeartbeatHandlers;
+  firstHeartbeatGraceSeconds?: number;
   stopHeartbeatCalls = 0;
   closedSessionIDs: string[] = [];
 
@@ -285,9 +287,11 @@ class RealtimeSessionServicingStub implements RealtimeSessionServicing {
   startHeartbeat(
     sessionID: string,
     handlers: RealtimeSessionHeartbeatHandlers,
+    firstHeartbeatGraceSeconds?: number,
   ): void {
     this.heartbeatSessionID = sessionID;
     this.heartbeatHandlers = handlers;
+    this.firstHeartbeatGraceSeconds = firstHeartbeatGraceSeconds;
   }
 
   stopHeartbeat(): void {
@@ -330,6 +334,19 @@ function completeRenderWarmup(remote: RealtimeMediaStream): void {
   const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
   binding.frameDisplayHandler?.();
   binding.renderWarmupCompletedHandler?.();
+}
+
+async function startDisplayedGeneration(
+  manager: XmaxRealtimeManager,
+  stream: StreamControllingStub,
+  localStream: RealtimeMediaStream,
+): Promise<RealtimeMediaStream> {
+  const pending = manager.startGeneration({ localStream, context: testContext });
+  await vi.waitFor(() => expect(stream.confirmationDeferreds).toHaveLength(1));
+  stream.confirmationDeferreds[0]!.resolve();
+  const remote = await pending;
+  completeRenderWarmup(remote);
+  return remote;
 }
 
 /** 准备本地流并返回。 */
@@ -2635,6 +2652,168 @@ describe("XmaxRealtimeManager launch timing", () => {
   });
 });
 
+describe("XmaxRealtimeManager first generation heartbeat", () => {
+  it("reports connection-to-generating duration only in the first HTTP heartbeat", async () => {
+    vi.useFakeTimers();
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { camera, stream, rtc } = makeManager();
+    let manager!: XmaxRealtimeManager;
+    const payload = {
+      sessionUid: "session-1", status: "ACTIVE", modelExtra: {
+        room_id: "room-1", rtc_app_id: "app-1", rtc_user_id: "user-1",
+        user_sig: "sig", private_map_key_with_string_room_id: "key",
+      },
+    };
+    const api = {
+      post: vi.fn(async () => {
+        now = 2_800;
+        return payload;
+      }),
+      put: vi.fn(async () => {
+        expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+        return payload;
+      }),
+      delete: vi.fn(async () => ({})),
+    };
+    try {
+      manager = new XmaxRealtimeManager(new RealtimeConfiguration({
+        model: "test-trtc", provider: RtcProvider.trtc,
+      }), {
+        apiService: api as unknown as ApiServicing,
+        cameraController: camera, streamController: stream, rtcManager: rtc as unknown as RtcManaging,
+      });
+      const localStream = makeLocalStream(camera);
+      const remote = await manager.connect(localStream);
+      expect(api.post).toHaveBeenCalledWith("/session", { model: "test-trtc" });
+      expect(api.put).not.toHaveBeenCalled();
+      now = 5_000;
+      const pending = manager.startGeneration({ localStream, context: testContext });
+      await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+      stream.confirmationDeferreds[0]!.resolve();
+      await pending;
+      expect(api.put).not.toHaveBeenCalled();
+      now = 9_400;
+      completeRenderWarmup(remote);
+      expect(api.put).toHaveBeenCalledOnce();
+      expect(api.put).toHaveBeenCalledWith("/session/session-1/heartbeat", {
+        firstHeartbeatGraceSeconds: 9,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await manager.setStateListener(vi.fn());
+      await manager.setStateListener(undefined);
+      expect(api.put).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(api.put).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(api.put).toHaveBeenCalledTimes(2);
+      expect(api.put).toHaveBeenLastCalledWith("/session/session-1/heartbeat", undefined);
+    } finally {
+      await manager?.close();
+      clock.mockRestore();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])("waits for confirmed generation and visible output, including static touch: %s", async staticTouch => {
+    const { manager, camera, session, stream } = makeManager();
+    const heartbeat = vi.spyOn(session, "startHeartbeat");
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    binding.frameDisplayHandler?.();
+    binding.renderWarmupCompletedHandler?.();
+    expect(heartbeat).not.toHaveBeenCalled();
+
+    const pending = manager.startGeneration({
+      localStream, context: testContext,
+      ...(staticTouch ? { extraParams: { static_generate: true, static_image_path: "https://example.com/image.jpg" } } : {}),
+    });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(heartbeat).not.toHaveBeenCalled();
+    binding.frameDisplayHandler?.();
+    expect(heartbeat).not.toHaveBeenCalled();
+    binding.renderWarmupCompletedHandler?.();
+    expect(heartbeat).toHaveBeenCalledOnce();
+    expect(session.heartbeatSessionID).toBe("session-1");
+    binding.frameDisplayHandler?.();
+    binding.renderWarmupCompletedHandler?.();
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await manager.close();
+  });
+
+  it("remembers presentation that completes before start confirmation, without starting heartbeat early", async () => {
+    const { manager, camera, session, stream } = makeManager();
+    const heartbeat = vi.spyOn(session, "startHeartbeat");
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    completeRenderWarmup(remote);
+    expect(heartbeat).not.toHaveBeenCalled();
+    stream.confirmationDeferreds[0]!.resolve();
+    await pending;
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await manager.close();
+  });
+
+  it("does not start heartbeats for a failed start even if a frame and warmup callback arrived early", async () => {
+    const { manager, camera, session, stream } = makeManager();
+    const heartbeat = vi.spyOn(session, "startHeartbeat");
+    const localStream = makeLocalStream(camera);
+    const remote = await manager.connect(localStream);
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    const rejected = expect(pending).rejects.toThrow("start failed");
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    completeRenderWarmup(remote);
+    stream.confirmationDeferreds[0]!.reject(new Error("start failed"));
+    await rejected;
+    expect(heartbeat).not.toHaveBeenCalled();
+    await manager.close();
+  });
+
+  it("ignores late display callbacks after disconnect and starts afresh after reconnection", async () => {
+    const { manager, camera, session, stream } = makeManager();
+    const heartbeat = vi.spyOn(session, "startHeartbeat");
+    const localStream = makeLocalStream(camera);
+    const remote = await startDisplayedGeneration(manager, stream, localStream);
+    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await manager.disconnect();
+    binding.frameDisplayHandler?.();
+    binding.renderWarmupCompletedHandler?.();
+    expect(heartbeat).toHaveBeenCalledOnce();
+    const pending = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    stream.confirmationDeferreds[1]!.resolve();
+    const nextRemote = await pending;
+    binding.frameDisplayHandler?.();
+    binding.renderWarmupCompletedHandler?.();
+    expect(heartbeat).toHaveBeenCalledOnce();
+    completeRenderWarmup(nextRemote);
+    expect(heartbeat).toHaveBeenCalledTimes(2);
+    await manager.close();
+  });
+
+  it("keeps one heartbeat loop across condition updates and Instant task restarts", async () => {
+    const { manager, camera, session, stream } = makeManager();
+    const heartbeat = vi.spyOn(session, "startHeartbeat");
+    const localStream = makeLocalStream(camera);
+    await startDisplayedGeneration(manager, stream, localStream);
+    await manager.startGeneration({ localStream, context: testContext });
+    expect(heartbeat).toHaveBeenCalledOnce();
+    const pending = manager.startGeneration({ localStream, context: testContext, restart: true });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    stream.confirmationDeferreds[1]!.resolve();
+    completeRenderWarmup(await pending);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager connect", () => {
   it.each([undefined, true, false])("相机预热开关 %s 控制生成和重连，禁用时预热不参与连接", async (enableFrameValidation) => {
     const { manager, camera, stream } = makeManager();
@@ -2745,7 +2924,7 @@ describe("XmaxRealtimeManager connect", () => {
     await manager.close();
   });
 
-  it("建立连接：创建会话、进房发布、启动心跳并进入 connected", async () => {
+  it("建立连接：创建会话、进房发布并进入 connected，尚不启动 HTTP 心跳", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);
 
@@ -2760,7 +2939,7 @@ describe("XmaxRealtimeManager connect", () => {
     expect(stream.connectCalls).toHaveLength(1);
     expect(stream.connectCalls[0]!.connection.roomID).toBe("room-1");
     expect(stream.connectCalls[0]!.includeLocalAudio).toBe(true);
-    expect(session.heartbeatSessionID).toBe("session-1");
+    expect(session.heartbeatSessionID).toBeUndefined();
     // 远端音量配置在连接建立后同步给传输层。
     expect(stream.volumes).toContain(0);
 
@@ -3287,7 +3466,7 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   it("心跳失败：结束连接并释放会话资源", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);
-    await manager.connect(localStream);
+    await startDisplayedGeneration(manager, stream, localStream);
 
     session.heartbeatHandlers?.onFailure(
       "session-1",
@@ -3305,9 +3484,9 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
   });
 
   it("心跳凭据刷新：房间绑定不变时覆盖缓存会话", async () => {
-    const { manager, camera, session } = makeManager();
+    const { manager, camera, session, stream } = makeManager();
     const localStream = makeLocalStream(camera);
-    await manager.connect(localStream);
+    await startDisplayedGeneration(manager, stream, localStream);
 
     session.heartbeatHandlers?.onRefresh?.(
       new RealtimeSession({
@@ -3328,14 +3507,14 @@ describe("XmaxRealtimeManager 断连与关闭", () => {
 
     // 仅凭据变化不结束连接。
     expect(manager.currentState.connectionState).toBe(
-      RealtimeConnectionState.connected,
+      RealtimeConnectionState.generating,
     );
   });
 
   it("心跳凭据刷新：房间绑定变化时按失败结束连接", async () => {
-    const { manager, camera, session } = makeManager();
+    const { manager, camera, session, stream } = makeManager();
     const localStream = makeLocalStream(camera);
-    await manager.connect(localStream);
+    await startDisplayedGeneration(manager, stream, localStream);
 
     session.heartbeatHandlers?.onRefresh?.(
       new RealtimeSession({

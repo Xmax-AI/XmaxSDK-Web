@@ -35,6 +35,16 @@ export class XmaxRealtimeConnectionManager {
   private activeSession?: RealtimeSession;
 
   /**
+   * Whether entering generating has started this session's HTTP heartbeat loop.
+   */
+  private heartbeatStarted = false;
+
+  /**
+   * The monotonic connection start time, retained until the session is disconnected.
+   */
+  private connectionStartedAt?: number;
+
+  /**
    * The credential-refresh revision used to reject obsolete lifecycle updates.
    */
   private refreshVersion = 0;
@@ -97,9 +107,10 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
-   * Creates a session, configures encoding, joins, publishes, and starts heartbeats before returning a
-   * remote placeholder. Session creation, room join, and publication are timed separately. Optional
-   * pre-publication checks block publication and contribute only to overall startup time.
+   * Creates a session, configures encoding, joins, and publishes before returning a remote placeholder.
+   * HTTP heartbeats wait until the session enters generating. Session creation, room join, and
+   * publication are timed separately. Optional pre-publication checks block publication and contribute
+   * only to overall startup time.
    *
    * @param options.localTrack - The active local media track.
    * @param options.remoteVideoFormat - The original generation and remote format; defaults to the local
@@ -133,6 +144,7 @@ export class XmaxRealtimeConnectionManager {
 
     // Register the session immediately so failure cleanup can close it.
     options.ensureCurrent();
+    this.connectionStartedAt = performance.now();
     const completeSession = this.dependencies.timing.startSession();
     const session = await sessionService.createSession(options.model);
     this.activeSession = session;
@@ -153,7 +165,7 @@ export class XmaxRealtimeConnectionManager {
         "RTC adapter configuration does not match the session service"
       );
     }
-    const refreshVersion = ++this.refreshVersion;
+    ++this.refreshVersion;
     this.credentialController = new AbortController();
 
     // Configure encoding before publication; capture itself does not publish media.
@@ -190,27 +202,6 @@ export class XmaxRealtimeConnectionManager {
     completePublish?.();
     options.onPublished();
 
-    sessionService.startHeartbeat(
-      session.id,
-      {
-        onFailure: (
-          sessionID,
-          error
-        ) => {
-          this.dependencies.onHeartbeatFailure(
-            sessionID,
-            error
-          );
-        },
-        onRefresh: (refreshed) => {
-          return this.handleSessionRefresh(
-            refreshed,
-            refreshVersion
-          );
-        },
-      }
-    );
-
     const remoteTrack = new RealtimeVideoTrack({
       id: connection.botID ?? "video-remote",
       videoFormat: options.remoteVideoFormat ?? options.localTrack.videoFormat,
@@ -229,6 +220,47 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
+   * Starts HTTP heartbeats once when the session enters generating. The first request includes the
+   * connection-to-generating duration rounded up to whole seconds; stale sessions are ignored.
+   */
+  startHeartbeat(
+    sessionID: string
+  ): void {
+    const session = this.activeSession;
+    if (!session || session.id !== sessionID || this.heartbeatStarted ||
+      this.connectionStartedAt === undefined) {
+      return;
+    }
+    this.heartbeatStarted = true;
+    const elapsedMs = performance.now() - this.connectionStartedAt;
+    const firstHeartbeatGraceSeconds = Math.max(0, Math.ceil(elapsedMs / 1000));
+    const refreshVersion = this.refreshVersion;
+    this.requireSessionService().startHeartbeat(
+      session.id,
+      {
+        onFailure: (
+          sessionID,
+          error
+        ) => {
+          if (this.refreshVersion === refreshVersion && this.activeSession?.id === sessionID) {
+            this.dependencies.onHeartbeatFailure(
+              sessionID,
+              error
+            );
+          }
+        },
+        onRefresh: (refreshed) => {
+          return this.handleSessionRefresh(
+            refreshed,
+            refreshVersion
+          );
+        },
+      },
+      firstHeartbeatGraceSeconds
+    );
+  }
+
+  /**
    * Clears rendered remote media while retaining track/view bindings for unified cleanup.
    */
   clearRemoteMedia(): void {
@@ -239,6 +271,8 @@ export class XmaxRealtimeConnectionManager {
    * Stops session heartbeats if a session service exists.
    */
   stopHeartbeat(): void {
+    this.heartbeatStarted = false;
+    this.connectionStartedAt = undefined;
     this.refreshVersion++;
     this.credentialController?.abort();
     this.credentialController = undefined;

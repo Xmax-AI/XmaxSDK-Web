@@ -54,7 +54,7 @@ export interface RoomControlling {
   leave(): Promise<void>;
 
   /**
-   * Sends a generation-start message.
+   * Sends a generation-start message with background retries, without waiting for a service ACK.
    *
    * @param options.taskID - The generation task identifier.
    * @param options.videoFormat - The generation video format.
@@ -63,6 +63,7 @@ export interface RoomControlling {
    * @param options.mirror - Whether the server mirrors the input; defaults to false.
    * @param options.faceRestoration - Whether to restore the original face; defaults to false.
    * @param options.extraParams - Parameters merged into this start message without being retained.
+   * @param options.onSent - Runs once after the first successful send, without waiting for the ACK.
    * @throws Rejects if the room is not ready or sending fails.
    */
   startGeneration(
@@ -75,11 +76,12 @@ export interface RoomControlling {
       faceRestoration?: boolean;
       paddingContain?: boolean;
       extraParams?: RealtimeExtraParams;
+      onSent?: () => Promise<void>;
     }
   ): Promise<void>;
 
   /**
-   * Sends updated generation conditions.
+   * Sends updated conditions with background retries, without waiting for a service ACK.
    *
    * @param options.taskID - The generation task identifier.
    * @param options.videoFormat - The generation video format.
@@ -122,6 +124,13 @@ export interface RoomControlling {
   stopGeneration(
     taskID: string
   ): Promise<void>;
+
+  /**
+   * Cancels outstanding acknowledgements and unsent attempts for an ended task.
+   */
+  cancelGenerationCommands(
+    taskID: string
+  ): void;
 
   /**
    * Sends interaction points; ignores an empty task identifier or point list.

@@ -18,8 +18,7 @@ import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 export class RealtimeConfiguration {
 
   /**
-   * The generation model. Custom IDs are forwarded unchanged to the development service and use X2.1
-   * media and RTC defaults.
+   * The generation model. Custom IDs are forwarded unchanged and use X2.1 media and RTC defaults.
    */
   readonly model: RealtimeModelName;
 

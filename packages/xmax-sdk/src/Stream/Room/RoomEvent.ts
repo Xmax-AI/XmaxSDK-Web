@@ -37,6 +37,11 @@ export interface RoomEventTargetSize {
 export interface RoomEventGenerationOptions {
 
   /**
+   * The logical command identifier, retained across retransmissions.
+   */
+  xid?: string;
+
+  /**
    * The application user identifier.
    */
   userID: string;
@@ -102,6 +107,7 @@ export class RoomEvent {
    */
   static start(
     options: {
+      xid?: string;
       userID: string;
       taskID: string;
       videoFormat: RealtimeVideoFormat;
@@ -117,6 +123,7 @@ export class RoomEvent {
   ): string {
     return RoomEvent.encode({
       event: "start",
+      xid: options.xid,
       params: {
         ...RoomEvent.generationParameters(options),
         min_bitrate: options.minimumBitrate,
@@ -145,6 +152,7 @@ export class RoomEvent {
   ): string {
     return RoomEvent.encode({
       event: "change_condition",
+      xid: options.xid,
       params: RoomEvent.generationParameters(options),
       user_id: options.userID,
       uid: options.taskID,
@@ -156,6 +164,7 @@ export class RoomEvent {
    */
   static changeTargetSize(
     options: {
+      xid?: string;
       userID: string;
       taskID: string;
       targetSize: RoomEventTargetSize;
@@ -165,6 +174,7 @@ export class RoomEvent {
   ): string {
     return RoomEvent.encode({
       event: "change_target_size",
+      xid: options.xid,
       params: {
         min_bitrate: options.minimumBitrate,
         max_bitrate: options.maximumBitrate,

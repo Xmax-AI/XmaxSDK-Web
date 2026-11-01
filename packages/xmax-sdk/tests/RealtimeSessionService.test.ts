@@ -97,6 +97,137 @@ async function flushHeartbeats(rounds = 5): Promise<void> {
 }
 
 describe("RealtimeSessionService", () => {
+  it("sends startup duration in a heartbeat without including it in session creation", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload()];
+    api.putResponses = [sessionPayload()];
+    const service = new RealtimeSessionService({ apiService: api });
+    await service.createSession("test-trtc");
+    await service.heartbeatSession("ums-001", 9);
+    expect(api.requests[0]).toMatchObject({
+      method: ApiMethod.post, path: "/session",
+      body: { model: "test-trtc" },
+    });
+    expect(api.requests[1]).toMatchObject({
+      method: ApiMethod.put, path: "/session/ums-001/heartbeat",
+      body: { firstHeartbeatGraceSeconds: 9 },
+    });
+  });
+
+  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])("rejects invalid first-heartbeat allowance %s before sending a request", seconds => {
+    const api = new ApiServicingStub();
+    const service = new RealtimeSessionService({ apiService: api });
+    expect(() => service.heartbeatSession("ums-001", seconds)).toThrow("firstHeartbeatGraceSeconds");
+    expect(api.requests).toHaveLength(0);
+  });
+
+  it.each([0, 9])("sends the allowance %s once and waits ten seconds between subsequent requests", async seconds => {
+    vi.useFakeTimers();
+    const api = new ApiServicingStub();
+    api.putResponses = [sessionPayload()];
+    const service = new RealtimeSessionService({ apiService: api });
+    try {
+      const onRefresh = vi.fn();
+      service.startHeartbeat("ums-001", { onFailure: vi.fn(), onRefresh }, seconds);
+      expect(api.requests).toHaveLength(1);
+      expect(api.requests[0]?.body).toEqual({ firstHeartbeatGraceSeconds: seconds });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onRefresh).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(api.requests).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(api.requests).toHaveLength(2);
+      expect(api.requests[1]?.body).toBeUndefined();
+      service.stopHeartbeat();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(api.requests).toHaveLength(2);
+    } finally {
+      service.stopHeartbeat();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])("waits for a pending credential refresh without losing the allowance or sending after stop=%s", async stop => {
+    vi.useFakeTimers();
+    const api = new ApiServicingStub();
+    api.putResponses = [sessionPayload()];
+    let finish!: (payload: unknown) => void;
+    const request = vi.spyOn(api, "put").mockImplementationOnce(() =>
+      new Promise(resolve => { finish = resolve; }));
+    const service = new RealtimeSessionService({ apiService: api });
+    const onRefresh = vi.fn();
+    try {
+      const renewal = service.heartbeatSession("ums-001");
+      service.startHeartbeat("ums-001", { onFailure: vi.fn(), onRefresh }, 9);
+      expect(request).toHaveBeenCalledOnce();
+      if (stop) service.stopHeartbeat();
+      finish(sessionPayload());
+      await renewal;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(request).toHaveBeenCalledTimes(stop ? 1 : 2);
+      if (!stop) {
+        expect(request).toHaveBeenNthCalledWith(2, "/session/ums-001/heartbeat", { firstHeartbeatGraceSeconds: 9 });
+        expect(onRefresh).toHaveBeenCalledOnce();
+      } else {
+        expect(onRefresh).not.toHaveBeenCalled();
+      }
+    } finally {
+      service.stopHeartbeat();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a late first-heartbeat response after stop and never overlaps requests", async () => {
+    vi.useFakeTimers();
+    const api = new ApiServicingStub();
+    let finish!: (payload: unknown) => void;
+    const request = vi.spyOn(api, "put").mockImplementation(() =>
+      new Promise(resolve => { finish = resolve; }));
+    const service = new RealtimeSessionService({ apiService: api });
+    try {
+      const onRefresh = vi.fn();
+      const onFailure = vi.fn();
+      service.startHeartbeat("ums-001", { onRefresh, onFailure });
+      expect(request).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(request).toHaveBeenCalledOnce();
+      service.stopHeartbeat();
+      finish(sessionPayload());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onRefresh).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      service.stopHeartbeat();
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves the first allowance when another credential refresh starts while waiting", async () => {
+    vi.useFakeTimers();
+    const api = new ApiServicingStub();
+    api.putResponses = [sessionPayload()];
+    let finish!: (payload: unknown) => void;
+    const request = vi.spyOn(api, "put").mockImplementationOnce(() =>
+      new Promise(resolve => { finish = resolve; }));
+    const service = new RealtimeSessionService({ apiService: api });
+    try {
+      const renewal = service.heartbeatSession("ums-001");
+      const nextRenewal = renewal.then(() => service.heartbeatSession("ums-001"));
+      service.startHeartbeat("ums-001", { onFailure: vi.fn() }, 9);
+      finish(sessionPayload());
+      await nextRenewal;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(request).toHaveBeenNthCalledWith(3, "/session/ums-001/heartbeat", { firstHeartbeatGraceSeconds: 9 });
+    } finally {
+      service.stopHeartbeat();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     ["test-trtc", "test-trtc"],
     ["future-model", "future-model"],

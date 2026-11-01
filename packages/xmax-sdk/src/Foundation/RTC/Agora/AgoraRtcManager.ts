@@ -69,6 +69,16 @@ interface PendingRoomMessage {
   message: string;
 
   /**
+   * Whether other queued messages may be submitted before this native result arrives.
+   */
+  concurrent?: boolean;
+
+  /**
+   * Cancels obsolete commands before submission or while awaiting a native result.
+   */
+  signal?: AbortSignal;
+
+  /**
    * The control-message completion callbacks; snapshot enqueueing does not await gateway acknowledgment.
    */
   completion?: {
@@ -778,12 +788,10 @@ export class AgoraRtcManager implements RtcManaging {
       );
     }
     const version = ++this.roomVersion;
-    await this.run(() => client.join(
-      configuration.appID,
-      configuration.roomID,
-      configuration.roomToken,
-      configuration.userID
-    ));
+    await this.joinChannel(
+      client,
+      configuration
+    );
     if (client !== this.client || version !== this.roomVersion) {
       await client.leave();
       throw this.cancelled();
@@ -816,6 +824,36 @@ export class AgoraRtcManager implements RtcManaging {
       },
       2000
     );
+  }
+
+  /**
+   * Measures the native channel join and logs its RTC identity and outcome without credentials.
+   */
+  private async joinChannel(
+    client: AgoraDataStreamClient,
+    configuration: AgoraRoomJoinConfiguration
+  ): Promise<void> {
+    const startedAt = performance.now();
+    let completed = false;
+
+    try {
+      await this.run(() => client.join(
+        configuration.appID,
+        configuration.roomID,
+        configuration.roomToken,
+        configuration.userID
+      ));
+      completed = true;
+    } finally {
+      const elapsedMs = performance.now() - startedAt;
+      XmaxLogger.rtc.info(
+        () =>
+          `Agora 进房耗时 (Agora Join Timing)\n` +
+          `├─ uid: ${JSON.stringify(configuration.userID)}\n` +
+          `├─ channelName: ${JSON.stringify(configuration.roomID)}\n` +
+          `└─ client.join: ${elapsedMs.toFixed(1)} ms (${completed ? "completed" : "failed"})`,
+      );
+    }
   }
 
   /**
@@ -994,12 +1032,10 @@ export class AgoraRtcManager implements RtcManaging {
       client,
       version
     );
-    await this.run(() => client.join(
-      config.appID,
-      config.roomID,
-      config.roomToken,
-      config.userID
-    ));
+    await this.joinChannel(
+      client,
+      config
+    );
     if (!this.isRoomCurrent(
       client,
       version
@@ -1291,11 +1327,12 @@ export class AgoraRtcManager implements RtcManaging {
   async sendRoomMessage(
     message: string,
     delivery: RtcRoomMessageDelivery = "ordered",
+    signal?: AbortSignal,
   ): Promise<void> {
     const version = this.roomVersion;
     const client = this.client;
     const bytes = new TextEncoder().encode(message).byteLength;
-    if (!client || !this.connection || (this.tokenExpired && !this.rejoinOperation)) {
+    if (signal?.aborted || !client || !this.connection || (this.tokenExpired && !this.rejoinOperation)) {
       throw this.cancelled();
     }
     if (bytes > 1000) {
@@ -1308,7 +1345,9 @@ export class AgoraRtcManager implements RtcManaging {
     const pending: PendingRoomMessage = {
       client,
       version,
-      message
+      message,
+      concurrent: delivery === "concurrent",
+      signal,
     };
     if (delivery === "latest") {
       this.latestMessage = pending;
@@ -1317,18 +1356,32 @@ export class AgoraRtcManager implements RtcManaging {
     }
 
     // Task controls form a barrier; ordinary ordered messages such as heartbeats retain the latest interaction position.
-    if (delivery === "barrier") {
+    if (delivery === "barrier" || delivery === "concurrent") {
       this.latestMessage = undefined;
     }
     return new Promise<void>((
       resolve,
       reject
     ) => {
+      const cancel = () => {
+        const index = this.orderedMessages.indexOf(pending);
+        if (index !== -1) {
+          this.orderedMessages.splice(index, 1);
+        }
+        pending.completion?.reject(this.cancelled());
+      };
       pending.completion = {
-        resolve,
-        reject
+        resolve: () => {
+          signal?.removeEventListener("abort", cancel);
+          resolve();
+        },
+        reject: error => {
+          signal?.removeEventListener("abort", cancel);
+          reject(error);
+        },
       };
       this.orderedMessages.push(pending);
+      signal?.addEventListener("abort", cancel, { once: true });
       this.scheduleRoomMessages();
     });
   }
@@ -1346,8 +1399,8 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Serializes control acknowledgments while bounding concurrent snapshot sends without waiting for each
-   * preceding response.
+   * Preserves submission order, awaiting ordinary controls while allowing bounded concurrent command
+   * attempts and snapshots to proceed before preceding gateway responses.
    */
   private async drainRoomMessages(
     drain: object,
@@ -1355,7 +1408,7 @@ export class AgoraRtcManager implements RtcManaging {
     try {
       while (this.messageDrain === drain) {
         const pending = this.orderedMessages[0] ?? this.latestMessage;
-        if (!pending || (!pending.completion && this.activeSends.size >= 30)) {
+        if (!pending || ((!pending.completion || pending.concurrent) && this.activeSends.size >= 30)) {
           return;
         }
 
@@ -1367,6 +1420,9 @@ export class AgoraRtcManager implements RtcManaging {
           // Recovery waits may admit newer snapshots or controls; do not send the obsolete selection.
           if (pending !== (this.orderedMessages[0] ?? this.latestMessage)) {
             continue;
+          }
+          if (pending.signal?.aborted) {
+            throw this.cancelled();
           }
           this.ensureRoomCurrent(
             pending.client,
@@ -1383,9 +1439,13 @@ export class AgoraRtcManager implements RtcManaging {
           }
           const sending = this.sendWithTimeout(
             pending.client,
-            pending.message
+            pending.message,
+            pending.signal,
           );
-          if (pending.completion) {
+          if (pending.completion && pending.concurrent) {
+            void sending.then(pending.completion.resolve, pending.completion.reject)
+              .finally(() => this.scheduleRoomMessages());
+          } else if (pending.completion) {
             await sending;
             pending.completion.resolve();
           } else {
@@ -1440,7 +1500,8 @@ export class AgoraRtcManager implements RtcManaging {
    */
   private async sendWithTimeout(
     client: AgoraDataStreamClient,
-    message: string
+    message: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     await new Promise<void>((
       resolve,
@@ -1453,6 +1514,7 @@ export class AgoraRtcManager implements RtcManaging {
         }
         settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
         this.activeSends.delete(cancel);
         if (error) {
           reject(this.mapError(error));
@@ -1470,6 +1532,11 @@ export class AgoraRtcManager implements RtcManaging {
         5000
       );
       this.activeSends.add(cancel);
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) {
+        cancel();
+        return;
+      }
 
       // Observe synchronous failures and rejected promises even when cancellation or timeout has already settled the wait.
       void this.run(() => client.sendStreamMessage(

@@ -336,6 +336,13 @@ export class XmaxRealtimeLifecycleManager {
   private stateListener?: RealtimeStateListener;
 
   /**
+   * Receives committed state changes before application observers, independently of listener replay.
+   */
+  private readonly onStateChanged?: (
+    state: RealtimeState
+  ) => void;
+
+  /**
    * The operation currently admitted to the lifecycle.
    */
   private activeOperation?: Operation;
@@ -352,10 +359,14 @@ export class XmaxRealtimeLifecycleManager {
     options: {
       errorManager: XmaxRealtimeErrorManager;
       cleanup: RealtimeCleanupHandler;
+      onStateChanged?: (
+        state: RealtimeState
+      ) => void;
     }
   ) {
     this.errorManager = options.errorManager;
     this.cleanup = options.cleanup;
+    this.onStateChanged = options.onStateChanged;
   }
 
   /**
@@ -793,6 +804,7 @@ export class XmaxRealtimeLifecycleManager {
       return;
     }
     this.state = nextState;
+    this.onStateChanged?.(nextState);
     this.stateListener?.(nextState);
   }
 

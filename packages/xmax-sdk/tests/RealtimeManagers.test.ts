@@ -211,7 +211,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const service = {
       heartbeatSession: vi.fn(async () => session),
       createSession: vi.fn(async () => session), closeSession: vi.fn(async (_id: string) => {}),
-      startHeartbeat: vi.fn((_id: string, _handlers: RealtimeSessionHeartbeatHandlers) => {}),
+      startHeartbeat: vi.fn((_id: string, _handlers: RealtimeSessionHeartbeatHandlers, _seconds?: number) => {}),
       stopHeartbeat: vi.fn(),
     };
     const events = { onHeartbeatFailure: vi.fn(), onFrameDisplayed: vi.fn(), onRenderWarmupCompleted: vi.fn() };
@@ -232,16 +232,47 @@ describe("XmaxRealtimeConnectionManager", () => {
     return { manager, stream, service, events, options, op, session, connection, render };
   }
 
-  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat after local publication without waiting for a remote frame", async (provider) => {
+  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat only once when generating is entered", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
     const publishing = deferred<void>(); stream.connect.mockReturnValueOnce(publishing.promise);
     const pending = manager.connect(options);
     await vi.waitFor(() => expect(stream.connect).toHaveBeenCalledOnce());
     expect(service.startHeartbeat).not.toHaveBeenCalled();
     publishing.resolve(); await pending;
-    expect(service.startHeartbeat).toHaveBeenCalledOnce();
+    expect(service.startHeartbeat).not.toHaveBeenCalled();
     expect(events.onFrameDisplayed).not.toHaveBeenCalled();
+    manager.startHeartbeat("old-session");
+    expect(service.startHeartbeat).not.toHaveBeenCalled();
+    manager.startHeartbeat("session");
+    expect(service.startHeartbeat).toHaveBeenCalledOnce();
+    manager.startHeartbeat("session");
+    expect(service.startHeartbeat).toHaveBeenCalledOnce();
     await manager.disconnect();
+    manager.startHeartbeat("session");
+    expect(service.startHeartbeat).toHaveBeenCalledOnce();
+  });
+
+  it("measures startup from before session creation, rounds up seconds, and resets after reconnection", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const { manager, service, options } = setup();
+    try {
+      await manager.connect(options);
+      clock.mockReturnValue(8_400);
+      manager.startHeartbeat("session");
+      expect(service.startHeartbeat).toHaveBeenLastCalledWith("session", expect.anything(), 9);
+      clock.mockReturnValue(12_000);
+      manager.startHeartbeat("session");
+      expect(service.startHeartbeat).toHaveBeenCalledOnce();
+      await manager.disconnect();
+      clock.mockReturnValue(20_000);
+      await manager.connect(options);
+      manager.startHeartbeat("session");
+      expect(service.startHeartbeat).toHaveBeenCalledTimes(2);
+      expect(service.startHeartbeat).toHaveBeenLastCalledWith("session", expect.anything(), 0);
+    } finally {
+      await manager.disconnect();
+      clock.mockRestore();
+    }
   });
 
   it("owns session and track resources and registers rendering without starting generation", async () => {
@@ -342,6 +373,7 @@ describe("XmaxRealtimeConnectionManager", () => {
   it("accepts credential refresh, rejects room rebinding and ignores refresh after teardown", async () => {
     const { manager, service, events, options } = setup();
     await manager.connect(options);
+    manager.startHeartbeat("session");
     const handlers = service.startHeartbeat.mock.calls[0]![1];
     const refresh = (roomID: string) => new RealtimeSession({ id: "session", connection: new RealtimeSessionConnection({
       provider: RtcProvider.trtc, roomID, sdkAppID: "1", userID: "user", userSig: "new-sig", privateMapKey: "key",
@@ -369,6 +401,7 @@ describe("XmaxRealtimeConnectionManager", () => {
   it.each([RtcProvider.agora, RtcProvider.vertc] as const)("renews %s credentials through heartbeat and coalesces expiry notifications", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
     await manager.connect({ ...options, model: RealtimeModel.x2_1 });
+    manager.startHeartbeat("session");
     const refreshed = new RealtimeSession({ id: "session", connection: {
       provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v2",
     } });

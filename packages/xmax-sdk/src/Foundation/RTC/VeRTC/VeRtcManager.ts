@@ -13,7 +13,7 @@ import type { IRTCEngine } from "@volcengine/rtc";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { CameraPosition } from "../../Media/Camera/CameraPosition";
-import type { RtcManaging, RtcCameraCaptureOptions } from "../RtcManaging";
+import type { RtcManaging, RtcCameraCaptureOptions, RtcRoomMessageDelivery } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, VeRtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
@@ -1027,8 +1027,13 @@ export class VeRtcManager implements RtcManaging {
    * Sends room text with a byte limit and bounded completion wait.
    */
   async sendRoomMessage(
-    message: string
+    message: string,
+    _delivery?: RtcRoomMessageDelivery,
+    signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) {
+      throw this.cancelled();
+    }
     const engine = this.requireEngine();
     const version = this.roomVersion;
     if (!this.joined || this.tokenExpired) {
@@ -1052,7 +1057,7 @@ export class VeRtcManager implements RtcManaging {
         }
         await sent;
       }),
-      undefined,
+      signal,
       5000
     );
     this.ensureCurrent(
