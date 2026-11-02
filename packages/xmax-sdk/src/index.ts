@@ -65,6 +65,10 @@ export type {
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
+export type {
+  RealtimeMediaSize,
+  RealtimeMediaSizeListener,
+} from "./Service/Realtime/RealtimeMediaSize";
 export {
   RealtimeModel,
   modelDisplayName,

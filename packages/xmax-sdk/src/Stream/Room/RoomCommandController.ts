@@ -195,8 +195,6 @@ export class RoomCommandController {
     }
     try {
       command.ensureCurrent?.();
-      XmaxLogger.room.info(() =>
-        `RTC command acknowledged: ${command.kind}, xid: ${command.xid}, count: ${message.count}, attempts: ${command.attempts}`);
       this.stopRetries(command);
     } catch (error) {
       this.cancelCommand(command, XmaxError.from(error));

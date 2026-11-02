@@ -15,6 +15,7 @@ import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
 import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
+import type { RealtimeMediaSizeListener } from "../../Service/Realtime/RealtimeMediaSize";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type {
   RealtimeState,
@@ -34,12 +35,26 @@ import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/Re
 export interface XmaxRealtimeManaging {
 
   /**
+   * Observes the fixed media baseline once source creation or a camera-format change resolves it.
+   *
+   * Registration synchronously replays the current size, including undefined without local media.
+   * Quality changes and remote frames do not trigger notifications. Releasing local media reports
+   * undefined; the listener remains registered across close(). Undefined as the argument removes it.
+   * Callbacks run synchronously; returned promises are not awaited. This notification does not imply
+   * preview or generation readiness. Observer failures do not interrupt media operations.
+   */
+  setResolvedMediaSizeListener(
+    listener?: RealtimeMediaSizeListener
+  ): void;
+
+  /**
    * Observes the result stream's original browser audio and video tracks, immediately replaying the
    * current binding.
    *
-   * Supports native APIs such as MediaRecorder without requiring WebCodecs. Tracks are borrowed; clone
-   * them before modifying or stopping them, and never stop the SDK's originals. Undefined reports no
-   * result stream or removes the listener when passed as the argument. Observation does not change
+   * Supports native APIs such as MediaRecorder without requiring WebCodecs. Track dimensions may change
+   * with quality adaptation; use the resolved media size for app-side fixed-size output. Tracks are
+   * borrowed; clone them before modifying or stopping them, and never stop the SDK's originals.
+   * Undefined reports no result stream or removes the listener when passed as the argument. Observation does not change
    * subscriptions, volume, or generation, may coexist with frame observation, and is cleared on close().
    */
   setRemoteMediaTracksListener(

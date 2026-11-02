@@ -512,6 +512,13 @@ export class RoomController implements RoomControlling {
       return;
     }
 
+    XmaxLogger.room.info(
+      () =>
+        `接收房间信令 (Inbound Room Signaling)\n` +
+        `├─ ${XmaxLogger.localized("发送者：", "Sender: ")}${senderUserID}\n` +
+        `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(message, null, 2)}`,
+    );
+
     if (message.event === "xid_ack") {
       if (this.state.kind === "joined" && senderUserID !== ownUserID &&
         (!this.botID || senderUserID === this.botID)) {

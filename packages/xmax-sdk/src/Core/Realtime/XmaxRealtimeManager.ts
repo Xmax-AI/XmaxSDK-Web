@@ -37,6 +37,7 @@ import {
   type RealtimeStateListener,
 } from "../../Service/Realtime/RealtimeState";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
+import type { RealtimeMediaSizeListener } from "../../Service/Realtime/RealtimeMediaSize";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { QualityController } from "../../Stream/Quality/QualityController";
 import { qualityVideoFormat, qualityVideoMaximumSize, supportsQualityEncoding } from "../../Stream/Quality/QualityVideoFormat";
@@ -144,6 +145,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * downlink changes.
    */
   private resolvedMediaVideoFormat?: RealtimeVideoFormat;
+
+  /**
+   * The observer of resolved media dimensions, retained while the manager is reusable.
+   */
+  private resolvedMediaSizeListener?: RealtimeMediaSizeListener;
 
   /**
    * The coordinator owning lifecycle admission, state, and cleanup.
@@ -470,7 +476,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         await this.mediaController.updateCameraFormat(requested);
         token.ensureCurrent();
         const track = this.currentLocalTrack!;
-        this.resolvedMediaVideoFormat = track.videoFormat;
+        this.updateResolvedMediaVideoFormat(track.videoFormat);
         this.qualityStates.delete(track);
       }
     );
@@ -557,7 +563,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     ensureActive();
 
     // Uplink adaptation must not alter generation, downlink dimensions, or the original L1 baseline.
-    this.resolvedMediaVideoFormat ??= state.baseline;
+    if (!this.resolvedMediaVideoFormat) {
+      this.updateResolvedMediaVideoFormat(state.baseline);
+    }
     track.updateVideoFormat(format);
     state.level = level;
     this.qualityHistory?.write(
@@ -700,6 +708,42 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    */
   get remoteAudioVolume(): number {
     return this.storedRemoteAudioVolume;
+  }
+
+  /**
+   * Registers the fixed-media-size observer and synchronously replays its current snapshot.
+   */
+  setResolvedMediaSizeListener(
+    listener?: RealtimeMediaSizeListener
+  ): void {
+    this.resolvedMediaSizeListener = listener;
+    this.notifyResolvedMediaSize();
+  }
+
+  /**
+   * Stores the media baseline and notifies only when its dimensions change or become unavailable.
+   */
+  private updateResolvedMediaVideoFormat(
+    format?: RealtimeVideoFormat
+  ): void {
+    const previous = this.resolvedMediaVideoFormat;
+    this.resolvedMediaVideoFormat = format;
+    if (previous?.width !== format?.width || previous?.height !== format?.height) {
+      this.notifyResolvedMediaSize();
+    }
+  }
+
+  /**
+   * Delivers a detached, immutable size without allowing observer failures to break media operations.
+   */
+  private notifyResolvedMediaSize(): void {
+    const format = this.resolvedMediaVideoFormat;
+    const size = format ? Object.freeze({ width: format.width, height: format.height }) : undefined;
+    try {
+      void Promise.resolve(this.resolvedMediaSizeListener?.(size)).catch(() => { });
+    } catch {
+      // Observers must not interrupt capture, configuration updates, or cleanup.
+    }
   }
 
   /**
@@ -941,7 +985,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
 
         token.ensureCurrent();
-        this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
+        this.updateResolvedMediaVideoFormat(stream.videoTrack?.videoFormat);
         completeCamera();
 
         // Local readiness requires a valid frame and a bound preview.
@@ -985,7 +1029,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         token.ensureCurrent();
         await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-        this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
+        this.updateResolvedMediaVideoFormat(stream.videoTrack?.videoFormat);
         await this.lifecycleManager.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.ready }),
           token
@@ -1019,7 +1063,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         token.ensureCurrent();
         await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-        this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
+        this.updateResolvedMediaVideoFormat(stream.videoTrack?.videoFormat);
         await this.lifecycleManager.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.ready }),
           token
@@ -1057,7 +1101,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
         await this.mediaController.prepareSource(() => token.ensureCurrent());
 
-        this.resolvedMediaVideoFormat = stream.videoTrack?.videoFormat;
+        this.updateResolvedMediaVideoFormat(stream.videoTrack?.videoFormat);
         await this.lifecycleManager.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.ready }),
           token
@@ -1094,7 +1138,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         await this.mediaController.stopLocalStream();
         token.ensureCurrent();
 
-        this.resolvedMediaVideoFormat = undefined;
+        this.updateResolvedMediaVideoFormat(undefined);
         await this.lifecycleManager.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
           token
@@ -1159,7 +1203,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         await this.streamController.updateUplinkVideoFormat(resolvedFormat);
         token.ensureCurrent();
 
-        this.resolvedMediaVideoFormat ??= previousFormat;
+        if (!this.resolvedMediaVideoFormat) {
+          this.updateResolvedMediaVideoFormat(previousFormat);
+        }
         track.updateVideoFormat(resolvedFormat);
         this.qualityStates.set(
           track,
@@ -1235,7 +1281,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
     const format = await this.streamController.updateUplinkFrameRate(fps);
     token.ensureCurrent();
-    this.resolvedMediaVideoFormat ??= previous;
+    if (!this.resolvedMediaVideoFormat) {
+      this.updateResolvedMediaVideoFormat(previous);
+    }
     track.updateVideoFormat(format);
   }
 
@@ -1325,7 +1373,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.disposePermissionWatch();
         await this.mediaController.stopLocalCameraStream();
         token.ensureCurrent();
-        this.resolvedMediaVideoFormat = undefined;
+        this.updateResolvedMediaVideoFormat(undefined);
         await this.lifecycleManager.commit(
           new RealtimeState({ connectionState: RealtimeConnectionState.idle }),
           token,
@@ -1743,7 +1791,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           if (!initialQuality || !initialFormat) {
             return;
           }
-          this.resolvedMediaVideoFormat ??= initialQuality.baseline;
+          if (!this.resolvedMediaVideoFormat) {
+            this.updateResolvedMediaVideoFormat(initialQuality.baseline);
+          }
           localTrack.updateVideoFormat(initialFormat);
           this.qualityStates.set(
             localTrack,
@@ -1947,7 +1997,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     if (scope === RealtimeTerminationScope.all) {
       this.setRemoteMediaTracksListener(undefined);
       await this.setRemoteMediaFrameListener(undefined);
-      this.resolvedMediaVideoFormat = undefined;
+      this.updateResolvedMediaVideoFormat(undefined);
       this.disposePermissionWatch();
       try {
         await this.mediaController.stopLocalStream();

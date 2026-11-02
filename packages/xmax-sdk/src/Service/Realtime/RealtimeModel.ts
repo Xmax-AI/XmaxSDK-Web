@@ -128,15 +128,13 @@ export function modelDisplayName(
 }
 
 /**
- * Returns a model-specific session endpoint. Built-in models and x2.1-trtc use the client's environment;
- * other custom models use the development endpoint.
+ * Uses the client's realtime endpoint for built-in and custom model IDs.
  */
 export function modelBaseURL(
   model: RealtimeModelName
 ): string | undefined {
-  return isKnownModel(model) || model === "x2.1-trtc"
-    ? undefined
-    : "https://dev.22duck.cn/open/api/v1";
+  isKnownModel(model);
+  return undefined;
 }
 
 /**

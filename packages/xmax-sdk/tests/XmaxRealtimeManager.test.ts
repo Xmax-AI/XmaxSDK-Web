@@ -357,6 +357,106 @@ function makeLocalStream(camera: CameraControllingStub): RealtimeMediaStream {
 
 const testContext = new RealtimeContext({ prompt: "a red cube" });
 
+describe("resolved media size observation", () => {
+  async function camera() {
+    const s = makeManager();
+    const local = await s.manager.createLocalCameraStream({
+      videoFormat: testVideoFormat,
+      position: CameraPosition.front,
+      useMicrophone: false,
+    });
+    s.camera.previewReadyHandler?.(() => true);
+    await vi.waitFor(() => expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready));
+    return { ...s, local };
+  }
+
+  it("reports the resolved baseline before creation returns and replays it to late listeners", async () => {
+    const s = makeManager();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    expect(listener).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
+    const snapshot = listener.mock.lastCall![0];
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Reflect.set(snapshot, "width", 1)).toBe(false);
+    expect(s.manager.currentCameraVideoFormat?.width).toBe(1280);
+    const late = vi.fn();
+    s.manager.setResolvedMediaSizeListener(late);
+    expect(late).toHaveBeenCalledOnce();
+    expect(late).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
+    s.manager.setResolvedMediaSizeListener(undefined);
+    await s.manager.close();
+    expect(late).toHaveBeenCalledOnce();
+  });
+
+  it("reports successful camera-size changes but excludes encoding-only updates and failures", async () => {
+    const s = await camera();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await s.manager.updateCameraFormat(new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 30 }));
+    expect(listener).toHaveBeenLastCalledWith({ width: 1080, height: 1920 });
+    const count = listener.mock.calls.length;
+    await s.manager.updateCameraFormat(new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24 }));
+    s.camera.updateVideoFormat.mockRejectedValueOnce(new Error("capture failed"));
+    await expect(s.manager.updateCameraFormat(testVideoFormat)).rejects.toThrow("capture failed");
+    expect(listener).toHaveBeenCalledTimes(count);
+    await s.manager.close();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("retains the baseline through uplink and downlink changes and disconnection", async () => {
+    const s = await camera();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await startDisplayedGeneration(s.manager, s.stream, s.local);
+    await s.manager.setUplinkQualityLevel(RealtimeQualityLevel.l3);
+    await s.manager.setDownlinkQualityLevel(RealtimeQualityLevel.l3);
+    await s.manager.updateUplinkVideoFormat(new RealtimeVideoFormat({ width: 640, height: 360, fps: 15 }));
+    expect(s.local.videoTrack?.videoFormat?.width).toBe(640);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
+    await s.manager.disconnect();
+    expect(listener).toHaveBeenCalledOnce();
+    await s.manager.close();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("clears released media and retains the listener for another source after close", async () => {
+    const s = await camera();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await s.manager.close();
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    expect(listener.mock.calls.map(call => call[0])).toEqual([
+      { width: 1280, height: 720 }, undefined, { width: 1280, height: 720 },
+    ]);
+    await s.manager.close();
+  });
+
+  it.each(["throw", "reject"])("isolates observer failures that %s", async mode => {
+    const s = makeManager();
+    s.manager.setResolvedMediaSizeListener(() => {
+      if (mode === "throw") throw new Error("observer failed");
+      return Promise.reject(new Error("observer failed"));
+    });
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    await s.manager.close();
+  });
+
+  it("does not publish a size when media creation fails", async () => {
+    const s = makeManager();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    vi.spyOn(s.camera, "createLocalCameraStream").mockRejectedValueOnce(new Error("capture failed"));
+    await expect(s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toThrow("capture failed");
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    await s.manager.close();
+  });
+});
+
 describe("XmaxRealtimeManager camera formats", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -1320,6 +1420,18 @@ describe("XmaxRealtimeManager external video", () => {
     return { ...s, source, clone, options };
   }
 
+  it("reports and clears resolved dimensions for an external-track source", async () => {
+    const s = setup();
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await s.manager.createExternalVideoStream(s.options);
+    expect(listener).toHaveBeenLastCalledWith({ width: 1080, height: 1920 });
+    await s.manager.stopExternalVideoStream();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+    expect(s.source.stop).not.toHaveBeenCalled();
+    await s.manager.close();
+  });
+
   it.each([
     ["test-trtc", true], [RealtimeModel.x2_1, true], ["test-vertc", true],
     ["test-trtc", false], [RealtimeModel.x2_1, false], ["test-vertc", false],
@@ -1609,6 +1721,21 @@ describe("XmaxRealtimeManager local video", () => {
     return { ...s, video, audio, track, create, start, pause, stop };
   }
 
+  it("reports the resolved file size rather than requested dimensions or adapted uplink size", async () => {
+    const s = setupFile(false);
+    s.track.updateVideoFormat(options.videoFormat.resized(1280, 720));
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await s.manager.createLocalVideoStream(options);
+    expect(listener).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
+    await s.manager.updateUplinkVideoFormat(options.videoFormat.resized(640, 360));
+    const late = vi.fn();
+    s.manager.setResolvedMediaSizeListener(late);
+    expect(late).toHaveBeenCalledOnce();
+    expect(late).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
+    await s.manager.close();
+  });
+
   it("adds contain for a file whose media ratio differs from its generation canvas", async () => {
     const s = setupFile(false);
     s.track.updateVideoFormat(options.videoFormat.resized(1920, 800));
@@ -1776,6 +1903,17 @@ describe("XmaxRealtimeManager local image", () => {
     }
     return { ...s, video, track, create, stop };
   }
+
+  it("reports resolved image dimensions independently of the requested format", async () => {
+    const s = setupImage();
+    s.track.updateVideoFormat(options.videoFormat.resized(640, 480));
+    const listener = vi.fn();
+    s.manager.setResolvedMediaSizeListener(listener);
+    await s.manager.createLocalImageStream(options);
+    expect(listener).toHaveBeenLastCalledWith({ width: 640, height: 480 });
+    await s.manager.close();
+    expect(listener).toHaveBeenLastCalledWith(undefined);
+  });
 
   it("adds contain for an image whose media ratio differs from its generation canvas", async () => {
     const s = setupImage(RtcProvider.agora);
