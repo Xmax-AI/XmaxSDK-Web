@@ -12,7 +12,7 @@ import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { XmaxEnvironment, realtimeApiBaseURL, apiBaseURL } from "../src/Core/XmaxEnvironment";
 
 describe("custom realtime models", () => {
-  it.each(["future-model", "x2.1-trtc", "toString", "__proto__", "constructor"])("uses environment routing and preview media defaults without replacing the identifier %s", (model) => {
+  it.each(["future-model", "x2.1-trtc", "x2.1-debug", "x2.1-debug-other", "toString", "__proto__", "constructor"])("uses environment routing and preview media defaults without replacing the identifier %s", (model) => {
     const preview = RealtimeModel.x2_1;
     expect(modelDisplayName(model)).toBe(model);
     expect(modelBaseURL(model)).toBeUndefined();
