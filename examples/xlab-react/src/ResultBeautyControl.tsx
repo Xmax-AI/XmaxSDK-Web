@@ -1,6 +1,5 @@
-import { useEffect, useId, useState } from "react";
-import type { VideoBeautyOptions } from "@xmaxai/web-sdk";
-import { usePopoverInteraction } from "./usePopoverInteraction";
+import { useId } from "react";
+import type { RealtimeVideoBeautyOptions } from "@xmaxai/web-sdk";
 
 const BEAUTY_FIELDS = [
   { key: "smoothness", label: "磨皮强度" },
@@ -11,64 +10,54 @@ const BEAUTY_FIELDS = [
 
 interface ResultBeautyControlProps {
   enabled: boolean;
-  options: Required<VideoBeautyOptions>;
   disabled?: boolean;
   onEnabledChange: (enabled: boolean) => void;
-  onOptionsChange: (options: Required<VideoBeautyOptions>) => void;
 }
 
-/** 只处理生成结果视图，不改变输入视频或原始音视频录制。 */
-export function ResultBeautyControl({ enabled, options, disabled = false, onEnabledChange, onOptionsChange }: ResultBeautyControlProps) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const expanded = open && !disabled;
-  const { rootRef, buttonRef, onBlur } = usePopoverInteraction({
-    open: expanded,
-    initialFocus: 'input[type="checkbox"]',
-    onOpenChange: setOpen,
-  });
+interface ResultBeautyPanelProps {
+  enabled: boolean;
+  options: Required<RealtimeVideoBeautyOptions>;
+  disabled?: boolean;
+  onOptionsChange: (options: Required<RealtimeVideoBeautyOptions>) => void;
+}
 
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
+/** 顶栏按钮直接开关结果美颜，开启时显示画面内的调节面板。 */
+export function ResultBeautyControl({ enabled, disabled = false, onEnabledChange }: ResultBeautyControlProps) {
+  return (
+    <button type="button" className={`remoteVolumeButton resultBeautyButton${enabled ? " active" : ""}`}
+      disabled={disabled} title={enabled ? "关闭结果美颜" : "开启结果美颜"}
+      aria-label="结果美颜" aria-pressed={enabled}
+      onClick={() => onEnabledChange(!enabled)}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />
+        <path d="M20 2v4m-2-2h4" />
+      </svg>
+    </button>
+  );
+}
+
+/** 与统计浮层使用相同的半透明背景，固定在结果画面右下角。 */
+export function ResultBeautyPanel({ enabled, options, disabled = false, onOptionsChange }: ResultBeautyPanelProps) {
+  const id = useId();
+  if (!enabled) return null;
 
   return (
-    <div className="remoteVolumeControl" ref={rootRef} onBlur={onBlur}>
-      <button ref={buttonRef} type="button" className={`remoteVolumeButton${enabled ? " active" : ""}`}
-        disabled={disabled} title="生成结果美颜" aria-label={`结果美颜：${enabled ? "开启" : "关闭"}`}
-        aria-expanded={expanded} aria-controls={expanded ? id : undefined} aria-haspopup="dialog"
-        onClick={() => setOpen(value => !value)}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />
-          <path d="M20 2v4m-2-2h4" />
-        </svg>
-      </button>
-      {expanded && (
-        <div className="remoteVolumePopover" id={id} role="dialog" aria-label="生成结果美颜">
-          <div className="remoteVolumeHeading">
-            <label htmlFor={`${id}-enabled`}>结果美颜</label>
-            <input id={`${id}-enabled`} type="checkbox" checked={enabled}
-              onChange={event => onEnabledChange(event.currentTarget.checked)} />
+    <section className="resultBeautyPanel" aria-label="结果美颜调节">
+      {BEAUTY_FIELDS.map(({ key, label }) => {
+        const sliderId = `${id}-${key}`;
+        const percent = Math.round(options[key] * 100);
+        return (
+          <div className="resultBeautyRow" key={key}>
+            <label htmlFor={sliderId}>{label}</label>
+            <input id={sliderId} type="range" min="0" max="100" step="1" value={percent}
+              disabled={disabled} aria-valuetext={`${percent}%`}
+              style={{ backgroundImage: `linear-gradient(to right, #a9b4ff ${percent}%, rgba(255, 255, 255, 0.25) ${percent}%)` }}
+              onChange={event => onOptionsChange({ ...options, [key]: Number(event.currentTarget.value) / 100 })} />
+            <output htmlFor={sliderId}>{percent}%</output>
           </div>
-          {BEAUTY_FIELDS.map(({ key, label }) => {
-            const sliderId = `${id}-${key}`;
-            const percent = Math.round(options[key] * 100);
-            return (
-              <div key={key}>
-                <div className="remoteVolumeHeading resultEffectStrengthHeading">
-                  <label htmlFor={sliderId}>{label}</label>
-                  <output htmlFor={sliderId}>{percent}%</output>
-                </div>
-                <input id={sliderId} type="range" min="0" max="100" step="1" value={percent}
-                  disabled={!enabled} aria-valuetext={`${percent}%`}
-                  style={{ backgroundImage: `linear-gradient(to right, var(--accent) ${percent}%, #e9ebef ${percent}%)` }}
-                  onChange={event => onOptionsChange({ ...options, [key]: Number(event.currentTarget.value) / 100 })} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+        );
+      })}
+    </section>
   );
 }

@@ -8,6 +8,9 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
+import type { RemoteMediaTracks } from "../Foundation/Media/RemoteMediaTracks";
+import type { RealtimeVideoBeautyOptions, RealtimeVideoBeautyErrorListener } from "../Service/Realtime/RealtimeVideoBeautyOptions";
+import { RemoteVideoOutputController } from "./Video/RemoteVideoOutputController";
 import type { InteractionFrame } from "../Media/Interaction/InteractionFrame";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -28,9 +31,9 @@ export class RenderController implements RenderControlling {
   private track?: RealtimeVideoTrack;
 
   /**
-   * The remote track's current rendering target.
+   * The remote track's attached presentation targets.
    */
-  private target?: VideoRenderTarget;
+  private readonly targets = new Set<VideoRenderTarget>();
 
   /**
    * Whether the current task permits interaction.
@@ -41,6 +44,29 @@ export class RenderController implements RenderControlling {
    * Whether the current remote view has completed render warmup.
    */
   private ready = false;
+
+  /**
+   * The shared result track used by presentation and public media output.
+   */
+  private outputTrack?: MediaStreamTrack;
+
+  /**
+   * The lazy shared result processing owner.
+   */
+  private readonly output = new RemoteVideoOutputController(track => {
+    this.outputTrack = track;
+    const stream = track && this.targets.size ? new MediaStream([track]) : null;
+    for (const target of this.targets) {
+      if (stream) {
+        target.setMediaStream(
+          stream,
+          true
+        );
+      } else {
+        target.setMediaStream(null);
+      }
+    }
+  });
 
   /**
    * Creates a controller with presentation lifecycle callbacks, without owning Core objects.
@@ -64,7 +90,7 @@ export class RenderController implements RenderControlling {
    */
   prepareForGeneration(): void {
     this.ready = false;
-    this.target?.prepareForGeneration?.();
+    this.targets.forEach(target => target.prepareForGeneration?.());
   }
 
   /**
@@ -78,6 +104,7 @@ export class RenderController implements RenderControlling {
   ): void {
     this.resetRemoteTrack();
     this.track = track;
+    this.output.setVideoTrack(track.mediaStreamTrack);
     if (track.videoFormat) {
       TrajectoryRegistry.register(
         track,
@@ -108,16 +135,18 @@ export class RenderController implements RenderControlling {
           if (this.track !== track) {
             return;
           }
-          this.ready = false;
+          if (this.targets.size === 0) {
+            this.ready = false;
+          }
           // Do not mirror generated results again; the view may still apply app-requested display mirroring.
           view.isMirrored = false;
-          this.target = view;
-          view.setMediaStream(track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+          this.targets.add(view);
+          view.setMediaStream(this.outputTrack ? new MediaStream([this.outputTrack]) : null);
         },
         detachHandler: view => {
-          if (this.target === view) {
+          this.targets.delete(view);
+          if (this.targets.size === 0) {
             this.ready = false;
-            this.target = undefined;
           }
           view.setMediaStream(null);
         },
@@ -131,11 +160,60 @@ export class RenderController implements RenderControlling {
   setRemoteMedia(
     track: MediaStreamTrack | null
   ): void {
+    const previous = this.outputTrack;
     this.ready = false;
     if (this.track) {
       TrajectoryRegistry.binding(this.track)?.update(!!track && this.interactionEnabled);
     }
-    this.target?.setMediaStream(track ? new MediaStream([track]) : null);
+    this.output.setVideoTrack(track ?? undefined);
+    if (!track && !previous) {
+      this.targets.forEach(target => target.setMediaStream(null));
+    }
+  }
+
+  /**
+   * Supplies original RTC metadata to shared result processing.
+   */
+  setRemoteMediaTracks(
+    tracks?: RemoteMediaTracks
+  ): void {
+    this.output.setSource(tracks);
+  }
+
+  /**
+   * Observes the shared result tracks independently of attached views.
+   */
+  setRemoteMediaTracksListener(
+    listener?: (
+      tracks?: RemoteMediaTracks
+    ) => void
+  ): void {
+    this.output.setListener(listener);
+  }
+
+  /**
+   * Configures result beauty once for preview, recording tracks, and decoded-frame observers.
+   */
+  setRemoteVideoBeauty(
+    options?: RealtimeVideoBeautyOptions
+  ): Promise<void> {
+    return this.output.setBeauty(options);
+  }
+
+  /**
+   * Observes recoverable runtime beauty failures.
+   */
+  setRemoteVideoBeautyErrorListener(
+    listener?: RealtimeVideoBeautyErrorListener
+  ): void {
+    this.output.setBeautyErrorListener(listener);
+  }
+
+  /**
+   * Resets result processing configuration and owned resources when the manager closes.
+   */
+  closeBeauty(): Promise<void> {
+    return this.output.close();
   }
 
   /**
@@ -160,6 +238,7 @@ export class RenderController implements RenderControlling {
    */
   resetRemoteTrack(): void {
     this.ready = false;
+    this.output.setVideoTrack(undefined);
     const track = this.track;
     this.track = undefined;
     this.interactionEnabled = false;
@@ -167,7 +246,7 @@ export class RenderController implements RenderControlling {
       TrajectoryRegistry.unregister(track);
       VideoRenderRegistry.unregister(track);
     }
-    this.target?.setMediaStream(null);
-    this.target = undefined;
+    this.targets.forEach(target => target.setMediaStream(null));
+    this.targets.clear();
   }
 }

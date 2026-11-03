@@ -45,6 +45,7 @@ export type ApiFetch = (
     body?: string;
     signal?: AbortSignal;
     keepalive?: boolean;
+    cache?: RequestCache;
   },
 ) => Promise<{
   status: number;
@@ -335,9 +336,7 @@ export class ApiService implements ApiServicing {
     method: ApiMethod,
     path: string,
     body?: unknown,
-    options?: {
-      keepalive?: boolean
-    },
+    options?: ApiRequestOptions,
   ): {
     url: string;
     init: {
@@ -346,6 +345,7 @@ export class ApiService implements ApiServicing {
       body?: string;
       signal?: AbortSignal;
       keepalive?: boolean;
+      cache?: RequestCache;
     };
   } {
     const normalizedPath = path.trim();
@@ -405,6 +405,7 @@ export class ApiService implements ApiServicing {
         body: encodedBody,
         signal: AbortSignal.timeout(this.timeoutMs),
         ...(options?.keepalive ? { keepalive: true } : {}),
+        ...(options?.cache ? { cache: options.cache } : {}),
       },
     };
   }

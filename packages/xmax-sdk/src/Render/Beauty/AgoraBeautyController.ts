@@ -11,7 +11,7 @@
 import type { IAgoraRTC, ILocalVideoTrack } from "agora-rtc-sdk-ng";
 import type { IBeautyExtension, IBeautyProcessor } from "agora-extension-beauty-effect";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { VideoBeautyOptions } from "./VideoBeautyOptions";
+import { resolvedVideoBeautyOptions, type RealtimeVideoBeautyOptions } from "../../Service/Realtime/RealtimeVideoBeautyOptions";
 
 /**
  * The extension's documented cleanup method, omitted from its public processor interface.
@@ -65,28 +65,7 @@ function loadRuntime(): Promise<BeautyRuntime> {
 }
 
 /**
- * Validates and snapshots view-specific strengths before changing active processing.
- */
-export function resolvedBeautyOptions(
-  options: VideoBeautyOptions
-): Readonly<Required<VideoBeautyOptions>> {
-  const resolved = {
-    smoothness: options.smoothness ?? 0.3,
-    lightening: options.lightening ?? 0.2,
-    sharpness: options.sharpness ?? 0.2,
-    redness: options.redness ?? 0.1,
-  };
-  if (Object.values(resolved).some(value => !Number.isFinite(value) || value < 0 || value > 1)) {
-    throw new XmaxError(
-      XmaxErrorCode.invalidConfiguration,
-      "Beauty strengths must be finite numbers from 0 to 1"
-    );
-  }
-  return Object.freeze(resolved);
-}
-
-/**
- * Processes a borrowed result track for display, owning only a clone and its generated output. The
+ * Processes a borrowed result track for shared output, owning only a clone and its generated output. The
  * wrapped track is never published, so processing is independent of the session's RTC provider.
  */
 export class AgoraBeautyController {
@@ -123,7 +102,7 @@ export class AgoraBeautyController {
   /**
    * The latest strengths, including updates received during lazy loading.
    */
-  private options = resolvedBeautyOptions({});
+  private options = resolvedVideoBeautyOptions({});
 
   /**
    * The extension-generated display track.
@@ -168,7 +147,7 @@ export class AgoraBeautyController {
    */
   async start(
     track: MediaStreamTrack,
-    options: VideoBeautyOptions
+    options: RealtimeVideoBeautyOptions
   ): Promise<void> {
     this.update(options);
     const { sdk, extension } = await this.load();
@@ -246,9 +225,9 @@ export class AgoraBeautyController {
    * Updates strengths without replacing the current processor or display track.
    */
   update(
-    options: VideoBeautyOptions
+    options: RealtimeVideoBeautyOptions
   ): void {
-    const values = resolvedBeautyOptions(options);
+    const values = resolvedVideoBeautyOptions(options);
     this.options = values;
     this.processor?.setOptions({
       lighteningContrastLevel: 1,

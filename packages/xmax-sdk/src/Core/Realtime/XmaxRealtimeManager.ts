@@ -22,6 +22,7 @@ import type {
   UplinkVideoStatistics,
   UplinkVideoStatisticsListener
 } from "../../Foundation/RTC/VideoStatistics";
+import type { RealtimeVideoBeautyOptions, RealtimeVideoBeautyErrorListener } from "../../Service/Realtime/RealtimeVideoBeautyOptions";
 import { RemoteMediaFrameController } from "../../Render/Video/RemoteMediaFrameController";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
 import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
@@ -119,19 +120,19 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private readonly mediaService: MediaService;
 
   /**
-   * The on-demand original remote frame observer, without recording or file muxing.
+   * The on-demand shared-result frame observer, without recording or file muxing.
    */
   private readonly remoteMediaFrames = new RemoteMediaFrameController();
 
   /**
-   * The original-track observer, independent of WebCodecs.
+   * The shared result-track observer, independent of WebCodecs.
    */
   private remoteMediaTracksListener?: (
     tracks?: RemoteMediaTracks
   ) => void;
 
   /**
-   * Whether decoded remote-frame observation currently needs original tracks.
+   * Whether decoded result-frame observation currently needs shared tracks.
    */
   private remoteMediaFrameObservation = false;
 
@@ -1546,7 +1547,25 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * Observes original remote video and PCM audio before or during generation; undefined releases
+   * Applies shared result beauty before connection or during generation without changing input media.
+   */
+  setRemoteVideoBeauty(
+    options?: RealtimeVideoBeautyOptions
+  ): Promise<void> {
+    return this.renderController.setRemoteVideoBeauty(options);
+  }
+
+  /**
+   * Receives recoverable beauty failures separately from generation errors.
+   */
+  setRemoteVideoBeautyErrorListener(
+    listener?: RealtimeVideoBeautyErrorListener
+  ): void {
+    this.renderController.setRemoteVideoBeautyErrorListener(listener);
+  }
+
+  /**
+   * Observes shared result video and PCM audio before or during generation; undefined releases
    * observation resources. Call from a user gesture to unlock audio. Unsupported capabilities or setup
    * failure reject without affecting playback or generation.
    */
@@ -1568,7 +1587,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * Delivers borrowed remote tracks without creating audio processors or video-frame readers.
+   * Delivers shared result tracks without creating audio processors or WebCodecs frame readers.
    */
   setRemoteMediaTracksListener(
     listener?: (
@@ -1580,10 +1599,10 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * Shares RTC track notifications between independent frame and track subscriptions.
+   * Routes shared result output to independent frame and track subscriptions.
    */
   private updateRemoteMediaObservation(): void {
-    this.streamController.setRemoteMediaListener(
+    this.renderController.setRemoteMediaTracksListener(
       this.remoteMediaFrameObservation || this.remoteMediaTracksListener ? tracks => {
         if (this.remoteMediaFrameObservation) {
           this.remoteMediaFrames.setSource(tracks);
@@ -1594,6 +1613,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           XmaxLogger.render.warning(() => `Remote media track observer failed: ${XmaxError.from(error).message}`);
         }
       } : undefined,
+    );
+    this.streamController.setRemoteMediaListener(
+      this.remoteMediaFrameObservation || this.remoteMediaTracksListener
+        ? tracks => this.renderController.setRemoteMediaTracks(tracks)
+        : undefined,
     );
   }
 
@@ -1997,6 +2021,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     if (scope === RealtimeTerminationScope.all) {
       this.setRemoteMediaTracksListener(undefined);
       await this.setRemoteMediaFrameListener(undefined);
+      await this.renderController.closeBeauty();
       this.updateResolvedMediaVideoFormat(undefined);
       this.disposePermissionWatch();
       try {

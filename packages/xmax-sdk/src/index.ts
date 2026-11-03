@@ -12,6 +12,7 @@
 export { XmaxClient } from "./Core/XmaxClient";
 export { XmaxConfiguration } from "./Core/XmaxConfiguration";
 export type { XmaxConfigurationInit } from "./Core/XmaxConfiguration";
+export type { XmaxCreditBalance } from "./Core/Account/XmaxCreditBalance";
 
 // Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
@@ -62,6 +63,10 @@ export type {
   RealtimeTiming,
   RealtimeTimingListener,
 } from "./Service/Realtime/RealtimeTimingSnapshot";
+export type {
+  RealtimeVideoBeautyOptions,
+  RealtimeVideoBeautyErrorListener,
+} from "./Service/Realtime/RealtimeVideoBeautyOptions";
 export { RealtimeContext } from "./Service/Realtime/RealtimeContext";
 export type { RealtimeContextInit } from "./Service/Realtime/RealtimeContext";
 export { RealtimeMediaStream } from "./Service/Realtime/RealtimeMediaStream";
@@ -120,7 +125,6 @@ export type {
 export { StoredFile } from "./Foundation/Storage/StoredFile";
 
 // Render
-export type { VideoBeautyOptions } from "./Render/Beauty/VideoBeautyOptions";
 export { XmaxRealtimeVideoView } from "./Render/Video/XmaxRealtimeVideoView";
 export type { VideoRenderStatistics } from "./Render/Video/VideoRenderStatistics";
 export { XmaxRealtimeDualVideoView } from "./Render/Video/XmaxRealtimeDualVideoView";

@@ -24,9 +24,11 @@ import { apiBaseURL, realtimeApiBaseURL, nonRealtimeApiBaseURL } from "./XmaxEnv
 import { NonRealtimeTaskService } from "../Service/NonRealtime/NonRealtimeTaskService";
 import { XmaxNonRealtimeManager } from "./NonRealtime/XmaxNonRealtimeManager";
 import type { XmaxNonRealtimeManaging } from "./NonRealtime/XmaxNonRealtimeManaging";
+import type { XmaxCreditBalance } from "./Account/XmaxCreditBalance";
+import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 
 /**
- * The entry point for realtime generation, non-realtime tasks, and media services.
+ * The entry point for realtime generation, non-realtime tasks, media services, and account credit queries.
  */
 export class XmaxClient {
 
@@ -117,5 +119,31 @@ export class XmaxClient {
    */
   createStorageService(): StorageServicing {
     return new StorageService({ apiService: this.apiService });
+  }
+
+  /**
+   * Fetches the remaining credits for the account owning this client's API key.
+   *
+   * Each call requests the current server balance using the client's general service environment,
+   * bypassing browser caching. Your app controls refresh timing and insufficient-credit handling.
+   *
+   * @returns The server-reported balance, including fractional credits.
+   * @throws Rejects for invalid credentials, request failure, or missing or invalid balance data.
+   */
+  async getCreditBalance(): Promise<XmaxCreditBalance> {
+    const payload = await this.apiService.get<unknown>(
+      "/balance",
+      { cache: "no-store" }
+    );
+    const currentBalance = typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>).currentBalance
+      : undefined;
+    if (typeof currentBalance !== "number" || !Number.isFinite(currentBalance) || currentBalance < 0) {
+      throw new XmaxError(
+        XmaxErrorCode.apiError,
+        "Server returned an invalid credit balance"
+      );
+    }
+    return Object.freeze({ currentBalance });
   }
 }

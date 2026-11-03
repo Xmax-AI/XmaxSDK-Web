@@ -8,6 +8,8 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
+import type { RemoteMediaTracks } from "../Foundation/Media/RemoteMediaTracks";
+import type { RealtimeVideoBeautyOptions, RealtimeVideoBeautyErrorListener } from "../Service/Realtime/RealtimeVideoBeautyOptions";
 import type { InteractionFrame } from "../Media/Interaction/InteractionFrame";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
@@ -21,6 +23,41 @@ export interface RenderControlling {
    * Whether remote render warmup has completed.
    */
   readonly isReady: boolean;
+
+  /**
+   * Updates original RTC metadata supplied to shared result output.
+   */
+  setRemoteMediaTracks(
+    tracks?: RemoteMediaTracks
+  ): void;
+
+  /**
+   * Observes processed video and original audio independently of views.
+   */
+  setRemoteMediaTracksListener(
+    listener?: (
+      tracks?: RemoteMediaTracks
+    ) => void
+  ): void;
+
+  /**
+   * Configures optional shared result processing.
+   */
+  setRemoteVideoBeauty(
+    options?: RealtimeVideoBeautyOptions
+  ): Promise<void>;
+
+  /**
+   * Sets the independent recoverable beauty failure receiver.
+   */
+  setRemoteVideoBeautyErrorListener(
+    listener?: RealtimeVideoBeautyErrorListener
+  ): void;
+
+  /**
+   * Restores disabled beauty and releases result processing on close.
+   */
+  closeBeauty(): Promise<void>;
 
   /**
    * Resets presentation readiness so a bound view awaits the new task's first frame and warmup.

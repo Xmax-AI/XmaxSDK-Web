@@ -3267,6 +3267,23 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await s.manager.close();
   });
 
+  it("accepts result beauty before connecting and rejects invalid strengths without changing state", async () => {
+    const s = makeManager();
+    const listener = vi.fn();
+    s.manager.setRemoteVideoBeautyErrorListener(listener);
+    await s.manager.setRemoteVideoBeauty({ smoothness: 0.5 });
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    expect(s.stream.beginCalls).toHaveLength(0);
+    await expect(s.manager.setRemoteVideoBeauty({ redness: Infinity }))
+      .rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(listener).not.toHaveBeenCalled();
+    await s.manager.setRemoteVideoBeauty(undefined);
+    await s.manager.close();
+    await s.manager.setRemoteVideoBeauty({ sharpness: 0.4 });
+    expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.idle);
+    await s.manager.close();
+  });
+
   it("observes borrowed tracks without preparing WebCodecs and keeps frame observation independent", async () => {
     const capture = vi.spyOn(RemoteMediaFrameController.prototype, "setListener").mockResolvedValue();
     const setSource = vi.spyOn(RemoteMediaFrameController.prototype, "setSource").mockImplementation(() => {});

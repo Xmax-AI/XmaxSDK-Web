@@ -50,7 +50,7 @@ describe("result beauty processing", () => {
     expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledWith({ mediaStreamTrack: s.clone });
     expect(s.onOutput).toHaveBeenCalledWith(s.output);
     expect(s.processor.setOptions).toHaveBeenLastCalledWith({
-      lighteningContrastLevel: 1, lighteningLevel: 0.2, smoothnessLevel: 0.4, sharpnessLevel: 0.2, rednessLevel: 0.1,
+      lighteningContrastLevel: 1, lighteningLevel: 0, smoothnessLevel: 0.4, sharpnessLevel: 0, rednessLevel: 0,
     });
     s.controller.update({ smoothness: 0.7 });
     expect(s.processor.setOptions).toHaveBeenLastCalledWith(expect.objectContaining({ smoothnessLevel: 0.7 }));

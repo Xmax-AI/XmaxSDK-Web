@@ -17,13 +17,13 @@ import type { RealtimeMediaFrameListener } from "../../Service/Realtime/Realtime
 import { RealtimeMediaFrameDispatcher } from "./RealtimeMediaFrameDispatcher";
 
 /**
- * Coordinates original remote-media observation and bounded delivery without owning recording, files, or
+ * Coordinates shared result-media observation and bounded delivery without owning recording, files, or
  * duration limits.
  */
 export class RemoteMediaFrameController {
 
   /**
-   * The app's original-media listener.
+   * The app's shared result-media listener.
    */
   private listener?: RealtimeMediaFrameListener;
 
@@ -38,7 +38,7 @@ export class RemoteMediaFrameController {
   private audio?: RemoteAudioFrameSource;
 
   /**
-   * The original-video observer.
+   * The shared-video observer.
    */
   private readonly video = new RemoteVideoFrameSource();
 
@@ -48,7 +48,7 @@ export class RemoteMediaFrameController {
   private readonly dispatcher = new RealtimeMediaFrameDispatcher();
 
   /**
-   * The RTC result-track binding currently supplied by transport.
+   * The result-track binding currently supplied by shared output.
    */
   private source?: RemoteMediaTracks;
 

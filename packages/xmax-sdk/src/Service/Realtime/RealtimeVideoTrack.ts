@@ -54,7 +54,8 @@ export class RealtimeVideoTrack {
 
   /**
    * The underlying browser media track used internally by XmaxSDK. Available after local capture starts
-   * or remote subscription succeeds.
+   * or remote subscription succeeds. Remote processing is supplied through render bindings and media
+   * listeners; this transport handle remains unprocessed.
    */
   mediaStreamTrack?: MediaStreamTrack;
 

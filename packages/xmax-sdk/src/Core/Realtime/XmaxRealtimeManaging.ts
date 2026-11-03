@@ -14,6 +14,7 @@ import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/Real
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
+import type { RealtimeVideoBeautyOptions, RealtimeVideoBeautyErrorListener } from "../../Service/Realtime/RealtimeVideoBeautyOptions";
 import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
 import type { RealtimeMediaSizeListener } from "../../Service/Realtime/RealtimeMediaSize";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
@@ -48,14 +49,33 @@ export interface XmaxRealtimeManaging {
   ): void;
 
   /**
-   * Observes the result stream's original browser audio and video tracks, immediately replaying the
-   * current binding.
+   * Configures generated-result beauty shared by SDK views, media frames, and media tracks. Disabled by
+   * default and loaded on demand. Undefined disables the effect. Options persist across reconnection;
+   * close() clears options and the independent error listener. Does not change input or publication.
+   * Configuration failures reject; later processing failures restore original pixels and notify the
+   * error listener without terminating generation. Effect changes retain an existing output track.
+   */
+  setRemoteVideoBeauty(
+    options?: RealtimeVideoBeautyOptions
+  ): Promise<void>;
+
+  /**
+   * Receives recoverable runtime beauty failures after unprocessed result pixels are restored.
+   */
+  setRemoteVideoBeautyErrorListener(
+    listener?: RealtimeVideoBeautyErrorListener
+  ): void;
+
+  /**
+   * Observes shared result video and original browser audio. Beauty affects the video pixels. The
+   * available binding is replayed; initializing stable browser output may delay the first notification.
    *
    * Supports native APIs such as MediaRecorder without requiring WebCodecs. Track dimensions may change
    * with quality adaptation; use the resolved media size for app-side fixed-size output. Tracks are
-   * borrowed; clone them before modifying or stopping them, and never stop the SDK's originals.
-   * Undefined reports no result stream or removes the listener when passed as the argument. Observation does not change
-   * subscriptions, volume, or generation, may coexist with frame observation, and is cleared on close().
+   * borrowed; clone them before modifying or stopping them, and never stop SDK-owned tracks.
+   * Undefined reports no result stream or removes the listener when passed as the argument. Observation
+   * does not change subscriptions, volume, or generation, may coexist with frame observation, and is
+   * cleared on close().
    */
   setRemoteMediaTracksListener(
     listener?: (
@@ -64,7 +84,7 @@ export interface XmaxRealtimeManaging {
   ): void;
 
   /**
-   * Observes decoded remote video and PCM audio before playback-volume processing.
+   * Observes shared result video after beauty and PCM audio before playback-volume processing.
    *
    * Both tracks use receiver presentation timestamps in microseconds; synchronize by timestamp, not
    * callback arrival. Your app must close delivered video frames and keep callbacks lightweight. Queue

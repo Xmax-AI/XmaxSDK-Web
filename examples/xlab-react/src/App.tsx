@@ -17,7 +17,7 @@ import {
   type DownlinkVideoStatistics,
   type RealtimeState,
   type XmaxRealtimeManaging,
-  type VideoBeautyOptions,
+  type RealtimeVideoBeautyOptions,
 } from "@xmaxai/web-sdk";
 import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
@@ -27,7 +27,7 @@ import { ReferenceLibrary, type ReferenceItem } from "./ReferenceLibrary";
 import { ReferenceList } from "./ReferenceList";
 import { RemoteVolumeControl } from "./RemoteVolumeControl";
 import { StatisticsToggle } from "./StatisticsToggle";
-import { ResultBeautyControl } from "./ResultBeautyControl";
+import { ResultBeautyControl, ResultBeautyPanel } from "./ResultBeautyControl";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
@@ -89,13 +89,13 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [remoteAudioVolume, setRemoteAudioVolume] = useState(0);
   const [beautyEnabled, setBeautyEnabled] = useState(false);
-  const [beautySettings, setBeautySettings] = useState<Required<VideoBeautyOptions>>({
+  const [beautySettings, setBeautySettings] = useState<Required<RealtimeVideoBeautyOptions>>({
     smoothness: 0.3,
     lightening: 0.2,
     sharpness: 0.2,
     redness: 0.1,
   });
-  const beautyOptions = useMemo<VideoBeautyOptions | undefined>(
+  const beautyOptions = useMemo<RealtimeVideoBeautyOptions | undefined>(
     () => beautyEnabled ? beautySettings : undefined,
     [beautyEnabled, beautySettings],
   );
@@ -123,6 +123,7 @@ export function App() {
     charx: createRef<HTMLDivElement>(),
     clothx: createRef<HTMLDivElement>(),
     vibex: createRef<HTMLDivElement>(),
+    dimx: createRef<HTMLDivElement>(),
     free: createRef<HTMLDivElement>(),
   }));
 
@@ -248,6 +249,17 @@ export function App() {
 
   const sessionActive = localStream !== undefined;
   const cameraConfiguration = resolveCameraConfiguration(model, cameraPreset, isMobileLayout);
+  useEffect(() => {
+    const realtime = realtimeRef.current;
+    if (!realtime) return;
+    void realtime.setRemoteVideoBeauty(beautyOptions).catch(error => {
+      if (realtimeRef.current === realtime && error?.code !== "CANCELLED") {
+        setBeautyEnabled(false);
+        setErrorText(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, [beautyOptions]);
+
   // 会话中沿用实际采集规格，窗口跨越移动端断点时只切换布局，不改变画面比例。
   const stageFormat = (sessionActive && realtimeRef.current?.currentCameraVideoFormat) || cameraConfiguration.videoFormat;
   const stageStyle = { "--camera-aspect-ratio": stageFormat.width / stageFormat.height } as CSSProperties;
@@ -314,10 +326,17 @@ export function App() {
       }),
     );
     realtimeRef.current = realtime;
+    realtime.setRemoteVideoBeautyErrorListener(error => {
+      if (realtimeRef.current === realtime) {
+        setBeautyEnabled(false);
+        setErrorText(error.message);
+      }
+    });
     // 会话建立成功后是否已切换到生成页面。
     let switchedToSession = false;
     try {
       setActiveModeKey("charx");
+      await realtime.setRemoteVideoBeauty(beautyOptions);
       await realtime.setRemoteAudioVolume(remoteAudioVolume);
       await realtime.setTimingListener((timing) => {
         if (realtimeRef.current === realtime) {
@@ -436,7 +455,8 @@ export function App() {
     }
     setErrorText("");
     try {
-      const uploading = references.addFile(file, submitPrompt, applyReference);
+      const uploadPrompt = activeMode.key === "free" ? prompt : activeMode.prompt;
+      const uploading = references.addFile(file, uploadPrompt, applyReference);
       const row = presetRowRefs[activeModeKey].current;
       if (row) {
         row.scrollTop = 0;
@@ -828,8 +848,8 @@ export function App() {
           <StatisticsToggle visible={statisticsVisible} onChange={setStatisticsVisible} />
           <RemoteVolumeControl volume={remoteAudioVolume} disabled={!sessionActive || !realtimeRef.current}
             onChange={handleRemoteVolumeChange} />
-          <ResultBeautyControl enabled={beautyEnabled} options={beautySettings}
-            disabled={!remoteStream || busy} onEnabledChange={setBeautyEnabled} onOptionsChange={setBeautySettings} />
+          <ResultBeautyControl enabled={beautyEnabled}
+            disabled={!remoteStream || busy} onEnabledChange={setBeautyEnabled} />
           <RecordingControl status={recordingStatus} disabled={stateText !== RealtimeConnectionState.generating}
             onToggle={() => void handleToggleRecording()} />
           <span className="sessionTimer">{formatElapsed(elapsedSeconds)}</span>
@@ -843,7 +863,7 @@ export function App() {
         </div>
       </header>
 
-      <div className="stageViewport" style={stageStyle}>
+      <div className={`stageViewport${beautyEnabled ? " beautyVisible" : ""}`} style={stageStyle}>
         <div className="stageRow">
           <div className="stageSlot">
             <div className="stage">
@@ -865,11 +885,6 @@ export function App() {
                 <div className="remoteVideo" key={remoteStream.id}>
                   <XmaxRealtimeVideo
                     track={remoteStream.videoTrack}
-                    beautyOptions={beautyOptions}
-                    onBeautyError={error => {
-                      setBeautyEnabled(false);
-                      setErrorText(error.message);
-                    }}
                     isInteractionEnabled
                     style={{ width: "100%", height: "100%" }}
                   />
@@ -890,6 +905,8 @@ export function App() {
                 ]} />
               </div>
               <span className="watermark">✦ Xmax</span>
+              <ResultBeautyPanel enabled={beautyEnabled} options={beautySettings}
+                disabled={!remoteStream || busy} onOptionsChange={setBeautySettings} />
               {(!remoteStream || stateText !== RealtimeConnectionState.generating) && (
                 <span className="stageHint">
                   {isConnected ? "Generating…" : "Waiting for connection…"}

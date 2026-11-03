@@ -46,7 +46,7 @@ export interface RealtimeAudioFrame {
 }
 
 /**
- * An original decoded remote video frame without mirroring, cropping, or UI overlays.
+ * A decoded result video frame including enabled beauty, without mirroring, cropping, or UI overlays.
  */
 export interface RealtimeVideoFrame {
 

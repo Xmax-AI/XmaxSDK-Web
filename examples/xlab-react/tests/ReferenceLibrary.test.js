@@ -21,12 +21,21 @@ describe("ReferenceLibrary", () => {
     const library = new ReferenceLibrary(vi.fn());
     expect(library.snapshot.length).toBeGreaterThan(0);
     for (const item of library.snapshot) {
+      if (!item.thumbnail) {
+        expect(item.mode).toBe("dimx");
+        expect(item.reference_path).toBeUndefined();
+        continue;
+      }
       for (const address of [item.thumbnail, item.reference_path]) {
         const url = new URL(address);
         expect(url.origin).toBe("https://cdn.22duck.cn");
-        expect(url.pathname).toMatch(new RegExp(`^/images/source/${item.mode}/`));
-        expect(url.searchParams.get("presetVersion")).toBeTruthy();
+        expect(url.pathname).toMatch(new RegExp(`^/images/playground/${item.mode}/`));
+        expect(url.searchParams.get("presetVersion")).toBe("20261030");
+        expect(url.searchParams.get("v")).toBe("32");
       }
+      expect(new URL(item.thumbnail).pathname).toBe(new URL(item.reference_path).pathname);
+      expect(item.thumbnail).toContain("imageMogr2/crop/256x256/gravity/center/format/webp/quality/90");
+      expect(item.reference_path).not.toContain("imageMogr2");
     }
   });
 
@@ -101,11 +110,53 @@ describe("ReferenceLibrary", () => {
     expect(new Set(library.snapshot.map((item) => item.id)).size).toBe(library.snapshot.length);
     for (const item of library.snapshot) {
       expect(item.prompt).not.toBe("");
-      const preset = EXAMPLE_MODES.find((mode) => mode.key === item.mode).presets.find((preset) => preset.name === item.name);
+      const preset = EXAMPLE_MODES.find((mode) => mode.key === item.mode).presets.find((preset) => preset.id === item.id);
       expect(item.reference_path).toBe(preset.reference);
+      expect(item.prompt).toBe(preset.prompt);
       expect(item.upload_status).toBe("ready");
       expect(item.is_selected).toBe(false);
     }
+  });
+
+  it("applies text-only summon presets after image presets without uploading or retaining the old reference", async () => {
+    const upload = vi.fn();
+    const library = new ReferenceLibrary(upload);
+    const apply = vi.fn(async () => {});
+    await library.selectInitialReference(apply);
+    library.setMode("dimx");
+    const summon = library.snapshot.filter((item) => item.mode === "dimx");
+    expect(summon).toHaveLength(8);
+    expect(summon.slice(0, 2).map((item) => item.id)).toEqual([
+      "preset:dimx-little-dog", "preset:dimx-little-mouse",
+    ]);
+    expect(summon.slice(2).every((item) => item.thumbnail && item.reference_path)).toBe(true);
+    for (const item of summon.slice(0, 2)) {
+      await library.select(item.id, apply);
+      expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({
+        id: item.id, prompt: item.prompt, reference_path: undefined, upload_status: "ready",
+      }));
+      expect(library.snapshot.filter((item) => item.is_selected).map((item) => item.id)).toEqual([item.id]);
+    }
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("keeps same-name clothing presets distinct and applies their individual generation prompts", async () => {
+    const library = new ReferenceLibrary(vi.fn());
+    const apply = vi.fn(async () => {});
+    library.setMode("clothx");
+    const tops = library.snapshot.filter((item) => item.mode === "clothx" && item.name === "换上衣");
+    expect(tops).toHaveLength(2);
+    expect(tops[0].id).not.toBe(tops[1].id);
+    for (const item of tops) {
+      await library.select(item.id, apply);
+      expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({
+        id: item.id, prompt: "将参考图的上衣穿到视频人物身上，其他保持不变",
+        reference_path: item.reference_path,
+      }));
+    }
+    const cap = library.snapshot.find((item) => item.name === "棒球帽");
+    await library.select(cap.id, apply);
+    expect(apply).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: "将参考图棒球帽应用到视频角色身上" }));
   });
 
   it("shows a local preview first, tracks loading, then selects and generates with the uploaded URL", async () => {

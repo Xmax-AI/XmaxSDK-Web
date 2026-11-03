@@ -456,6 +456,12 @@ button:disabled,
   background: #eef1ff;
 }
 
+.remoteVolumeButton.resultBeautyButton.active {
+  color: var(--accent);
+  border-color: #d7ddfb;
+  background: #eef1ff;
+}
+
 .remoteVolumeButton:focus-visible,
 .statisticsToggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -493,14 +499,6 @@ button:disabled,
   font-variant-numeric: tabular-nums;
   color: var(--text);
   font-weight: 500;
-}
-
-.resultEffectStrengthHeading {
-  margin-top: 12px;
-}
-
-.remoteVolumePopover input[type="checkbox"] {
-  accent-color: var(--accent);
 }
 
 .remoteVolumePopover input[type="range"]:disabled {
@@ -560,6 +558,109 @@ button:disabled,
 .remoteVolumePopover input[type="range"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 6px;
+}
+
+/* 美颜调节与统计浮层保持一致，四项强度紧凑排列在结果画面右下角。 */
+.resultBeautyPanel {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  width: 232px;
+  max-width: calc(100% - 24px);
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  animation: resultBeautyIn 0.3s ease both;
+}
+
+.resultBeautyRow {
+  display: grid;
+  grid-template-columns: 4em minmax(0, 1fr) 4ch;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.resultBeautyRow label {
+  white-space: nowrap;
+}
+
+.resultBeautyRow output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.resultBeautyRow input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background-color: transparent;
+  background-size: 100% 3px;
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+}
+
+.resultBeautyRow input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.resultBeautyRow input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.resultBeautyRow input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.resultBeautyRow input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.resultBeautyRow input[type="range"]:focus-visible {
+  outline: 2px solid #a9b4ff;
+  outline-offset: 2px;
+}
+
+.resultBeautyRow input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@keyframes resultBeautyIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resultBeautyPanel { animation: none; }
 }
 
 .recordingButton {
@@ -1159,6 +1260,25 @@ button:disabled,
   overflow: visible;
 }
 
+.presetItem .presetPromptIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 2px solid #f3f4f6;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.presetItem.active .presetPromptIcon {
+  border-color: var(--accent);
+  background: #eef1ff;
+  color: var(--accent);
+}
+
 .presetItem .presetUploadOverlay {
   position: absolute;
   inset: 0;
@@ -1469,6 +1589,11 @@ button:disabled,
     width: 25%;
     max-width: 110px;
     aspect-ratio: 9 / 16;
+  }
+
+  /* 美颜开启时上移本地小窗，避免遮挡右下角的滑杆。 */
+  .beautyVisible .stageRow > .stageSlot:first-child {
+    bottom: 138px;
   }
 
   .stageSlot:first-child .stage {

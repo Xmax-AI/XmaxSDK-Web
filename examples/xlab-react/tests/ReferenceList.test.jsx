@@ -39,6 +39,14 @@ it("keeps Upload available when the reference list is empty", () => {
   expect(html.match(/<button/g)).toHaveLength(1);
 });
 
+it("renders prompt-only summon presets without requesting an empty or invented image URL", () => {
+  const html = render([{ ...item("小狗在肩"), mode: "dimx", thumbnail: undefined }]);
+  expect(html).toContain("presetPromptIcon");
+  expect(html).toContain("小狗在肩");
+  expect(html).not.toContain("<img");
+  expect(html).not.toContain('aria-busy="true"');
+});
+
 it("renders all items in a single wrapping row container", () => {
   const html = render([item("A"), item("B"), item("C"), item("D"), item("E")]);
   // CSS flex-wrap 负责换行，标记保持一层面板容器加全部条目。

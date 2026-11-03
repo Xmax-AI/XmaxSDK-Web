@@ -37,7 +37,8 @@ export interface VideoRenderTarget {
    * Sets the rendered media stream; null clears the image.
    */
   setMediaStream: (
-    stream: MediaStream | null
+    stream: MediaStream | null,
+    preservePresentation?: boolean
   ) => void;
 }
 

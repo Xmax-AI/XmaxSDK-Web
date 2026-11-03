@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { RealtimeVideoTrack, type VideoBeautyOptions } from "@xmaxai/web-sdk";
+import { RealtimeVideoTrack, type RealtimeVideoBeautyOptions } from "@xmaxai/web-sdk";
+import { RenderController } from "../../../../packages/xmax-sdk/src/Render/RenderController";
+import type { RemoteMediaTracks } from "@xmaxai/web-sdk";
 import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
-import { ResultBeautyControl } from "../../src/ResultBeautyControl";
+import { ResultBeautyControl, ResultBeautyPanel } from "../../src/ResultBeautyControl";
 import "../../src/styles.css";
 
 /** Exercises result-only processing without camera access, credentials, or an RTC session. */
 function BeautyCheck() {
   const [enabled, setEnabled] = useState(false);
-  const [beautySettings, setBeautySettings] = useState<Required<VideoBeautyOptions>>({
+  const [beautySettings, setBeautySettings] = useState<Required<RealtimeVideoBeautyOptions>>({
     smoothness: 0.3,
     lightening: 0.2,
     sharpness: 0.2,
@@ -19,6 +21,7 @@ function BeautyCheck() {
   const [track, setTrack] = useState<RealtimeVideoTrack>();
   const [status, setStatus] = useState("original");
   const [error, setError] = useState("");
+  const pipeline = useRef<RenderController>();
   const result = useRef<HTMLDivElement>(null);
   const original = useRef<HTMLVideoElement>(null);
   const options = useMemo(() => enabled ? beautySettings : undefined, [enabled, beautySettings]);
@@ -56,6 +59,19 @@ function BeautyCheck() {
     original.current!.srcObject = source;
     const value = new RealtimeVideoTrack({ id: "synthetic-result" });
     value.mediaStreamTrack = source.getVideoTracks()[0];
+    const render = new RenderController();
+    pipeline.current = render;
+    render.setRemoteVideoBeautyErrorListener(failure => { setError(failure.message); setEnabled(false); });
+    render.registerRemoteTrack(value, () => {});
+    render.setRemoteMedia(value.mediaStreamTrack ?? null);
+    render.setRemoteMediaTracks({ bindingID: "synthetic-task", userID: "bot", videoTrack: value.mediaStreamTrack! });
+    let media: RemoteMediaTracks | undefined;
+    render.setRemoteMediaTracksListener(tracks => { media = tracks; });
+    Object.assign(window, { __beautyCheck: {
+      media: () => media,
+      setBeauty: (options?: RealtimeVideoBeautyOptions) => render.setRemoteVideoBeauty(options),
+      input: value.mediaStreamTrack,
+    } });
     setTrack(value);
     const drawTimer = setInterval(draw, 33);
     const statusTimer = setInterval(() => {
@@ -72,9 +88,18 @@ function BeautyCheck() {
     return () => {
       clearInterval(drawTimer);
       clearInterval(statusTimer);
+      render.resetRemoteTrack();
+      void render.closeBeauty();
+      if (pipeline.current === render) pipeline.current = undefined;
       source.getTracks().forEach(mediaTrack => mediaTrack.stop());
     };
   }, [resolution]);
+
+  useEffect(() => {
+    void pipeline.current?.setRemoteVideoBeauty(options).catch(failure => {
+      if (failure?.code !== "CANCELLED") { setError(String(failure)); setEnabled(false); }
+    });
+  }, [options, track]);
 
   function measureQuality() {
     const measure = (video: HTMLVideoElement) => {
@@ -106,14 +131,20 @@ function BeautyCheck() {
     <button onClick={measureQuality}>Measure quality</button>
     <p id="quality">{quality}</p>
     <div style={{ display: "flex", justifyContent: "flex-end", width: 976, alignItems: "center", gap: 16, margin: "16px 0" }}>
-      <ResultBeautyControl enabled={enabled} options={beautySettings} onEnabledChange={setEnabled} onOptionsChange={setBeautySettings} />
+      <ResultBeautyControl enabled={enabled} onEnabledChange={setEnabled} />
       <span id="status">{status}</span>
       <span id="error">{error}</span>
     </div>
     <div style={{ display: "flex", gap: 16 }}>
       <div><p>Original received video</p><video ref={original} autoPlay muted playsInline style={{ width: 480 }} /></div>
-      <div ref={result}><p>Result view</p><XmaxRealtimeVideo track={track} beautyOptions={options}
-        onBeautyError={failure => { setError(failure.message); setEnabled(false); }} style={{ width: 480, height: 270 }} /></div>
+      <div ref={result}>
+        <p>Result view</p>
+        <div style={{ position: "relative", width: 480, height: 270 }}>
+          <XmaxRealtimeVideo track={track} style={{ width: "100%", height: "100%" }} />
+          <ResultBeautyPanel enabled={enabled} options={beautySettings} onOptionsChange={setBeautySettings} />
+        </div>
+      </div>
+      <div><p>Shared second view</p><XmaxRealtimeVideo track={track} style={{ width: 240, height: 135 }} /></div>
     </div>
   </main>;
 }

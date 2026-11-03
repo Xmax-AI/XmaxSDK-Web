@@ -5,7 +5,7 @@ export interface ReferenceItem {
   readonly id: string;
   readonly mode: ExampleModeKey;
   readonly name: string;
-  readonly thumbnail: string;
+  readonly thumbnail?: string;
   readonly prompt: string;
   readonly reference_path?: string;
   readonly is_selected: boolean;
@@ -25,11 +25,11 @@ type ApplyReference = (item: ReferenceItem) => Promise<void>;
 export class ReferenceLibrary {
   private items: readonly ReferenceItem[] = EXAMPLE_MODES.flatMap((mode) =>
     mode.presets.map((preset) => ({
-      id: `${mode.key}:${preset.name}`,
+      id: preset.id,
       mode: mode.key,
       name: preset.name,
       thumbnail: preset.thumbnail,
-      prompt: mode.prompt,
+      prompt: preset.prompt,
       reference_path: preset.reference,
       is_selected: false,
       upload_status: "ready" as const,
@@ -96,7 +96,7 @@ export class ReferenceLibrary {
     if (!item) return;
     // 使进行中的自动应用失效，删除后不再触发生成。
     this.intent += 1;
-    if (this.previews.delete(item.thumbnail)) {
+    if (item.thumbnail && this.previews.delete(item.thumbnail)) {
       URL.revokeObjectURL(item.thumbnail);
     }
     this.update(this.items.filter((entry) => entry.id !== id));
@@ -143,6 +143,8 @@ export class ReferenceLibrary {
 
   private ensureReady(item: ReferenceItem): Promise<ReferenceItem> {
     if (item.reference_path) return Promise.resolve(item);
+    // 纯提示词预设没有图片和本地文件，可直接提交文本条件。
+    if (!item.thumbnail && !item.file && item.prompt.trim()) return Promise.resolve(item);
     const file = item.file;
     if (!file) return Promise.reject(new Error("Reference image has no usable path"));
     const existing = this.uploads.get(item.id);

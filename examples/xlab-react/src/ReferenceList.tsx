@@ -105,7 +105,16 @@ export function ReferenceList({ items, rowRef, hidden = false, disabled, onUploa
           title={item.error ? `${item.error} — Click to retry` : item.name}
         >
           <span className="presetThumbnail">
-            <img src={item.thumbnail} alt={item.name} loading="lazy" draggable={false} />
+            {item.thumbnail ? (
+              <img src={item.thumbnail} alt={item.name} loading="lazy" draggable={false} />
+            ) : (
+              <span className="presetPromptIcon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M5 6h14M5 12h10M5 18h6" />
+                </svg>
+              </span>
+            )}
             {item.upload_status === "uploading" && (
               <span className="presetUploadOverlay" role="status">
                 <span className="presetSpinner" />

@@ -9,7 +9,7 @@
 //
 
 /**
- * Original result-stream tracks borrowed without transferring RTC track ownership.
+ * Shared result video and original audio borrowed without transferring SDK track ownership.
  */
 export interface RemoteMediaTracks {
 
@@ -24,7 +24,8 @@ export interface RemoteMediaTracks {
   readonly userID: string;
 
   /**
-   * The subscribed original remote video track.
+   * The shared result video track, including enabled beauty. Effect switches retain this track;
+   * dimensions may follow RTC quality changes.
    */
   readonly videoTrack: MediaStreamTrack;
 

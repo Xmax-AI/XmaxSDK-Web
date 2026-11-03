@@ -48,6 +48,11 @@ export interface ApiRequestOptions {
    * Whether a browser-permitted request may finish after page unload.
    */
   keepalive?: boolean;
+
+  /**
+   * Overrides browser caching for requests requiring a current server value.
+   */
+  cache?: RequestCache;
 }
 
 /**
