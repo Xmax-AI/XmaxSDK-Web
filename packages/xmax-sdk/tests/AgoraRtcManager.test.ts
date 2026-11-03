@@ -92,7 +92,7 @@ describe("AgoraRtcManager", () => {
     await s.manager.initialize();
     const heartbeat = new RoomHeartbeat({ rtcManager: s.manager });
     vi.spyOn(heartbeat, "start").mockImplementation(() => {});
-    const room = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
+    const room = new RoomController({ rtcManager: s.manager, heartbeat });
     await room.join(credentials, () => {});
     let finishInitial!: () => void;
     s.client.sendStreamMessage.mockImplementation(() => new Promise(() => {}))
@@ -806,7 +806,7 @@ describe("AgoraRtcManager", () => {
     vi.spyOn(heartbeat, "start").mockImplementation(() => {});
     const bindings = vi.fn();
     const onCredentialsRequired = vi.fn();
-    const roomController = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
+    const roomController = new RoomController({ rtcManager: s.manager, heartbeat });
     s.client.sendStreamMessage.mockImplementation(async message => {
       const command = JSON.parse(message);
       if (command.xid) roomController.handleIncomingMessage("bot", JSON.stringify({ event: "xid_ack", xid: command.xid, count: 1 }));
@@ -892,7 +892,7 @@ describe("AgoraRtcManager", () => {
     await s.manager.initialize();
     const heartbeat = new RoomHeartbeat({ rtcManager: s.manager });
     vi.spyOn(heartbeat, "start").mockImplementation(() => {});
-    const room = new RoomController({ rtcManager: s.manager, heartbeat, ignoreCommandAcks: false });
+    const room = new RoomController({ rtcManager: s.manager, heartbeat });
     await room.join(credentials, () => {});
     s.client.sendStreamMessage.mockImplementation(() => new Promise<void>(resolve => { setTimeout(resolve, 100); }));
     const interaction = new InteractionController((taskID, points) => room.sendTracks(taskID, points));

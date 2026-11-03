@@ -26,11 +26,6 @@ import { RoomMessageCodec } from "./RoomMessageCodec";
 import { RoomCommandController } from "./RoomCommandController";
 
 /**
- * Discards service ACKs for the temporary retry test. Restore false before release.
- */
-const TEMPORARY_IGNORE_COMMAND_ACKS = false;
-
-/**
  * The lifecycle state of an RTC room.
  */
 type RoomState =
@@ -77,11 +72,6 @@ type RoomState =
  * Dependencies for room transport, message fragmentation, and heartbeat scheduling.
  */
 export interface RoomControllerOptions {
-
-  /**
-   * Overrides receipt suppression when exercising a controlled ACK-loss simulation.
-   */
-  ignoreCommandAcks?: boolean;
 
   /**
    * The RTC engine and room transport.
@@ -133,11 +123,6 @@ export class RoomController implements RoomControlling {
   private readonly commands: RoomCommandController;
 
   /**
-   * Whether the current diagnostic session deliberately ignores service receipts.
-   */
-  private readonly ignoreCommandAcks: boolean;
-
-  /**
    * The expected service sender, when identified by the session response.
    */
   private botID?: string;
@@ -173,7 +158,6 @@ export class RoomController implements RoomControlling {
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
     this.codec = options.codec ?? new RoomMessageCodec();
     this.customCodec = options.codec !== undefined;
-    this.ignoreCommandAcks = options.ignoreCommandAcks ?? TEMPORARY_IGNORE_COMMAND_ACKS;
     this.commands = new RoomCommandController((
       message,
       signal
@@ -522,12 +506,7 @@ export class RoomController implements RoomControlling {
     if (message.event === "xid_ack") {
       if (this.state.kind === "joined" && senderUserID !== ownUserID &&
         (!this.botID || senderUserID === this.botID)) {
-        if (this.ignoreCommandAcks) {
-          XmaxLogger.room.info(() =>
-            `RTC command ACK ignored for retry test: xid: ${message.xid}, count: ${message.count}`);
-        } else {
-          this.commands.acknowledge(message);
-        }
+        this.commands.acknowledge(message);
       }
       return;
     }

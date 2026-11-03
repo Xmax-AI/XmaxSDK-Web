@@ -827,33 +827,18 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Measures the native channel join and logs its RTC identity and outcome without credentials.
+   * Joins the native channel using the session's RTC credentials.
    */
   private async joinChannel(
     client: AgoraDataStreamClient,
     configuration: AgoraRoomJoinConfiguration
   ): Promise<void> {
-    const startedAt = performance.now();
-    let completed = false;
-
-    try {
-      await this.run(() => client.join(
-        configuration.appID,
-        configuration.roomID,
-        configuration.roomToken,
-        configuration.userID
-      ));
-      completed = true;
-    } finally {
-      const elapsedMs = performance.now() - startedAt;
-      XmaxLogger.rtc.info(
-        () =>
-          `Agora 进房耗时 (Agora Join Timing)\n` +
-          `├─ uid: ${JSON.stringify(configuration.userID)}\n` +
-          `├─ channelName: ${JSON.stringify(configuration.roomID)}\n` +
-          `└─ client.join: ${elapsedMs.toFixed(1)} ms (${completed ? "completed" : "failed"})`,
-      );
-    }
+    await this.run(() => client.join(
+      configuration.appID,
+      configuration.roomID,
+      configuration.roomToken,
+      configuration.userID
+    ));
   }
 
   /**

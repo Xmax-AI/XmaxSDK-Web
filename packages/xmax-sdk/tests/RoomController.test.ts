@@ -151,10 +151,10 @@ describe("downlink bitrate signaling", () => {
   });
 });
 
-function makeController(options?: { ignoreCommandAcks?: boolean }) {
+function makeController() {
   const rtc = new RtcManagingStub();
   const heartbeat = new RoomHeartbeatStub({ rtcManager: rtc });
-  const controller = new RoomController({ rtcManager: rtc, heartbeat, ignoreCommandAcks: options?.ignoreCommandAcks ?? false });
+  const controller = new RoomController({ rtcManager: rtc, heartbeat });
   rtc.reply = createRoomCommandPeer(message => controller.handleIncomingMessage("bot001", message));
   return { controller, rtc, heartbeat };
 }
@@ -668,8 +668,9 @@ describe("room command receipt", () => {
     await controller.leave();
   });
 
-  it("keeps successful start and updates successful when all ACKs are deliberately discarded", async () => {
-    const { controller, rtc } = makeController({ ignoreCommandAcks: true });
+  it("keeps successful start and updates successful when the peer returns no ACKs", async () => {
+    const { controller, rtc } = makeController();
+    rtc.reply = undefined;
     await controller.join(connection, noopEnsureActive);
     await controller.startGeneration({ taskID: "task", videoFormat, context });
     await controller.changeGenerationCondition({ taskID: "task", videoFormat, context });

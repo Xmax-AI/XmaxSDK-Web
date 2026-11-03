@@ -136,11 +136,10 @@ const videoFormat = new RealtimeVideoFormat({ width: 832, height: 1472, fps: 30 
 const context = new RealtimeContext({ prompt: "a cat" });
 const noopEnsureActive = () => {};
 
-function makeStream(options?: { generationTimeoutMs?: number; ignoreCommandAcks?: boolean }) {
+function makeStream(options?: { generationTimeoutMs?: number }) {
   const rtc = new RtcManagingStub();
   const roomController = new RoomController({
     rtcManager: rtc,
-    ignoreCommandAcks: options?.ignoreCommandAcks ?? false,
     heartbeat: new RoomHeartbeatStub({ rtcManager: rtc }),
   });
   const bindings: Array<RemoteStreamBinding | null> = [];
@@ -166,7 +165,8 @@ function emitRemoteVideo(
 describe("StreamController", () => {
   it("starts rendering with no ACK and keeps the task active after background retries expire", async () => {
     vi.useFakeTimers();
-    const { controller, rtc, errors } = makeStream({ ignoreCommandAcks: true });
+    const { controller, rtc, errors } = makeStream();
+    rtc.reply = () => {};
     try {
       await controller.connect(connection, false, noopEnsureActive);
       const pending = controller.beginGeneration({ taskID: "no-ack", videoFormat, context });
