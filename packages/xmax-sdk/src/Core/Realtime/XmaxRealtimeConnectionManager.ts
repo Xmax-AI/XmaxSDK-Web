@@ -100,6 +100,13 @@ export class XmaxRealtimeConnectionManager {
   }
 
   /**
+   * The current session identity and model binding, replaced when credentials are refreshed.
+   */
+  get currentSession(): RealtimeSession | undefined {
+    return this.activeSession;
+  }
+
+  /**
    * Requires session services before connection without preventing local preview.
    */
   validateConfiguration(): void {
@@ -503,6 +510,7 @@ export class XmaxRealtimeConnectionManager {
 
     this.activeSession = new RealtimeSession({
       id: session.id,
+      modelID: session.modelID ?? current.modelID,
       userID: session.userID ?? current.userID,
       status: session.status ?? current.status,
       connection: next,

@@ -27,6 +27,14 @@ const RETRY_DEADLINE_MS = 6000;
 export type RoomCommandKind = "start" | "change_condition" | "change_target_size";
 
 /**
+ * Submits a complete logical command once through an independent, cancellable relay.
+ */
+export type RoomCommandRelay = (
+  message: string,
+  signal: AbortSignal
+) => Promise<void>;
+
+/**
  * An immutable command and its independent initial-send and background-retry resources.
  */
 interface PendingCommand {
@@ -59,6 +67,16 @@ interface PendingCommand {
    * Cancels queued and in-flight redundant attempts independently of the original send.
    */
   retryController: AbortController;
+
+  /**
+   * Cancels the independent HTTP submission on supersession or task cleanup, but never on an ACK.
+   */
+  relayController: AbortController;
+
+  /**
+   * Whether the one-time relay submission still needs lifecycle cancellation.
+   */
+  relaying: boolean;
 
   /**
    * The scheduled redundant attempts and final retry deadline.
@@ -104,12 +122,13 @@ interface PendingCommand {
 }
 
 /**
- * Adds background redundancy at 0/300/1000 and 3000/3300/4000 ms. ACKs stop retries; they never gate
- * generation, subsequent commands, or rendering. Initial sends preserve their logical order.
+ * Adds RTC redundancy at 0/300/1000 and 3000/3300/4000 ms and an optional one-time HTTP relay.
+ * ACKs stop RTC retries; neither ACKs nor HTTP requests gate generation or subsequent commands.
+ * Initial RTC sends preserve their logical order.
  */
 export class RoomCommandController {
   /**
-   * Commands with pending sends or background retries, indexed by their unique xid.
+   * Commands with pending RTC sends, retries, or HTTP requests, indexed by their unique xid.
    */
   private readonly pending = new Map<string, PendingCommand>();
 
@@ -119,7 +138,7 @@ export class RoomCommandController {
   private sendTail: Promise<void> = Promise.resolve();
 
   /**
-   * Creates a controller with a cancellable transport and an optional identifier generator.
+   * Creates a controller with a cancellable RTC transport, identifier generator, and optional relay.
    */
   constructor(
     private readonly sendMessage: (
@@ -127,6 +146,7 @@ export class RoomCommandController {
       signal: AbortSignal
     ) => Promise<void>,
     private readonly makeID: () => string = () => crypto.randomUUID(),
+    private readonly relayMessage?: RoomCommandRelay,
   ) { }
 
   /**
@@ -165,6 +185,8 @@ export class RoomCommandController {
       reject,
       initialController: new AbortController(),
       retryController: new AbortController(),
+      relayController: new AbortController(),
+      relaying: false,
       timers: [],
       attempts: 0,
       retrying: true,
@@ -246,6 +268,39 @@ export class RoomCommandController {
       this.stopRetries(command);
     }, RETRY_DEADLINE_MS));
     this.attempt(command, true);
+    void this.relay(command);
+  }
+
+  /**
+   * Submits the HTTP copy once without changing the RTC send result or its ACK and retry schedule.
+   */
+  private async relay(
+    command: PendingCommand
+  ): Promise<void> {
+    if (!this.relayMessage || command.cancelled) {
+      return;
+    }
+    command.relaying = true;
+    const startedAt = performance.now();
+    try {
+      command.ensureCurrent?.();
+      await this.relayMessage(
+        command.message,
+        command.relayController.signal,
+      );
+    } catch (error) {
+      if (!command.relayController.signal.aborted) {
+        const mapped = XmaxError.from(error);
+        XmaxLogger.room.warning(() =>
+          `HTTP 信令转发失败 (HTTP Signaling Relay Failed)\n` +
+          `├─ event: ${command.kind}, xid: ${command.xid}\n` +
+          `├─ elapsed: ${(performance.now() - startedAt).toFixed(1)} ms\n` +
+          `└─ code: ${mapped.code}, apiCode: ${mapped.apiCode ?? "n/a"}, httpStatus: ${mapped.httpStatus ?? "n/a"}, reason: ${mapped.message}`);
+      }
+    } finally {
+      command.relaying = false;
+      this.releaseCompleted(command);
+    }
   }
 
   /**
@@ -297,10 +352,7 @@ export class RoomCommandController {
     }
     command.sent = true;
     command.resolve();
-    if (!command.retrying) {
-      command.initialController.abort();
-      this.pending.delete(command.xid);
-    }
+    this.releaseCompleted(command);
   }
 
   /**
@@ -312,14 +364,25 @@ export class RoomCommandController {
     command.retrying = false;
     command.timers.forEach(timer => clearTimeout(timer));
     command.retryController.abort();
-    if (command.sent) {
+    this.releaseCompleted(command);
+  }
+
+  /**
+   * Releases completed RTC work while retaining an outstanding HTTP request for lifecycle cancellation.
+   */
+  private releaseCompleted(
+    command: PendingCommand
+  ): void {
+    if (command.sent && !command.retrying) {
       command.initialController.abort();
-      this.pending.delete(command.xid);
+      if (!command.relaying) {
+        this.pending.delete(command.xid);
+      }
     }
   }
 
   /**
-   * Cancels both original and redundant sends at an explicit lifecycle or supersession boundary.
+   * Cancels RTC sends and the HTTP request at an explicit lifecycle or supersession boundary.
    */
   private cancelCommand(
     command: PendingCommand,
@@ -330,6 +393,7 @@ export class RoomCommandController {
     command.timers.forEach(timer => clearTimeout(timer));
     command.initialController.abort();
     command.retryController.abort();
+    command.relayController.abort();
     this.pending.delete(command.xid);
     command.reject(error);
   }

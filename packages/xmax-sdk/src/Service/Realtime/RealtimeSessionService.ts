@@ -30,6 +30,11 @@ interface SessionPayload {
   sessionUid?: string;
 
   /**
+   * The assigned model instance ID.
+   */
+  modelUid?: string;
+
+  /**
    * The business user ID.
    */
   userUid?: string;
@@ -452,6 +457,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
 
     return new RealtimeSession({
       id: sessionID,
+      modelID: RealtimeSessionService.nonEmpty(payload.modelUid),
       userID: RealtimeSessionService.nonEmpty(payload.userUid),
       status: RealtimeSessionService.nonEmpty(payload.status),
       connection,

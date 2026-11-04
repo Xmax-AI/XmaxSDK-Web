@@ -23,7 +23,7 @@ import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { RoomHeartbeat } from "./RoomHeartbeat";
 import { RoomMessageCodec } from "./RoomMessageCodec";
-import { RoomCommandController } from "./RoomCommandController";
+import { RoomCommandController, type RoomCommandRelay } from "./RoomCommandController";
 
 /**
  * The lifecycle state of an RTC room.
@@ -77,6 +77,11 @@ export interface RoomControllerOptions {
    * The RTC engine and room transport.
    */
   rtcManager: RtcManaging;
+
+  /**
+   * Submits each complete generation control once through the HTTP relay.
+   */
+  relayMessage?: RoomCommandRelay;
 
   /**
    * An optional heartbeat scheduler.
@@ -158,13 +163,14 @@ export class RoomController implements RoomControlling {
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
     this.codec = options.codec ?? new RoomMessageCodec();
     this.customCodec = options.codec !== undefined;
-    this.commands = new RoomCommandController((
-      message,
-      signal
-    ) => this.sendCommandAttempt(
-      message,
-      signal
-    ));
+    this.commands = new RoomCommandController(
+      (message, signal) => this.sendCommandAttempt(
+        message,
+        signal
+      ),
+      undefined,
+      options.relayMessage,
+    );
   }
 
   /**

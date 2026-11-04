@@ -18,6 +18,7 @@ import { StorageService } from "../Service/Storage/StorageService";
 import { RealtimeModel, modelBaseURL, type RealtimeModelName } from "../Service/Realtime/RealtimeModel";
 import type { RealtimeConfiguration } from "./Realtime/RealtimeConfiguration";
 import { XmaxRealtimeManager } from "./Realtime/XmaxRealtimeManager";
+import { RealtimeEventRelayService } from "../Service/Realtime/RealtimeEventRelayService";
 import type { XmaxRealtimeManaging } from "./Realtime/XmaxRealtimeManaging";
 import { XmaxConfiguration } from "./XmaxConfiguration";
 import { apiBaseURL, realtimeApiBaseURL, nonRealtimeApiBaseURL } from "./XmaxEnvironment";
@@ -78,11 +79,13 @@ export class XmaxClient {
       apiKey: this.configuration.apiKey,
       baseURL
     });
+    const eventRelayService = new RealtimeEventRelayService(apiService);
 
     return new XmaxRealtimeManager(
       options,
       {
         apiService,
+        eventRelayService,
         environment: this.configuration.environment,
       }
     );

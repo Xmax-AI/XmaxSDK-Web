@@ -151,10 +151,10 @@ describe("downlink bitrate signaling", () => {
   });
 });
 
-function makeController() {
+function makeController(relayMessage?: (message: string, signal: AbortSignal) => Promise<void>) {
   const rtc = new RtcManagingStub();
   const heartbeat = new RoomHeartbeatStub({ rtcManager: rtc });
-  const controller = new RoomController({ rtcManager: rtc, heartbeat });
+  const controller = new RoomController({ rtcManager: rtc, heartbeat, relayMessage });
   rtc.reply = createRoomCommandPeer(message => controller.handleIncomingMessage("bot001", message));
   return { controller, rtc, heartbeat };
 }
@@ -562,6 +562,27 @@ describe("VeRTC room protocol", () => {
 describe("room command receipt", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+  it("relays complete fragmented controls once and excludes tracks, heartbeats and stop", async () => {
+    const relay = vi.fn(async (_message: string, _signal: AbortSignal) => {});
+    const { controller, rtc } = makeController(relay);
+    rtc.reply = undefined;
+    await controller.join(connection, noopEnsureActive);
+    const longContext = new RealtimeContext({ prompt: "完整消息".repeat(1000) });
+    await controller.startGeneration({ taskID: "task", videoFormat, context: longContext });
+    await controller.changeGenerationCondition({ taskID: "task", videoFormat, context });
+    await controller.changeTargetSize({ taskID: "task", targetSize: videoFormat, ensureActive: noopEnsureActive });
+    expect(relay.mock.calls.map(([message]) => JSON.parse(message).event))
+      .toEqual(["start", "change_condition", "change_target_size"]);
+    expect(JSON.parse(relay.mock.calls[0]![0]).params.prompt).toBe(longContext.prompt);
+    expect(rtc.sentMessages.length).toBeGreaterThan(3);
+    await controller.sendTracks("task", [new RealtimePoint({ x: 0.5, y: 0.5 })]);
+    await vi.advanceTimersByTimeAsync(4000);
+    await controller.stopGeneration("task");
+    expect(relay).toHaveBeenCalledTimes(3);
+    await controller.leave();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it("filters broadcast ACKs by recipient, sender and pending xid without forwarding them as business events", async () => {
     const { controller, rtc } = makeController();

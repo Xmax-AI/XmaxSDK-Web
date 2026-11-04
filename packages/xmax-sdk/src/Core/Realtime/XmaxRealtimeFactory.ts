@@ -22,6 +22,9 @@ import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import { RealtimeSessionService } from "../../Service/Realtime/RealtimeSessionService";
 import { RealtimeConnectionState } from "../../Service/Realtime/RealtimeState";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
+import type { RealtimeEventRelayService } from "../../Service/Realtime/RealtimeEventRelayService";
+import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
+import { RoomController } from "../../Stream/Room/RoomController";
 import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/RealtimeNetworkQuality";
 import type { UplinkVideoStatisticsListener, DownlinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
 import { StreamController } from "../../Stream/StreamController";
@@ -56,6 +59,11 @@ export interface XmaxRealtimeDependencies {
    * The API service used to create the default session service.
    */
   apiService?: ApiServicing;
+
+  /**
+   * The independent HTTP service submitting generation controls once per logical command.
+   */
+  eventRelayService?: RealtimeEventRelayService;
 
   /**
    * The session service, taking precedence over the API service.
@@ -268,9 +276,32 @@ export class XmaxRealtimeFactory {
         : undefined);
     let connectionManager: XmaxRealtimeConnectionManager;
     let lifecycleManager: XmaxRealtimeLifecycleManager;
+    const eventRelayService = dependencies?.eventRelayService;
 
     const streamController = dependencies?.streamController ?? new StreamController({
       rtcManager,
+      roomController: new RoomController({
+        rtcManager,
+        relayMessage: eventRelayService
+          ? async (message, signal) => {
+            const session = connectionManager.currentSession;
+            const data = JSON.parse(message) as Record<string, unknown>;
+            if (!session?.modelID) {
+              XmaxLogger.room.warning(() =>
+                `HTTP 信令转发已跳过 (HTTP Signaling Relay Skipped)\n` +
+                `├─ event: ${data.event}, xid: ${data.xid}\n` +
+                `└─ Session does not contain a model instance ID`);
+              return;
+            }
+            await eventRelayService.relay({
+              sessionID: session.id,
+              modelID: session.modelID,
+              data,
+              signal,
+            });
+          }
+          : undefined,
+      }),
       onCredentialsRequired: () => {
         void connectionManager.refreshCredentials();
       },

@@ -21,6 +21,11 @@ export interface RealtimeSessionInit {
   id: string;
 
   /**
+   * The assigned model instance ID returned as modelUid.
+   */
+  modelID?: string;
+
+  /**
    * The business user ID.
    */
   userID?: string;
@@ -52,6 +57,11 @@ export class RealtimeSession {
   readonly id: string;
 
   /**
+   * The assigned model instance ID used for HTTP event relay.
+   */
+  readonly modelID?: string;
+
+  /**
    * The business user ID.
    */
   readonly userID?: string;
@@ -78,6 +88,7 @@ export class RealtimeSession {
     init: RealtimeSessionInit
   ) {
     this.id = init.id;
+    this.modelID = init.modelID;
     this.userID = init.userID;
     this.status = init.status;
     this.connection = init.connection;

@@ -97,6 +97,20 @@ async function flushHeartbeats(rounds = 5): Promise<void> {
 }
 
 describe("RealtimeSessionService", () => {
+  it("reads the assigned model instance from modelUid rather than the model type or RTC identity", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [{
+      ...sessionPayload(),
+      modelUid: " model-instance-1 ",
+      modelTypeUid: "model-type-1",
+      modelTypeName: "test-trtc",
+    }];
+    api.putResponses = [{ ...sessionPayload(), modelUid: "model-instance-1" }];
+    const service = makeService(api);
+    expect(await service.createSession("test-trtc")).toMatchObject({ id: "ums-001", modelID: "model-instance-1" });
+    expect(await service.heartbeatSession("ums-001")).toMatchObject({ id: "ums-001", modelID: "model-instance-1" });
+  });
+
   it("sends startup duration in a heartbeat without including it in session creation", async () => {
     const api = new ApiServicingStub();
     api.postResponses = [sessionPayload()];

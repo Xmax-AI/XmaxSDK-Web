@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
-import { RoomCommandController, type RoomCommandKind } from "../src/Stream/Room/RoomCommandController";
+import { RoomCommandController, type RoomCommandKind, type RoomCommandRelay } from "../src/Stream/Room/RoomCommandController";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 
-function setup() {
+function setup(relay?: RoomCommandRelay) {
   let sequence = 0;
   const sends: Array<{ message: string; signal: AbortSignal; time: number }> = [];
   const send = vi.fn(async (message: string, signal: AbortSignal) => {
     sends.push({ message, signal, time: Date.now() });
   });
-  const controller = new RoomCommandController(send, () => `xid-${++sequence}`);
+  const controller = new RoomCommandController(send, () => `xid-${++sequence}`, relay);
   const command = (kind: RoomCommandKind = "start", taskID = "task", value = "a") => controller.send(
     kind, taskID, xid => JSON.stringify({ event: kind, xid, uid: taskID, params: { prompt: value } }),
   );
@@ -214,4 +214,101 @@ describe("RoomCommandController", () => {
     await rejected;
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each(["start", "change_condition", "change_target_size"] as const)("relays %s once with the original payload while RTC retries six times", async kind => {
+    const relay = vi.fn(async (_message: string, _signal: AbortSignal) => {});
+    const s = setup(relay);
+    await s.command(kind);
+    expect(relay).toHaveBeenCalledWith(s.sends[0]!.message, expect.any(AbortSignal));
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(s.send).toHaveBeenCalledTimes(6);
+    expect(relay).toHaveBeenCalledOnce();
+  });
+
+  it("continues later controls without waiting for the HTTP submissions or ACKs", async () => {
+    const relay = vi.fn(() => new Promise<void>(() => {}));
+    const s = setup(relay);
+    await s.command();
+    await s.command("change_condition");
+    await s.command("change_target_size");
+    expect(s.send).toHaveBeenCalledTimes(3);
+    expect(relay).toHaveBeenCalledTimes(3);
+    s.controller.cancel();
+  });
+
+  it.each([false, true])("logs HTTP failure once without failing or retrying the command, synchronous=%s", async synchronous => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.business);
+    const error = new XmaxError(XmaxErrorCode.apiError, "relay unavailable", { httpStatus: 503 });
+    const relay = vi.fn(() => {
+      if (synchronous) {
+        throw error;
+      }
+      return Promise.reject(error);
+    });
+    const s = setup(relay);
+    await expect(s.command()).resolves.toBeUndefined();
+    s.ack();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(relay).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning.mock.calls.flat().join(" ")).toContain("relay unavailable");
+    expect(warning.mock.calls.flat().join(" ")).toContain("httpStatus: 503");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["ack", "deadline"] as const)("keeps HTTP cancellable on task exit after RTC %s", async boundary => {
+    const relay = vi.fn((_message: string, _signal: AbortSignal) => new Promise<void>(() => {}));
+    const s = setup(relay);
+    await s.command();
+    const signal = relay.mock.calls[0]![1];
+    if (boundary === "ack") {
+      s.ack();
+    } else {
+      await vi.advanceTimersByTimeAsync(6000);
+    }
+    expect(signal.aborted).toBe(false);
+    s.controller.cancel("task");
+    expect(signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels acknowledged old HTTP updates on supersession while preserving independent controls", async () => {
+    const relay = vi.fn((_message: string, _signal: AbortSignal) => new Promise<void>(() => {}));
+    const s = setup(relay);
+    await s.command("change_condition");
+    s.ack();
+    await s.command("change_target_size");
+    await s.command("change_condition", "task", "new prompt");
+    expect(relay.mock.calls.map(([, signal]) => signal.aborted)).toEqual([true, false, false]);
+    await s.command("start", "replacement-task");
+    expect(relay.mock.calls.map(([, signal]) => signal.aborted)).toEqual([true, true, true, false]);
+    s.controller.cancel();
+  });
+
+  it("does not report lifecycle cancellation as an HTTP failure", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.business);
+    const relay = vi.fn((_message: string, signal: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true });
+    }));
+    const s = setup(relay);
+    await s.command();
+    s.ack();
+    s.controller.cancel();
+    await flush();
+    expect(warning).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retains the initial RTC failure result and cancels its pending HTTP copy", async () => {
+    const relay = vi.fn((_message: string, _signal: AbortSignal) => new Promise<void>(() => {}));
+    const s = setup(relay);
+    s.send.mockRejectedValueOnce(new XmaxError(XmaxErrorCode.rtcError, "RTC send failed"));
+    await expect(s.command()).rejects.toThrow("RTC send failed");
+    expect(relay).toHaveBeenCalledOnce();
+    expect(relay.mock.calls[0]![1].aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
 });

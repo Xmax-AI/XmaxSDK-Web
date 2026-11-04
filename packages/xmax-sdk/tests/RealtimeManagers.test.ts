@@ -207,7 +207,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     const connection: RtcSessionConnection = provider !== RtcProvider.trtc
       ? { provider, roomID: "room", appID: "app", userID: "rtc-user", roomToken: "token-v1" }
       : new RealtimeSessionConnection({ provider: RtcProvider.trtc, roomID: "room", sdkAppID: "1", userID: "user", userSig: "sig", privateMapKey: "key" });
-    const session = new RealtimeSession({ id: "session", connection });
+    const session = new RealtimeSession({ id: "session", modelID: "model-instance", connection });
     const service = {
       heartbeatSession: vi.fn(async () => session),
       createSession: vi.fn(async () => session), closeSession: vi.fn(async (_id: string) => {}),
@@ -231,6 +231,17 @@ describe("XmaxRealtimeConnectionManager", () => {
     };
     return { manager, stream, service, events, options, op, session, connection, render };
   }
+
+  it("preserves the model instance through partial heartbeat updates and clears it on disconnect", async () => {
+    const { manager, service, options, connection } = setup(RtcProvider.agora);
+    await manager.connect(options);
+    expect(manager.currentSession?.modelID).toBe("model-instance");
+    service.heartbeatSession.mockResolvedValue(new RealtimeSession({ id: "session", connection }));
+    await manager.refreshCredentials();
+    expect(manager.currentSession?.modelID).toBe("model-instance");
+    await manager.disconnect();
+    expect(manager.currentSession).toBeUndefined();
+  });
 
   it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat only once when generating is entered", async (provider) => {
     const { manager, service, stream, options, events } = setup(provider);
