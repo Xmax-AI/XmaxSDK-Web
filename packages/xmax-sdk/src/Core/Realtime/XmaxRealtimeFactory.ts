@@ -21,6 +21,7 @@ import { MediaService } from "../../Service/Media/MediaService";
 import type { ApiServicing } from "../../Service/Network/ApiServicing";
 import { RealtimeSessionService } from "../../Service/Realtime/RealtimeSessionService";
 import { RealtimeConnectionState } from "../../Service/Realtime/RealtimeState";
+import { RealtimeModel } from "../../Service/Realtime/RealtimeModel";
 import type { RealtimeSessionServicing } from "../../Service/Realtime/RealtimeSessionServicing";
 import type { RealtimeEventRelayService } from "../../Service/Realtime/RealtimeEventRelayService";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
@@ -277,12 +278,15 @@ export class XmaxRealtimeFactory {
     let connectionManager: XmaxRealtimeConnectionManager;
     let lifecycleManager: XmaxRealtimeLifecycleManager;
     const eventRelayService = dependencies?.eventRelayService;
+    // Temporary: restrict redundant RTC controls and HTTP relay to the exact X2.1 model ID.
+    const redundantSignalingEnabled = options.model === RealtimeModel.x2_1;
 
     const streamController = dependencies?.streamController ?? new StreamController({
       rtcManager,
       roomController: new RoomController({
         rtcManager,
-        relayMessage: eventRelayService
+        retryCommands: redundantSignalingEnabled,
+        relayMessage: redundantSignalingEnabled && eventRelayService
           ? async (message, signal) => {
             const session = connectionManager.currentSession;
             const data = JSON.parse(message) as Record<string, unknown>;

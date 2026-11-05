@@ -84,6 +84,11 @@ export interface RoomControllerOptions {
   relayMessage?: RoomCommandRelay;
 
   /**
+   * Whether generation controls use background RTC retries; defaults to true.
+   */
+  retryCommands?: boolean;
+
+  /**
    * An optional heartbeat scheduler.
    */
   heartbeat?: RoomHeartbeat;
@@ -170,6 +175,7 @@ export class RoomController implements RoomControlling {
       ),
       undefined,
       options.relayMessage,
+      options.retryCommands,
     );
   }
 

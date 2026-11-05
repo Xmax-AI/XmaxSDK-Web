@@ -147,6 +147,7 @@ export class RoomCommandController {
     ) => Promise<void>,
     private readonly makeID: () => string = () => crypto.randomUUID(),
     private readonly relayMessage?: RoomCommandRelay,
+    private readonly retryEnabled: boolean = true,
   ) { }
 
   /**
@@ -256,17 +257,19 @@ export class RoomCommandController {
   private begin(
     command: PendingCommand
   ): void {
-    for (const delay of RETRY_OFFSETS_MS) {
-      command.timers.push(setTimeout(() => this.attempt(command, false), delay));
-    }
-    command.timers.push(setTimeout(() => {
-      if (!command.retrying) {
-        return;
+    if (this.retryEnabled) {
+      for (const delay of RETRY_OFFSETS_MS) {
+        command.timers.push(setTimeout(() => this.attempt(command, false), delay));
       }
-      XmaxLogger.room.warning(() =>
-        `RTC command ACK not received after ${RETRY_DEADLINE_MS} ms; retries stopped: ${command.kind}, xid: ${command.xid}, attempts: ${command.attempts}`);
-      this.stopRetries(command);
-    }, RETRY_DEADLINE_MS));
+      command.timers.push(setTimeout(() => {
+        if (!command.retrying) {
+          return;
+        }
+        XmaxLogger.room.warning(() =>
+          `RTC command ACK not received after ${RETRY_DEADLINE_MS} ms; retries stopped: ${command.kind}, xid: ${command.xid}, attempts: ${command.attempts}`);
+        this.stopRetries(command);
+      }, RETRY_DEADLINE_MS));
+    }
     this.attempt(command, true);
     void this.relay(command);
   }
@@ -352,6 +355,9 @@ export class RoomCommandController {
     }
     command.sent = true;
     command.resolve();
+    if (!this.retryEnabled) {
+      this.stopRetries(command);
+    }
     this.releaseCompleted(command);
   }
 

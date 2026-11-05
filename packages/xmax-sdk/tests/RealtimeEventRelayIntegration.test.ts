@@ -10,12 +10,13 @@ import type { RtcManaging } from "../src/Foundation/RTC/RtcManaging";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
+import { RealtimeModel, type RealtimeModelName } from "../src/Service/Realtime/RealtimeModel";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 
 vi.mock("../src/Foundation/RTC/RtcFactory", () => ({ createRtcManager: vi.fn() }));
 
-function setup(environment: XmaxEnvironment, provider = RtcProvider.agora) {
+function setup(environment: XmaxEnvironment, provider = RtcProvider.agora, model: RealtimeModelName = RealtimeModel.x2_1) {
   let events: RtcEventListener | undefined;
   const rtc = {
     isInitialized: true,
@@ -53,12 +54,12 @@ function setup(environment: XmaxEnvironment, provider = RtcProvider.agora) {
   vi.stubGlobal("fetch", fetch);
   const factory = vi.spyOn(XmaxRealtimeFactory, "make");
   const client = new XmaxClient(new XmaxConfiguration({ environment, apiKey: " relay-test-key " }));
-  client.createRealtimeManager(new RealtimeConfiguration({ model: "custom-model", provider }));
+  client.createRealtimeManager(new RealtimeConfiguration({ model, provider }));
   const components = factory.mock.results.at(-1)!.value as ReturnType<typeof XmaxRealtimeFactory.make>;
   const format = new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 });
   const connect = () => components.connectionManager.connect({
     localTrack: new RealtimeVideoTrack({ id: "local", videoFormat: format }),
-    model: "custom-model", includeLocalAudio: false, ensureCurrent: () => {}, onPublished: () => {},
+    model, includeLocalAudio: false, ensureCurrent: () => {}, onPublished: () => {},
   });
   const change = (prompt = "a cat") => components.streamController.updateGeneration({
     taskID: "task-1", videoFormat: format, context: new RealtimeContext({ prompt }),
@@ -79,11 +80,7 @@ afterEach(() => {
 describe("HTTP event relay assembly", () => {
   it.each([
     [XmaxEnvironment.china, RtcProvider.agora],
-    [XmaxEnvironment.china, RtcProvider.trtc],
-    [XmaxEnvironment.china, RtcProvider.vertc],
     [XmaxEnvironment.global, RtcProvider.agora],
-    [XmaxEnvironment.global, RtcProvider.trtc],
-    [XmaxEnvironment.global, RtcProvider.vertc],
   ] as const)("uses both RTC and the %s HTTP endpoint for %s controls with the assigned instance", async (environment, provider) => {
     const s = setup(environment, provider);
     const origin = environment === XmaxEnvironment.china ? "https://cloud.xmax.22duck.cn" : "https://api.xmax.ai";
@@ -105,6 +102,37 @@ describe("HTTP event relay assembly", () => {
         .filter(message => ["start", "change_condition", "change_target_size"].includes(message.event));
       expect(rtcControls).toHaveLength(6);
       expect(rtcControls.every(message => JSON.stringify(message) === JSON.stringify(body.data))).toBe(true);
+    } finally {
+      await s.components.connectionManager.disconnect();
+    }
+  });
+
+  it.each([
+    [XmaxEnvironment.china, RealtimeModel.x2_0, RtcProvider.vertc],
+    [XmaxEnvironment.global, RealtimeModel.x2_0, RtcProvider.vertc],
+    [XmaxEnvironment.china, "x2.1-trtc", RtcProvider.trtc],
+    [XmaxEnvironment.global, "x2.1-trtc", RtcProvider.trtc],
+    [XmaxEnvironment.china, "x2.1-debug", RtcProvider.agora],
+    [XmaxEnvironment.global, "x2.1-debug", RtcProvider.agora],
+    [XmaxEnvironment.china, "custom-model", RtcProvider.agora],
+    [XmaxEnvironment.global, "X2.1", RtcProvider.agora],
+  ] as const)("uses one RTC send per control and no HTTP relay for %s / %s", async (environment, model, provider) => {
+    const s = setup(environment, provider, model);
+    try {
+      await s.connect();
+      const generation = s.components.streamController.beginGeneration({
+        taskID: "task-1", videoFormat: new RealtimeVideoFormat({ width: 1920, height: 1080, fps: 30 }),
+        context: new RealtimeContext({ prompt: "a cat" }),
+      });
+      // The remote media track is intentionally absent; disconnect below cancels its waiter.
+      void generation.catch(() => {});
+      await s.change();
+      await s.components.streamController.updateDownlinkVideoResolution("task-1", { width: 1280, height: 720 }, () => {});
+      await vi.advanceTimersByTimeAsync(12_000);
+      const controls = s.rtc.sendRoomMessage.mock.calls.map(([message]) => JSON.parse(message))
+        .filter(message => ["start", "change_condition", "change_target_size"].includes(message.event));
+      expect(controls.map(message => message.event)).toEqual(["start", "change_condition", "change_target_size"]);
+      expect(s.relays()).toHaveLength(0);
     } finally {
       await s.components.connectionManager.disconnect();
     }

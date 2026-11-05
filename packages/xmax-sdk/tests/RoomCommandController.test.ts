@@ -3,13 +3,13 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { RoomCommandController, type RoomCommandKind, type RoomCommandRelay } from "../src/Stream/Room/RoomCommandController";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 
-function setup(relay?: RoomCommandRelay) {
+function setup(relay?: RoomCommandRelay, retryEnabled = true) {
   let sequence = 0;
   const sends: Array<{ message: string; signal: AbortSignal; time: number }> = [];
   const send = vi.fn(async (message: string, signal: AbortSignal) => {
     sends.push({ message, signal, time: Date.now() });
   });
-  const controller = new RoomCommandController(send, () => `xid-${++sequence}`, relay);
+  const controller = new RoomCommandController(send, () => `xid-${++sequence}`, relay, retryEnabled);
   const command = (kind: RoomCommandKind = "start", taskID = "task", value = "a") => controller.send(
     kind, taskID, xid => JSON.stringify({ event: kind, xid, uid: taskID, params: { prompt: value } }),
   );
@@ -22,6 +22,19 @@ const flush = () => vi.advanceTimersByTimeAsync(0);
 describe("RoomCommandController", () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
   afterEach(() => { XmaxLogger.configure(XmaxLoggerOption.none); vi.restoreAllMocks(); vi.clearAllTimers(); vi.useRealTimers(); });
+
+  it.each(["start", "change_condition", "change_target_size"] as const)("sends %s once without ACK timers or timeout warnings when retries are disabled", async kind => {
+    const s = setup(undefined, false);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    XmaxLogger.configure(XmaxLoggerOption.business);
+    await s.command(kind);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(s.send).toHaveBeenCalledOnce();
+    expect(warning).not.toHaveBeenCalled();
+    s.ack();
+    s.controller.cancel();
+  });
 
   it.each(["start", "change_condition", "change_target_size"] as const)("completes %s before ACK and repeats in the background without failing at six seconds", async kind => {
     const s = setup();
@@ -121,8 +134,8 @@ describe("RoomCommandController", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("retains only the newest queued condition while preserving initial start ordering", async () => {
-    const s = setup();
+  it.each([true, false])("retains only the newest queued condition while preserving initial start ordering, retries=%s", async retryEnabled => {
+    const s = setup(undefined, retryEnabled);
     let finish!: () => void;
     s.send.mockImplementationOnce(async (message, signal) => {
       s.sends.push({ message, signal, time: Date.now() });
@@ -186,8 +199,8 @@ describe("RoomCommandController", () => {
     s.controller.cancel();
   });
 
-  it("still rejects an initial transport failure and cancels its background schedule", async () => {
-    const s = setup();
+  it.each([true, false])("still rejects an initial transport failure and cancels its background schedule, retries=%s", async retryEnabled => {
+    const s = setup(undefined, retryEnabled);
     s.send.mockRejectedValueOnce(new XmaxError(XmaxErrorCode.rtcError, "native send failed"));
     await expect(s.command()).rejects.toThrow("native send failed");
     await vi.advanceTimersByTimeAsync(6000);
@@ -204,8 +217,8 @@ describe("RoomCommandController", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("cancels an unresolved original send on task exit even after its retry budget ended", async () => {
-    const s = setup();
+  it.each([true, false])("cancels an unresolved original send on task exit after six seconds, retries=%s", async retryEnabled => {
+    const s = setup(undefined, retryEnabled);
     s.send.mockImplementation(() => new Promise(() => {}));
     const sending = s.command();
     const rejected = expect(sending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
