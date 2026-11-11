@@ -11,7 +11,7 @@
 /**
  * The current SDK version.
  */
-export const XMAX_SDK_VERSION = "1.1.4";
+export const XMAX_SDK_VERSION = "1.1.5";
 
 /**
  * SDK and browser metadata included with business requests.
