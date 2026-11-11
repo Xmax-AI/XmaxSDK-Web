@@ -38,9 +38,9 @@ describe("custom realtime models", () => {
     expect(() => modelBaseURL(model)).toThrow("non-empty string");
   });
 
-  it("exposes X2.0 and X2.1 and defaults media rules to X2.1", () => {
+  it("exposes the built-in models and defaults media rules to X2.1", () => {
     expect(Object.values(RealtimeModel)).toEqual([
-      "x2.0", "x2.1",
+      "x2.0", "x2.1", "x2.1-flash",
     ]);
     expect(new XmaxClient(new XmaxConfiguration({ apiKey: "test-key" })).createMediaService())
       .toMatchObject({ model: RealtimeModel.x2_1 });
@@ -71,6 +71,28 @@ describe("realtime model capabilities", () => {
     ]);
     expect(supportedVideoFormats(RealtimeModel.x2_0)).toEqual([]);
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
+  });
+
+  it("uses the five Flash resolutions for camera capture and file generation", () => {
+    const model = RealtimeModel.x2_1_flash;
+    const media = new MediaService(model);
+    const sizes = [
+      { width: 704, height: 1280 },
+      { width: 1280, height: 704 },
+      { width: 960, height: 960 },
+      { width: 1024, height: 768 },
+      { width: 768, height: 1024 },
+    ];
+    expect(supportedVideoFormats(model)).toMatchObject(sizes.map(size => ({ ...size, fps: 30 })));
+    expect(defaultCameraVideoFormat(model)).toMatchObject({ width: 704, height: 1280, fps: 30 });
+    expect(new RealtimeConfiguration({ model }).provider).toBe(RtcProvider.agora);
+    expect(new RealtimeConfiguration({ model, provider: RtcProvider.trtc }).provider).toBe(RtcProvider.trtc);
+    for (const size of sizes) {
+      expect(media.resolveMediaSize(size, "camera")).toEqual(size);
+      const input = media.resolveMediaSize({ width: size.width * 2, height: size.height * 2 }, "video");
+      expect(media.resolveGenerationSize(input)).toEqual(size);
+    }
+    expect(() => media.resolveMediaSize({ width: 1920, height: 1080 }, "camera")).toThrow("does not support input resolution");
   });
 
   it("routes realtime sessions by environment separately from storage", () => {

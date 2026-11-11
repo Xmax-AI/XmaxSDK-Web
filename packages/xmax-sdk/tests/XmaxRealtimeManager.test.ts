@@ -461,10 +461,12 @@ describe("XmaxRealtimeManager camera formats", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it.each(Object.values(RealtimeCameraPreset))("creates %s using the model preset without exposing it to the capture layer", async preset => {
-    const s = makeManager(RealtimeModel.x2_1);
-    const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const size = cameraPresetSize(preset);
-    const expected = supportedVideoFormats(RealtimeModel.x2_1).find(format => format.width === size.width && format.height === size.height)!;
+    const matches = (format: RealtimeVideoFormat) => format.width === size.width && format.height === size.height;
+    const model = supportedVideoFormats(RealtimeModel.x2_1).some(matches) ? RealtimeModel.x2_1 : RealtimeModel.x2_1_flash;
+    const expected = supportedVideoFormats(model).find(matches)!;
+    const s = makeManager(model);
+    const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const local = await s.manager.createLocalCameraStream({
       preset, position: CameraPosition.back, useMicrophone: true, enableFrameValidation: false,
     });
@@ -482,6 +484,7 @@ describe("XmaxRealtimeManager camera formats", () => {
     for (const [model, preset] of [
       [RealtimeModel.x2_1, "invalid-preset"],
       [RealtimeModel.x2_0, RealtimeCameraPreset.resolution1080x1920],
+      [RealtimeModel.x2_1_flash, RealtimeCameraPreset.resolution1080x1920],
     ] as const) {
       const s = makeManager(model);
       const create = vi.spyOn(s.camera, "createLocalCameraStream");

@@ -40,6 +40,31 @@ export enum RealtimeCameraPreset {
    * A landscape 4:3 frame.
    */
   resolution1536x1152 = "1536x1152",
+
+  /**
+   * A portrait 11:20 frame for X2.1 Flash.
+   */
+  resolution704x1280 = "704x1280",
+
+  /**
+   * A landscape 20:11 frame for X2.1 Flash.
+   */
+  resolution1280x704 = "1280x704",
+
+  /**
+   * A square frame for X2.1 Flash.
+   */
+  resolution960x960 = "960x960",
+
+  /**
+   * A landscape 4:3 frame for X2.1 Flash.
+   */
+  resolution1024x768 = "1024x768",
+
+  /**
+   * A portrait 3:4 frame for X2.1 Flash.
+   */
+  resolution768x1024 = "768x1024",
 }
 
 /**

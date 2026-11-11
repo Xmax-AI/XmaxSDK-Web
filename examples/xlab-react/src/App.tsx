@@ -682,7 +682,7 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
-            <CameraPresetPicker value={cameraConfiguration.preset}
+            <CameraPresetPicker value={cameraConfiguration.preset} presets={cameraConfiguration.presets}
               disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}

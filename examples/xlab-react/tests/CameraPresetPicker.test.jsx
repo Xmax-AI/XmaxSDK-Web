@@ -10,13 +10,13 @@ const presets = [
   [RealtimeCameraPreset.resolution1152x1536, "3:4", 1152, 1536],
   [RealtimeCameraPreset.resolution1536x1152, "4:3", 1536, 1152],
 ];
+const presetOptions = presets.map(([preset]) => preset);
 
-it("offers exactly the five SDK camera presets with ratio labels", () => {
+it("offers the five supplied camera presets with ratio labels", () => {
   const html = renderToStaticMarkup(
-    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} onChange={() => {}} />,
+    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} presets={presetOptions} onChange={() => {}} />,
   );
   expect(html.match(/<option /g)).toHaveLength(5);
-  expect(presets.map(([preset]) => preset)).toEqual(Object.values(RealtimeCameraPreset));
   for (const [preset, label] of presets) {
     expect(html).toMatch(new RegExp(`<option value="${preset}"[^>]*>${label}</option>`));
   }
@@ -26,7 +26,7 @@ it("offers exactly the five SDK camera presets with ratio labels", () => {
 
 it.each(presets)("selects %s and requests its SDK preset", (preset, label, width, height) => {
   const onChange = vi.fn();
-  const picker = CameraPresetPicker({ value: preset, onChange });
+  const picker = CameraPresetPicker({ value: preset, presets: presetOptions, onChange });
   const select = picker.props.children[0];
   const html = renderToStaticMarkup(picker);
   expect(html).toContain(`<option value="${preset}" selected="">${label}</option>`);
@@ -38,7 +38,7 @@ it.each(presets)("selects %s and requests its SDK preset", (preset, label, width
 
 it("disables selection while starting the camera", () => {
   const html = renderToStaticMarkup(
-    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} disabled onChange={() => {}} />,
+    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} presets={presetOptions} disabled onChange={() => {}} />,
   );
   expect(html).toContain('disabled=""');
 });

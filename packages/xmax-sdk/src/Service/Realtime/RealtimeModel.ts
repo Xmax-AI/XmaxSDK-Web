@@ -26,6 +26,11 @@ export enum RealtimeModel {
    * The X2.1 model using Agora.
    */
   x2_1 = "x2.1",
+
+  /**
+   * The X2.1 Flash model, with Agora as its default RTC provider.
+   */
+  x2_1_flash = "x2.1-flash",
 }
 
 /**
@@ -63,6 +68,7 @@ function modelDefaults(
 const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
   [RealtimeModel.x2_0]: "X2.0",
   [RealtimeModel.x2_1]: "X2.1",
+  [RealtimeModel.x2_1_flash]: "X2.1 Flash",
 };
 
 /**
@@ -108,6 +114,28 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
       height: 1152
     },
   ],
+  [RealtimeModel.x2_1_flash]: [
+    {
+      width: 704,
+      height: 1280
+    },
+    {
+      width: 1280,
+      height: 704
+    },
+    {
+      width: 960,
+      height: 960
+    },
+    {
+      width: 1024,
+      height: 768
+    },
+    {
+      width: 768,
+      height: 1024
+    },
+  ],
 };
 
 /**
@@ -116,6 +144,7 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
 const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_1]: 2100000,
+  [RealtimeModel.x2_1_flash]: 960 * 960,
 };
 
 /**
@@ -200,20 +229,24 @@ export function defaultFrameRate(
 export function defaultCameraVideoFormat(
   model: RealtimeModelName
 ): RealtimeVideoFormat {
-  const size = modelDefaults(model) === RealtimeModel.x2_0
-    ? {
-      width: 832,
-      height: 1472
-    }
-    : {
-      width: 1080,
-      height: 1920
-    };
+  const buckets = resolutionBuckets(model);
+  const size = buckets.find(({ width, height }) => width < height) ?? buckets[0] ?? {
+    width: 832,
+    height: 1472
+  };
   return new RealtimeVideoFormat({
     ...size,
     fps: defaultFrameRate(model)
   });
 }
+
+/**
+ * Configurable providers with Agora as the default.
+ */
+const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
+  RtcProvider.agora,
+  ...Object.values(RtcProvider).filter(provider => provider !== RtcProvider.agora),
+]);
 
 /**
  * Supported RTC providers per model, with the default first. Frozen lists prevent mutation of shared
@@ -222,6 +255,7 @@ export function defaultCameraVideoFormat(
 const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]>> = {
   [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_1]: Object.freeze([RtcProvider.agora]),
+  [RealtimeModel.x2_1_flash]: CUSTOM_MODEL_RTC_PROVIDERS,
 };
 
 /**
@@ -233,12 +267,3 @@ export function supportedRtcProviders(
 ): readonly RtcProvider[] {
   return isKnownModel(model) ? MODEL_RTC_PROVIDERS[model] : CUSTOM_MODEL_RTC_PROVIDERS;
 }
-
-/**
- * The configurable providers for custom models, with the default first.
- */
-const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
-  ...MODEL_RTC_PROVIDERS[RealtimeModel.x2_1],
-  ...Object.values(RtcProvider).filter((provider) =>
-    !MODEL_RTC_PROVIDERS[RealtimeModel.x2_1].includes(provider)),
-]);

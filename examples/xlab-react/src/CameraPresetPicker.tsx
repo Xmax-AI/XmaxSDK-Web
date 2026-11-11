@@ -6,16 +6,22 @@ const PRESET_LABELS: Record<RealtimeCameraPreset, string> = {
   [RealtimeCameraPreset.resolution1408x1408]: "1:1",
   [RealtimeCameraPreset.resolution1152x1536]: "3:4",
   [RealtimeCameraPreset.resolution1536x1152]: "4:3",
+  [RealtimeCameraPreset.resolution704x1280]: "9:16",
+  [RealtimeCameraPreset.resolution1280x704]: "16:9",
+  [RealtimeCameraPreset.resolution960x960]: "1:1",
+  [RealtimeCameraPreset.resolution1024x768]: "4:3",
+  [RealtimeCameraPreset.resolution768x1024]: "3:4",
 };
 
 interface CameraPresetPickerProps {
   value: RealtimeCameraPreset;
+  presets: readonly RealtimeCameraPreset[];
   disabled?: boolean;
   onChange: (preset: RealtimeCameraPreset) => void;
 }
 
 /** 首页摄像头比例选择，与模型选择器共用胶囊样式。 */
-export function CameraPresetPicker({ value, disabled = false, onChange }: CameraPresetPickerProps) {
+export function CameraPresetPicker({ value, presets, disabled = false, onChange }: CameraPresetPickerProps) {
   return (
     <div className="rtcModelPicker">
       <select
@@ -26,7 +32,7 @@ export function CameraPresetPicker({ value, disabled = false, onChange }: Camera
         disabled={disabled}
         onChange={(event) => onChange(event.target.value as RealtimeCameraPreset)}
       >
-        {Object.values(RealtimeCameraPreset).map((preset) => (
+        {presets.map((preset) => (
           <option key={preset} value={preset}>{PRESET_LABELS[preset]}</option>
         ))}
       </select>
