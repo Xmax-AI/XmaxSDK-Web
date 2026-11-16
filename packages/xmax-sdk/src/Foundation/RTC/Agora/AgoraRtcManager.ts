@@ -28,7 +28,6 @@ import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
-import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import { AgoraVideoSender } from "./AgoraVideoSender";
 import { validateCameraRotation } from "../../Media/Camera/CameraRotation";
 import { CameraRotationProcessor } from "../../Media/Camera/CameraRotationProcessor";
@@ -434,11 +433,11 @@ export class AgoraRtcManager implements RtcManaging {
     const version = ++this.captureVersion;
     let source: ICameraVideoTrack | undefined;
     try {
-      const captureSize = rtcOrientedVideoSize(rotation === 90 || rotation === 270
+      const captureSize = rotation === 90 || rotation === 270
         ? {
           width: options.height,
           height: options.width
-        } : options);
+        } : options;
       source = await this.sdk!.createCameraVideoTrack({
         facingMode: options.position === CameraPosition.front ? "user" : "environment",
         encoderConfig: {
@@ -527,11 +526,11 @@ export class AgoraRtcManager implements RtcManaging {
         throw this.cancelled();
       }
     };
-    const size = rtcOrientedVideoSize(rotation === 90 || rotation === 270
+    const size = rotation === 90 || rotation === 270
       ? {
         width: options.height,
         height: options.width
-      } : options);
+      } : options;
     await this.run(() => source.setEncoderConfiguration({
       width: size.width,
       height: size.height,
@@ -678,7 +677,7 @@ export class AgoraRtcManager implements RtcManaging {
         if (this.videoPublishRequested) {
           await AgoraVideoSender.apply(
             camera,
-            this.cameraEncodingConfiguration(config),
+            config,
             ensureActive
           );
         }
@@ -738,24 +737,11 @@ export class AgoraRtcManager implements RtcManaging {
       if (config) {
         await AgoraVideoSender.apply(
           camera,
-          this.cameraEncodingConfiguration(config),
+          config,
           ensureActive
         );
       }
     });
-  }
-
-  /**
-   * Resolves camera encoding dimensions for the current orientation.
-   */
-  private cameraEncodingConfiguration(
-    config: VideoEncodingConfiguration
-  ): VideoEncodingConfiguration {
-    // Canvas output already has the target orientation and must not receive native mobile transposition again.
-    return this.cameraRotation ? config : {
-      ...config,
-      ...rtcOrientedVideoSize(config)
-    };
   }
 
   /**

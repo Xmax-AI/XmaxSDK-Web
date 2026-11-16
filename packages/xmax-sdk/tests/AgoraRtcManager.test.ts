@@ -170,7 +170,7 @@ describe("AgoraRtcManager", () => {
     const custom = { ...s.camera, close: vi.fn(), getMediaStreamTrack: vi.fn(() => env.output as MediaStreamTrack) };
     s.sender.track = env.output;
     s.sdk.createCustomVideoTrack.mockReturnValue(custom);
-    // Canvas output must NOT be transposed a second time on mobile portrait devices.
+    // Explicit camera rotation uses the requested canvas orientation on mobile as well.
     vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 1 });
     vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
     await s.manager.initialize();
@@ -179,7 +179,7 @@ describe("AgoraRtcManager", () => {
     env.frame();
     expect(await started).toBe(env.output);
     expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({ facingMode: "user",
-      encoderConfig: { width: 1024, height: 1920, frameRate: 30 } });
+      encoderConfig: { width: 1920, height: 1024, frameRate: 30 } });
     expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledWith({ mediaStreamTrack: env.output, width: 1024, height: 1920, frameRate: 30 });
     await s.manager.configureVideoEncoding({ width: 512, height: 960, frameRate: 20,
       minimumBitrate: 500, maximumBitrate: 2000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
@@ -523,27 +523,30 @@ describe("AgoraRtcManager", () => {
   });
 
   it.each([
-    { name: "iPhone portrait", userAgent: "iPhone", maxTouchPoints: 5, orientation: "portrait-primary", transpose: true },
-    { name: "Android portrait", userAgent: "Android", maxTouchPoints: 5, orientation: "portrait-secondary", transpose: true },
-    { name: "iPad desktop UA portrait", userAgent: "Macintosh", maxTouchPoints: 5, orientation: "portrait-primary", transpose: true },
-    { name: "mobile landscape", userAgent: "iPhone", maxTouchPoints: 5, orientation: "landscape-primary", transpose: false },
-    { name: "desktop", userAgent: "Macintosh", maxTouchPoints: 0, orientation: "portrait-primary", transpose: false },
-  ])("applies capture and encoding orientation consistently on $name", async ({ userAgent, maxTouchPoints, orientation, transpose }) => {
+    { name: "iPhone portrait", userAgent: "iPhone", maxTouchPoints: 5, orientation: "portrait-primary" },
+    { name: "Android portrait", userAgent: "Android", maxTouchPoints: 5, orientation: "portrait-secondary" },
+    { name: "iPad desktop UA portrait", userAgent: "Macintosh", maxTouchPoints: 5, orientation: "portrait-primary" },
+    { name: "mobile landscape", userAgent: "iPhone", maxTouchPoints: 5, orientation: "landscape-primary" },
+    { name: "desktop", userAgent: "Macintosh", maxTouchPoints: 0, orientation: "portrait-primary" },
+  ])("uses the requested capture and encoding dimensions on $name", async ({ userAgent, maxTouchPoints, orientation }) => {
     vi.stubGlobal("navigator", { userAgent, maxTouchPoints });
     vi.stubGlobal("window", { screen: { orientation: { type: orientation } } });
     const s = setup();
     await s.manager.initialize();
 
-    const requestedSize = { width: 1024, height: 1920 };
-    const expectedSize = transpose ? { width: 1920, height: 1024 } : requestedSize;
-    vi.spyOn(s.native, "getSettings").mockReturnValue({ ...expectedSize, frameRate: 30 });
+    const requestedSize = { width: 1920, height: 1080 };
+    vi.spyOn(s.native, "getSettings").mockReturnValue({ ...requestedSize, frameRate: 30 });
     const capture = { ...requestedSize, frameRate: 30, position: CameraPosition.front };
     expect(await s.manager.startCameraCapture(capture)).toBe(s.native);
     expect(s.sdk.createCameraVideoTrack).toHaveBeenCalledWith({
       facingMode: "user",
-      encoderConfig: { ...expectedSize, frameRate: 30 },
+      encoderConfig: { ...requestedSize, frameRate: 30 },
     });
     expect(s.client.publish).not.toHaveBeenCalled();
+
+    await s.manager.updateCameraCapture({ ...capture, frameRate: 24 });
+    expect(s.camera.setEncoderConfiguration).toHaveBeenCalledWith({ ...requestedSize, frameRate: 24 });
+    s.camera.setEncoderConfiguration.mockClear();
 
     const encoding = { ...requestedSize, frameRate: 30, minimumBitrate: 3000, maximumBitrate: 6000,
       encoderPreference: RtcVideoEncoderPreference.maintainFramerate };

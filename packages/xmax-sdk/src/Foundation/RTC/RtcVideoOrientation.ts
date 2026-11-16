@@ -35,7 +35,7 @@ export interface RtcOrientationEnvironment {
 }
 
 /**
- * Determines whether mobile portrait encoding requires transposed dimensions. TRTC, Agora, and VeRTC
+ * Determines whether mobile portrait encoding requires transposed dimensions. TRTC and VeRTC
  * capture/encoding paths may transpose mobile portrait dimensions. Adapter dimensions compensate while
  * business requests and reported statistics remain unchanged.
  */
