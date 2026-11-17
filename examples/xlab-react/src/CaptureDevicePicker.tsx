@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MediaDevices } from "@xmaxai/web-sdk";
 
 export type CaptureInputKind = "videoinput" | "audioinput";
 
@@ -7,7 +8,7 @@ const DEFAULT_INPUT = "default";
 const INPUT_OFF = "off";
 const DEVICE_PREFIX = "device:";
 
-/** Reads the browser's device list and requests access only on an explicit picker action. */
+/** Reads input devices through the SDK and requests access on an explicit picker action. */
 export function useCaptureDevices(showPickers: boolean) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [requestingAccess, setRequestingAccess] = useState(false);
@@ -16,11 +17,13 @@ export function useCaptureDevices(showPickers: boolean) {
   const media = globalThis.navigator?.mediaDevices;
 
   const refresh = useCallback(async () => {
-    if (!media?.enumerateDevices) return;
     const current = ++revision.current;
-    const inputs = await media.enumerateDevices();
-    if (current === revision.current) setDevices(inputs);
-  }, [media]);
+    const [cameras, microphones] = await Promise.all([
+      MediaDevices.listCameraDevices(),
+      MediaDevices.listMicrophoneDevices(),
+    ]);
+    if (current === revision.current) setDevices([...cameras, ...microphones]);
+  }, []);
 
   useEffect(() => {
     if (!showPickers || !media) return;
