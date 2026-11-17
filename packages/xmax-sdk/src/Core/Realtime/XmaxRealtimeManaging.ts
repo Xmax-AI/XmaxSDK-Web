@@ -25,7 +25,7 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { RealtimeConfiguration } from "./RealtimeConfiguration";
 import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTimingSnapshot";
 import type { DownlinkVideoStatisticsListener, UplinkVideoStatisticsListener } from "../../Foundation/RTC/VideoStatistics";
-import type { RealtimeCameraPreset } from "../../Service/Realtime/RealtimeCameraPreset";
+import type { RealtimeCameraFormat } from "../../Service/Realtime/RealtimeCameraFormat";
 import type { RealtimeQualityLevel } from "../../Stream/Quality/RealtimeQualityLevel";
 import type { RealtimeExternalVideoStreamOptions } from "../../Media/External/RealtimeExternalVideoSource";
 
@@ -126,16 +126,21 @@ export interface XmaxRealtimeManaging {
   readonly currentCameraVideoFormat?: RealtimeVideoFormat;
 
   /**
-   * The preset matching the camera dimensions; undefined without a camera or a matching preset.
+   * The predefined format matching the camera dimensions.
    */
-  readonly currentCameraPreset?: RealtimeCameraPreset;
+  readonly currentCameraFormat?: RealtimeCameraFormat;
+
+  /**
+   * @deprecated Use currentCameraFormat.
+   */
+  readonly currentCameraPreset?: RealtimeCameraFormat;
 
   /**
    * Updates a ready, disconnected camera's format while retaining its SDK track and view binding. A
-   * preset preserves frame rate, bitrate, and encoding preference; model sizing rules still apply.
+   * predefined format preserves the current frame rate, bitrate, and encoding preference.
    */
   updateCameraFormat(
-    format: RealtimeVideoFormat | RealtimeCameraPreset
+    format: RealtimeVideoFormat | RealtimeCameraFormat
   ): Promise<void>;
 
   /**

@@ -9,6 +9,8 @@
 //
 
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
+import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
+import { cameraFrameGeometryByTrack, type CameraFrameGeometry } from "./CameraFrameGeometry";
 import type { CameraRotation } from "./CameraRotation";
 
 /**
@@ -114,7 +116,8 @@ export class CameraRotationProcessor {
    * Waits for a successfully drawn first frame, reusing the output track across camera switches.
    */
   async setSource(
-    source: MediaStreamTrack
+    source: MediaStreamTrack,
+    prepareSource?: (video: HTMLVideoElement) => Promise<void> | undefined
   ): Promise<MediaStreamTrack> {
     if (this.stopped) {
       throw new XmaxError(
@@ -180,18 +183,34 @@ export class CameraRotationProcessor {
             if (settled || this.stopped || version !== this.version) {
               return;
             }
-            const firstFrame = () => {
+            const firstFrame = async () => {
               if (settled || this.stopped || version !== this.version) {
                 return;
               }
               try {
-                if (!this.draw()) {
+                if (prepareSource && this.video.readyState >= 2 && this.video.videoWidth && this.video.videoHeight) {
+                  const prepare = prepareSource;
+                  prepareSource = undefined;
+                  const preparation = prepare(this.video);
+                  if (preparation) {
+                    await preparation;
+                    if (settled || this.stopped || version !== this.version) {
+                      return;
+                    }
+                  }
+                }
+                let geometry: CameraFrameGeometry | undefined;
+                if (!this.draw(value => { geometry = value; })) {
                   this.schedule(firstFrame);
                   return;
                 }
                 this.stream ??= this.canvas.captureStream(this.options.frameRate);
-                if (!this.stream.getVideoTracks()[0]) {
+                const track = this.stream.getVideoTracks()[0];
+                if (!track) {
                   throw new Error("Canvas did not produce a video track");
+                }
+                if (geometry) {
+                  cameraFrameGeometryByTrack.set(track, geometry);
                 }
                 this.requestFrame();
                 finish();
@@ -301,8 +320,9 @@ export class CameraRotationProcessor {
 
   /**
    * Draws a centered crop with rotation and horizontal mirroring in the output orientation.
+   * Reports the geometry on the first successful draw for each camera source.
    */
-  private draw(): boolean {
+  private draw(onGeometry?: (geometry: CameraFrameGeometry) => void): boolean {
     const { videoWidth: width, videoHeight: height } = this.video;
     if (this.video.readyState < 2 || !width || !height) {
       return false;
@@ -337,6 +357,27 @@ export class CameraRotationProcessor {
       targetWidth,
       targetHeight
     );
+
+    if (onGeometry) {
+      const constraints = this.source?.getConstraints?.();
+      const requestedWidth = typeof constraints?.width === "number" ? constraints.width : constraints?.width?.ideal;
+      const requestedHeight = typeof constraints?.height === "number" ? constraints.height : constraints?.height?.ideal;
+      const crop = { width: Math.round(cropWidth), height: Math.round(cropHeight) };
+      onGeometry({
+        requested: requestedWidth && requestedHeight ? { width: requestedWidth, height: requestedHeight } : undefined,
+        source: { width, height },
+        crop,
+        output: { width: outWidth, height: outHeight },
+      });
+      XmaxLogger.media.info(() => [
+        "Camera first frame",
+        `requested=${requestedWidth ?? "?"}×${requestedHeight ?? "?"}`,
+        `source=${width}×${height}`,
+        `crop=${crop.width}×${crop.height}`,
+        `output=${outWidth}×${outHeight}`,
+        `rotation=${rotation}°`,
+      ].join(" · "), XmaxLoggerOption.performance);
+    }
 
     return true;
   }

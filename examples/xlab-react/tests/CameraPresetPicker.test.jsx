@@ -1,20 +1,20 @@
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RealtimeCameraPreset, cameraPresetSize } from "@xmaxai/web-sdk";
+import { RealtimeCameraFormat, cameraFormatSize } from "@xmaxai/web-sdk";
 import { CameraPresetPicker } from "../src/CameraPresetPicker";
 
 const presets = [
-  [RealtimeCameraPreset.resolution1920x1080, "16:9", 1920, 1080],
-  [RealtimeCameraPreset.resolution1080x1920, "9:16", 1080, 1920],
-  [RealtimeCameraPreset.resolution1408x1408, "1:1", 1408, 1408],
-  [RealtimeCameraPreset.resolution1152x1536, "3:4", 1152, 1536],
-  [RealtimeCameraPreset.resolution1536x1152, "4:3", 1536, 1152],
+  [RealtimeCameraFormat.resolution1920x1080, "16:9", 1920, 1080],
+  [RealtimeCameraFormat.resolution1080x1920, "9:16", 1080, 1920],
+  [RealtimeCameraFormat.resolution1408x1408, "1:1", 1408, 1408],
+  [RealtimeCameraFormat.resolution1152x1536, "3:4", 1152, 1536],
+  [RealtimeCameraFormat.resolution1536x1152, "4:3", 1536, 1152],
 ];
 const presetOptions = presets.map(([preset]) => preset);
 
 it("offers the five supplied camera presets with ratio labels", () => {
   const html = renderToStaticMarkup(
-    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} presets={presetOptions} onChange={() => {}} />,
+    <CameraPresetPicker value={RealtimeCameraFormat.resolution1920x1080} presets={presetOptions} onChange={() => {}} />,
   );
   expect(html.match(/type="radio"/g)).toHaveLength(5);
   expect(Array.from(html.matchAll(/<span>([^<]+)<\/span>/g), ([, label]) => label))
@@ -33,18 +33,18 @@ it.each(presets)("selects %s and requests its SDK preset", (preset, label, width
   radio.props.onChange();
   expect(onChange).toHaveBeenCalledOnce();
   expect(onChange).toHaveBeenCalledWith(preset);
-  expect(cameraPresetSize(onChange.mock.calls[0][0])).toEqual({ width, height });
+  expect(cameraFormatSize(onChange.mock.calls[0][0])).toEqual({ width, height });
 });
 
 it("disables selection while starting the camera", () => {
   const html = renderToStaticMarkup(
-    <CameraPresetPicker value={RealtimeCameraPreset.resolution1920x1080} presets={presetOptions} disabled onChange={() => {}} />,
+    <CameraPresetPicker value={RealtimeCameraFormat.resolution1920x1080} presets={presetOptions} disabled onChange={() => {}} />,
   );
   expect(html.match(/disabled=""/g)).toHaveLength(5);
 });
 
 it("shows the same ratio order and selects the matching Flash preset", () => {
-  const flash = RealtimeCameraPreset;
+  const flash = RealtimeCameraFormat;
   const picker = CameraPresetPicker({
     value: flash.resolution1280x704,
     presets: [flash.resolution704x1280, flash.resolution1280x704, flash.resolution960x960,

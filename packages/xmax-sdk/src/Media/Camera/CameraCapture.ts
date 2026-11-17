@@ -23,6 +23,9 @@ type CaptureFormat = CreateLocalCameraStreamOptions["captureFormat"];
 /** The time allowed to identify the system default before using the unknown-facing behavior. */
 const DEFAULT_CAMERA_LOOKUP_TIMEOUT_MS = 1_000;
 
+/** Bounds the wait for a frame in the requested orientation after trying alternate dimensions. */
+const CAPTURE_ORIENTATION_RETRY_TIMEOUT_MS = 1_000;
+
 /** Owns a browser camera track and its shared output after any crop, rotation, and mirroring. */
 export class CameraCapture {
 
@@ -168,7 +171,17 @@ export class CameraCapture {
     const abort = () => processor.stop();
     signal.addEventListener("abort", abort, { once: true });
     try {
-      const track = await processor.setSource(this.source);
+      const track = await processor.setSource(
+        this.source,
+        video => {
+          const targetOrientation = Math.sign(width - height);
+          const sourceOrientation = Math.sign(video.videoWidth - video.videoHeight);
+          if (!this.captureFormat && this.rotation === 0 && targetOrientation !== 0 &&
+            sourceOrientation === -targetOrientation) {
+            return this.retryCaptureOrientation(video, width, height, signal);
+          }
+        }
+      );
       this.processed = { processor, track };
       return track;
     } catch (error) {
@@ -176,6 +189,48 @@ export class CameraCapture {
       throw error;
     } finally {
       signal.removeEventListener("abort", abort);
+    }
+  }
+
+  /** Tries a transposed capture request and waits for the requested frame orientation. */
+  private async retryCaptureOrientation(
+    video: HTMLVideoElement,
+    width: number,
+    height: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    const targetOrientation = Math.sign(width - height);
+    let onResize!: () => void;
+    const orientedFrame = new Promise<void>(resolve => {
+      onResize = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0 &&
+          Math.sign(video.videoWidth - video.videoHeight) === targetOrientation) {
+          resolve();
+        }
+      };
+      video.addEventListener("resize", onResize);
+    });
+    try {
+      const applied = this.source.applyConstraints({
+        ...this.source.getConstraints(),
+        width: { ideal: height },
+        height: { ideal: width },
+      });
+      await waitForMediaOperation(
+        applied.then(() => {
+          onResize();
+          return orientedFrame;
+        }),
+        signal,
+        CAPTURE_ORIENTATION_RETRY_TIMEOUT_MS,
+        "Camera orientation retry"
+      );
+    } catch (error) {
+      if (signal.aborted) {
+        throw error;
+      }
+    } finally {
+      video.removeEventListener("resize", onResize);
     }
   }
 

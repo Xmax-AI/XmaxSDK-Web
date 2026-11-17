@@ -19,7 +19,7 @@ import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import type { CameraControlling, CameraPreviewReadyHandler, CameraStreamOptions } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
-import { RealtimeCameraPreset, cameraPresetSize } from "../src/Service/Realtime/RealtimeCameraPreset";
+import { RealtimeCameraFormat, cameraFormatSize } from "../src/Service/Realtime/RealtimeCameraFormat";
 import { RealtimeQualityLevel } from "../src/Stream/Quality/RealtimeQualityLevel";
 import { RealtimeModel, defaultCameraVideoFormat, supportedVideoFormats } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
@@ -467,35 +467,34 @@ describe("resolved media size observation", () => {
 describe("XmaxRealtimeManager camera formats", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it.each(Object.values(RealtimeCameraPreset))("creates %s using the model preset without exposing it to the capture layer", async preset => {
-    const size = cameraPresetSize(preset);
+  it.each(Object.values(RealtimeCameraFormat))("resolves %s to a model video format before capture", async cameraFormat => {
+    const size = cameraFormatSize(cameraFormat);
     const matches = (format: RealtimeVideoFormat) => format.width === size.width && format.height === size.height;
     const model = supportedVideoFormats(RealtimeModel.x2_1).some(matches) ? RealtimeModel.x2_1 : RealtimeModel.x2_1_flash;
     const expected = supportedVideoFormats(model).find(matches)!;
     const s = makeManager(model);
     const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const local = await s.manager.createLocalCameraStream({
-      preset, camera: RealtimeCamera.position(CameraPosition.back), microphone: RealtimeMicrophone.systemDefault, warmupMs: 0,
+      videoFormat: cameraFormat, camera: RealtimeCamera.position(CameraPosition.back), microphone: RealtimeMicrophone.systemDefault, warmupMs: 0,
     });
     expect(create).toHaveBeenCalledWith({ videoFormat: expected, camera: RealtimeCamera.position(CameraPosition.back),
       microphone: RealtimeMicrophone.systemDefault, warmupMs: 0 }, expect.any(AbortSignal));
-    expect(create.mock.calls[0]![0]).not.toHaveProperty("preset");
     expect(local.videoTrack?.videoFormat).toEqual(expected);
-    expect(s.manager.currentCameraPreset).toBe(preset);
+    expect(s.manager.currentCameraFormat).toBe(cameraFormat);
     expect(s.manager.currentCameraVideoFormat?.fps).toBe(expected.fps);
     expect(s.session.createCalls).toBe(0);
     await s.manager.close();
   });
 
-  it("rejects unknown or unsupported presets before starting capture", async () => {
-    for (const [model, preset] of [
-      [RealtimeModel.x2_1, "invalid-preset"],
-      [RealtimeModel.x2_0, RealtimeCameraPreset.resolution1080x1920],
-      [RealtimeModel.x2_1_flash, RealtimeCameraPreset.resolution1080x1920],
+  it("rejects unknown or unsupported camera formats before starting capture", async () => {
+    for (const [model, cameraFormat] of [
+      [RealtimeModel.x2_1, "invalid-camera-format"],
+      [RealtimeModel.x2_0, RealtimeCameraFormat.resolution1080x1920],
+      [RealtimeModel.x2_1_flash, RealtimeCameraFormat.resolution1080x1920],
     ] as const) {
       const s = makeManager(model);
       const create = vi.spyOn(s.camera, "createLocalCameraStream");
-      await expect(s.manager.createLocalCameraStream({ preset: preset as RealtimeCameraPreset,
+      await expect(s.manager.createLocalCameraStream({ videoFormat: cameraFormat as RealtimeCameraFormat,
         camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
       expect(create).not.toHaveBeenCalled();
       expect(s.rtc.initialize).not.toHaveBeenCalled();
@@ -523,7 +522,7 @@ describe("XmaxRealtimeManager camera formats", () => {
 
   it("uses a front-facing camera when only a preset is supplied", async () => {
     const s = makeManager();
-    const local = await s.manager.createLocalCameraStream({ preset: RealtimeCameraPreset.resolution1080x1920 });
+    const local = await s.manager.createLocalCameraStream({ videoFormat: RealtimeCameraFormat.resolution1080x1920 });
     expect(local.videoTrack?.position).toBe(CameraPosition.front);
     expect(local.videoTrack?.videoFormat).toMatchObject({ width: 1080, height: 1920 });
     await s.manager.close();
@@ -534,7 +533,7 @@ describe("XmaxRealtimeManager camera formats", () => {
     const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const captureFormat = { width: 3840, height: 2160 };
     await s.manager.createLocalCameraStream({
-      preset: RealtimeCameraPreset.resolution1920x1080,
+      videoFormat: RealtimeCameraFormat.resolution1920x1080,
       captureFormat,
     });
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -544,12 +543,12 @@ describe("XmaxRealtimeManager camera formats", () => {
     await s.manager.close();
   });
 
-  it("rejects competing format selectors and legacy position-only input from JavaScript", async () => {
+  it("rejects legacy preset and position fields from JavaScript", async () => {
     type Options = Parameters<XmaxRealtimeManager["createLocalCameraStream"]>[0];
     const common = { camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled };
     for (const options of [
       { position: CameraPosition.front, videoFormat: testVideoFormat },
-      { ...common, videoFormat: testVideoFormat, preset: RealtimeCameraPreset.resolution1080x1920 },
+      { ...common, preset: RealtimeCameraFormat.resolution1080x1920 },
     ]) {
       const s = makeManager();
       const create = vi.spyOn(s.camera, "createLocalCameraStream");
@@ -570,30 +569,30 @@ describe("XmaxRealtimeManager camera formats", () => {
 
   it("switches preview presets without replacing the SDK track or bitrate options", async () => {
     const s = await preview();
-    expect(s.manager.currentCameraPreset).toBe(RealtimeCameraPreset.resolution1080x1920);
+    expect(s.manager.currentCameraFormat).toBe(RealtimeCameraFormat.resolution1080x1920);
     const track = s.local.videoTrack;
-    await s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
+    await s.manager.updateCameraFormat(RealtimeCameraFormat.resolution1408x1408);
     expect(s.local.videoTrack).toBe(track);
     expect(s.manager.currentCameraVideoFormat).toEqual(s.format.resized(1408, 1408));
-    expect(s.manager.currentCameraPreset).toBe(RealtimeCameraPreset.resolution1408x1408);
+    expect(s.manager.currentCameraFormat).toBe(RealtimeCameraFormat.resolution1408x1408);
     expect(s.stream.encoderConfigFormats).toHaveLength(0);
     expect(s.session.createCalls).toBe(0);
     await s.manager.connect(s.local);
-    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await expect(s.manager.updateCameraFormat(RealtimeCameraFormat.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     await s.manager.close();
     expect(s.manager.currentCameraVideoFormat).toBeUndefined();
-    expect(s.manager.currentCameraPreset).toBeUndefined();
+    expect(s.manager.currentCameraFormat).toBeUndefined();
   });
 
   it("keeps the original media format after failure and prevents overlapping updates", async () => {
     const s = await preview();
     s.camera.updateVideoFormat.mockRejectedValueOnce(new Error("capture failed"));
-    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408)).rejects.toThrow("capture failed");
+    await expect(s.manager.updateCameraFormat(RealtimeCameraFormat.resolution1408x1408)).rejects.toThrow("capture failed");
     expect(s.manager.currentCameraVideoFormat).toBe(s.format);
     const gate = makeDeferred<void>();
     s.camera.updateVideoFormat.mockReturnValueOnce(gate.promise);
-    const pending = s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
-    await expect(s.manager.updateCameraFormat(RealtimeCameraPreset.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    const pending = s.manager.updateCameraFormat(RealtimeCameraFormat.resolution1408x1408);
+    await expect(s.manager.updateCameraFormat(RealtimeCameraFormat.resolution1920x1080)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
     const closing = s.manager.close();
     gate.resolve(); await rejected; await closing;

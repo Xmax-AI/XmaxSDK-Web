@@ -44,17 +44,17 @@ describe("realtime media API", () => {
   it("accepts preset, explicit, or default camera formats with typed device selection", () => {
     type CameraOptions = sdk.CreateLocalCameraStreamOptions;
     const camera = sdk.RealtimeCamera.position(sdk.CameraPosition.front);
-    const preset: CameraOptions = { preset: sdk.RealtimeCameraPreset.resolution1080x1920, camera };
+    const predefined: CameraOptions = { videoFormat: sdk.RealtimeCameraFormat.resolution1080x1920, camera };
     const videoFormat = new sdk.RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24 });
     const format: CameraOptions = { videoFormat, camera, microphone: sdk.RealtimeMicrophone.systemDefault };
-    // @ts-expect-error A preset and an explicit format cannot be combined.
-    const both: CameraOptions = { preset: sdk.RealtimeCameraPreset.resolution1080x1920, videoFormat, camera };
-    const neither: CameraOptions = { camera: sdk.RealtimeCamera.device("camera-id") };
-    expect(preset.preset).toBe(sdk.RealtimeCameraPreset.resolution1080x1920);
-    expect(format.videoFormat?.fps).toBe(24);
-    expect(both).toHaveProperty("preset");
-    expect(neither.camera).toEqual({ kind: "device", id: "camera-id" });
-    expect(neither).not.toHaveProperty("videoFormat");
+    // @ts-expect-error Predefined formats must use the videoFormat field.
+    const legacy: CameraOptions = { preset: sdk.RealtimeCameraFormat.resolution1080x1920, camera };
+    const defaults: CameraOptions = { camera: sdk.RealtimeCamera.device("camera-id") };
+    expect(predefined.videoFormat).toBe(sdk.RealtimeCameraFormat.resolution1080x1920);
+    expect(format.videoFormat).toBe(videoFormat);
+    expect(legacy).toHaveProperty("preset");
+    expect(defaults.camera).toEqual({ kind: "device", id: "camera-id" });
+    expect(defaults).not.toHaveProperty("videoFormat");
   });
 
   it("exposes media packets instead of SDK-managed recording", () => {

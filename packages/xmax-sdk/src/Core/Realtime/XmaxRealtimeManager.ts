@@ -61,7 +61,7 @@ import type { XmaxRealtimeErrorManager } from "./XmaxRealtimeErrorManager";
 import { RealtimeTiming } from "../../Service/Realtime/RealtimeTiming";
 import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTimingSnapshot";
 import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
-import { RealtimeCameraPreset, cameraPresetSize } from "../../Service/Realtime/RealtimeCameraPreset";
+import { RealtimeCameraFormat, cameraFormatSize } from "../../Service/Realtime/RealtimeCameraFormat";
 import { RealtimeQualityLevel } from "../../Stream/Quality/RealtimeQualityLevel";
 import type { XmaxRealtimeConnectionManager } from "./XmaxRealtimeConnectionManager";
 import type { XmaxRealtimeGenerationManager } from "./XmaxRealtimeGenerationManager";
@@ -413,14 +413,21 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
-   * The preset matching camera media dimensions, independent of encoding frame rate or quality level.
+   * The predefined format matching the camera dimensions.
    */
-  get currentCameraPreset(): RealtimeCameraPreset | undefined {
+  get currentCameraFormat(): RealtimeCameraFormat | undefined {
     const format = this.currentCameraVideoFormat;
-    return format && Object.values(RealtimeCameraPreset).find(preset => {
-      const size = cameraPresetSize(preset);
+    return format && Object.values(RealtimeCameraFormat).find(candidate => {
+      const size = cameraFormatSize(candidate);
       return size.width === format.width && size.height === format.height;
     });
+  }
+
+  /**
+   * @deprecated Use currentCameraFormat.
+   */
+  get currentCameraPreset(): RealtimeCameraFormat | undefined {
+    return this.currentCameraFormat;
   }
 
   /**
@@ -450,7 +457,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * Updates a disconnected camera within a media operation and resets quality baselines after success.
    */
   async updateCameraFormat(
-    format: RealtimeVideoFormat | RealtimeCameraPreset
+    format: RealtimeVideoFormat | RealtimeCameraFormat
   ): Promise<void> {
     await this.lifecycleManager.run(
       RealtimeOperationKind.media,
@@ -465,7 +472,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           );
         }
 
-        const size = typeof format === "string" ? cameraPresetSize(format) : undefined;
+        const size = typeof format === "string" ? cameraFormatSize(format) : undefined;
         const requested = size ? current.resized(
           size.width,
           size.height
@@ -473,7 +480,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         if (!requested || typeof requested.validate !== "function") {
           throw new XmaxError(
             XmaxErrorCode.invalidConfiguration,
-            "A camera format or preset is required"
+            "A camera format is required"
           );
         }
         token.ensureCurrent();
@@ -915,6 +922,12 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async (token) => {
         this.mediaController.ensureNoLocalSource();
+        if ("preset" in options) {
+          throw new XmaxError(
+            XmaxErrorCode.invalidConfiguration,
+            "Pass the predefined camera format in videoFormat"
+          );
+        }
         if ("position" in options || "cameraDeviceId" in options || "useMicrophone" in options ||
           "microphoneDeviceId" in options || "enableFrameValidation" in options) {
           throw new XmaxError(
@@ -923,7 +936,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           );
         }
         const {
-          preset,
           videoFormat,
           captureFormat,
           camera = RealtimeCamera.position(CameraPosition.front),
@@ -932,12 +944,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           mirror,
           warmupMs
         } = options;
-        if (preset !== undefined && videoFormat !== undefined) {
-          throw new XmaxError(
-            XmaxErrorCode.invalidConfiguration,
-            "Provide either a camera preset or a video format, not both"
-          );
-        }
         const validCamera = camera?.kind === "position"
           ? camera.position === CameraPosition.front || camera.position === CameraPosition.back
           : camera?.kind === "device" && typeof camera.id === "string";
@@ -956,18 +962,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           );
         }
 
-        let requestedFormat = videoFormat;
-        if (preset !== undefined) {
-          const size = cameraPresetSize(preset);
+        let requestedFormat: RealtimeVideoFormat | undefined;
+        if (typeof videoFormat === "string") {
+          const size = cameraFormatSize(videoFormat);
           requestedFormat = supportedVideoFormats(this.options.model).find(format =>
             format.width === size.width && format.height === size.height,
           );
           if (!requestedFormat) {
             throw new XmaxError(
               XmaxErrorCode.invalidConfiguration,
-              "Model does not support the requested camera preset"
+              "Model does not support the requested camera format"
             );
           }
+        } else {
+          requestedFormat = videoFormat;
         }
         const cameraOptions = {
           videoFormat: requestedFormat ?? defaultCameraVideoFormat(this.options.model),

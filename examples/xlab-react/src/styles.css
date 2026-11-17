@@ -280,7 +280,7 @@ button:disabled,
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  width: min(288px, calc(100% - 24px));
+  width: calc(100% - 24px);
 }
 
 .startButton {
@@ -332,10 +332,11 @@ button:disabled,
   display: flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
 }
 
 .heroActions .largeScreenToggle,
-.heroRotationPicker,
+.heroDisplayPicker,
 .heroInputButton {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
@@ -346,7 +347,7 @@ button:disabled,
 }
 
 .heroActions .largeScreenToggle,
-.heroRotationPicker {
+.heroDisplayPicker {
   height: 30px;
   font-size: 12px;
 }
@@ -360,31 +361,34 @@ button:disabled,
   white-space: nowrap;
 }
 
-.heroRotationPicker {
+.heroDisplayPicker {
   appearance: none;
-  width: 52px;
   padding: 0;
   font-family: inherit;
   text-align: center;
   cursor: pointer;
 }
 
-.heroRotationPicker option {
+.heroDisplayPicker option {
   background: #fff;
   color: var(--text);
+}
+
+.heroRotationPicker {
+  flex-shrink: 0;
+  width: 52px;
 }
 
 .heroInputPickers {
   display: flex;
   justify-content: center;
   gap: 8px;
-  width: 100%;
+  max-width: 100%;
 }
 
 .heroInputPicker {
   position: relative;
   min-width: 0;
-  max-width: calc((100% - 8px) / 2);
 }
 
 .heroInputPicker select {
@@ -407,6 +411,11 @@ button:disabled,
   pointer-events: none;
 }
 
+.heroCaptureResolutionPicker .heroInputButton {
+  height: 30px;
+  font-size: 12px;
+}
+
 .heroInputText {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -415,7 +424,8 @@ button:disabled,
 
 .heroInputButton::after {
   content: "";
-  flex: 0 0 6px;
+  flex-shrink: 0;
+  width: 6px;
   height: 6px;
   transform: translateY(-1px) rotate(45deg);
   border-right: 1px solid rgba(255, 255, 255, 0.8);
@@ -423,7 +433,7 @@ button:disabled,
 }
 
 .heroActions .largeScreenToggle:hover:not(.active),
-.heroRotationPicker:hover:not(:disabled),
+.heroDisplayPicker:hover:not(:disabled),
 .heroInputPicker select:hover:not(:disabled) + .heroInputButton {
   background: rgba(0, 0, 0, 0.42);
   border-color: rgba(255, 255, 255, 0.3);
@@ -438,19 +448,19 @@ button:disabled,
 
 .startButton:focus-visible,
 .heroActions .largeScreenToggle:focus-visible,
-.heroRotationPicker:focus-visible,
+.heroDisplayPicker:focus-visible,
 .heroInputPicker select:focus-visible + .heroInputButton {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
 
 .heroInputPicker select:disabled,
-.heroRotationPicker:disabled {
+.heroDisplayPicker:disabled {
   cursor: not-allowed;
 }
 
 .heroInputPicker select:disabled + .heroInputButton,
-.heroRotationPicker:disabled {
+.heroDisplayPicker:disabled {
   opacity: 0.5;
 }
 
@@ -458,7 +468,7 @@ button:disabled,
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 2px;
-  width: 100%;
+  width: min(100%, 288px);
   height: 34px;
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1684,11 +1694,51 @@ button:disabled,
   }
 
   .heroStage {
-    min-height: 216px;
+    min-height: 200px;
+  }
+
+  .heroActions {
+    gap: clamp(9px, 2.7vw, 12px);
+    width: calc(100% - 12px);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .startButton {
+    width: min(100%, clamp(156px, 46vw, 184px));
+    height: clamp(38px, 10vw, 42px);
+    font-size: 14px;
+  }
+
+  .startButton svg,
+  .startButton .spinner {
+    width: 16px;
+    height: 16px;
   }
 
   .heroInputButton {
+    gap: 5px;
+    height: 32px;
+    padding-inline: 8px;
     font-size: 12px;
+  }
+
+  .cameraPresetPicker {
+    width: min(100%, 248px);
+    height: 30px;
+  }
+
+  .cameraPresetOption span {
+    font-size: 12px;
+  }
+
+  .heroActions .largeScreenToggle,
+  .heroDisplayPicker,
+  .heroCaptureResolutionPicker .heroInputButton {
+    height: 28px;
+  }
+
+  .heroRotationPicker {
+    width: 46px;
   }
 
   .topbarRight {

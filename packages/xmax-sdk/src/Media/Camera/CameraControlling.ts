@@ -25,7 +25,7 @@ export type CameraPreviewReadyHandler = (
 /**
  * Capture options with the video format resolved by Core.
  */
-export type CameraStreamOptions = Omit<CreateLocalCameraStreamOptions, "preset" | "videoFormat" | "camera"> & {
+export type CameraStreamOptions = Omit<CreateLocalCameraStreamOptions, "videoFormat" | "camera"> & {
   videoFormat: RealtimeVideoFormat;
   camera: RealtimeCamera;
 };

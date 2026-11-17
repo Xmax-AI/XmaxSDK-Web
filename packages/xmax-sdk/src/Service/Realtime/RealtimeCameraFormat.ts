@@ -1,5 +1,5 @@
 //
-//  RealtimeCameraPreset.ts
+//  RealtimeCameraFormat.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -12,9 +12,9 @@ import type { ModelSize } from "./RealtimeModel";
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
- * Camera resolution presets; model capabilities determine which presets are supported.
+ * Predefined camera dimensions. The active model determines which formats it supports.
  */
-export enum RealtimeCameraPreset {
+export enum RealtimeCameraFormat {
 
   /**
    * A landscape 16:9 frame.
@@ -68,18 +68,18 @@ export enum RealtimeCameraPreset {
 }
 
 /**
- * Returns the preset dimensions in pixels, without frame-rate or bitrate settings.
+ * Returns the camera format dimensions in pixels.
  */
-export function cameraPresetSize(
-  preset: RealtimeCameraPreset
+export function cameraFormatSize(
+  format: RealtimeCameraFormat
 ): ModelSize {
-  if (!Object.values(RealtimeCameraPreset).includes(preset)) {
+  if (!Object.values(RealtimeCameraFormat).includes(format)) {
     throw new XmaxError(
       XmaxErrorCode.invalidConfiguration,
-      "Unsupported camera preset"
+      "Unsupported camera format"
     );
   }
-  const [width, height] = preset.split("x").map(Number);
+  const [width, height] = format.split("x").map(Number);
   return {
     width: width!,
     height: height!

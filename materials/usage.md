@@ -22,10 +22,10 @@ async failures with `try/catch`.
 
 ## Camera formats
 
-Provide either `preset` or `videoFormat`, not both. A preset selects a model-supported
-resolution and the model's recommended frame rate. To specify your own frame rate
-or bitrate options, pass a `RealtimeVideoFormat` through `videoFormat` instead.
-Models without fixed presets, such as X2.0, require `videoFormat`.
+Set `videoFormat` to a `RealtimeCameraFormat` to use a predefined resolution
+supported by the model and its recommended frame rate. Pass a `RealtimeVideoFormat`
+to specify the frame rate or encoding settings yourself. Omit `videoFormat` to
+use the model's default.
 
 `RealtimeModel.x2_1` uses Agora and supports 1920×1080, 1080×1920, 1408×1408,
 1152×1536, and 1536×1152. `RealtimeModel.x2_0` uses VeRTC, defaults to 832×1472,
@@ -34,13 +34,14 @@ or `XmaxEnvironment.global` in the client configuration for the corresponding
 realtime service.
 
 Once the camera preview reaches `RealtimeConnectionState.ready`, you can change
-its format before connecting. Presets retain the current frame rate and bitrate options:
+its format before connecting. A `RealtimeCameraFormat` retains the current frame rate
+and bitrate options.
 
 ```javascript
-import { RealtimeCameraPreset } from "@xmaxai/web-sdk";
+import { RealtimeCameraFormat } from "@xmaxai/web-sdk";
 
-await realtime.updateCameraFormat(RealtimeCameraPreset.resolution1408x1408);
-console.log(realtime.currentCameraVideoFormat, realtime.currentCameraPreset);
+await realtime.updateCameraFormat(RealtimeCameraFormat.resolution1408x1408);
+console.log(realtime.currentCameraVideoFormat, realtime.currentCameraFormat);
 ```
 
 <br>
@@ -302,7 +303,7 @@ const [remoteTrack, setRemoteTrack] = useState<RealtimeVideoTrack>();
 
 async function start() {
   const local = await realtime.createLocalCameraStream({
-    preset: RealtimeCameraPreset.resolution1080x1920,
+    videoFormat: RealtimeCameraFormat.resolution1080x1920,
     camera: RealtimeCamera.position(CameraPosition.front),
   });
   setLocalTrack(local.videoTrack);

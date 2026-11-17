@@ -1,6 +1,7 @@
 import {
+  MediaDevices,
   RealtimeCamera,
-  RealtimeCameraPreset,
+  RealtimeCameraFormat,
   RealtimeConfiguration,
   RealtimeConnectionState,
   RealtimeContext,
@@ -34,7 +35,7 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
 import { CaptureDevicePicker, useCaptureDevices, type CaptureInputKind } from "./CaptureDevicePicker";
-import { resolveCameraConfiguration } from "./cameraConfiguration";
+import { captureResolutionOptions, resolveCameraConfiguration } from "./cameraConfiguration";
 import { RemoteRecorder } from "./recording/RemoteRecorder";
 import { RecordingControl, type RecordingStatus } from "./recording/RecordingControl";
 import { RecordingSaveDialog } from "./recording/RecordingSaveDialog";
@@ -69,15 +70,20 @@ export function App() {
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
   const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1);
-  const [cameraPreset, setCameraPreset] = useState<RealtimeCameraPreset>(() =>
+  const [cameraPreset, setCameraPreset] = useState<RealtimeCameraFormat>(() =>
     window.matchMedia("(max-width: 720px)").matches
-      ? RealtimeCameraPreset.resolution1080x1920
-      : RealtimeCameraPreset.resolution1920x1080,
+      ? RealtimeCameraFormat.resolution1080x1920
+      : RealtimeCameraFormat.resolution1920x1080,
   );
   const [cameraRotation, setCameraRotation] = useState<CameraRotation>(0);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [cameraDeviceId, setCameraDeviceId] = useState<string>();
+  const [captureResolution, setCaptureResolution] = useState("");
+  const [cameraCapabilities, setCameraCapabilities] = useState<{
+    deviceId: string;
+    ranges: Awaited<ReturnType<typeof MediaDevices.getCameraCapabilities>>;
+  }>();
   const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | null | undefined>(null);
   const [prompt, setPrompt] = useState("");
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
@@ -257,6 +263,24 @@ export function App() {
 
   const sessionActive = localStream !== undefined;
   const cameraConfiguration = resolveCameraConfiguration(model, cameraPreset, isMobileLayout);
+  const cameras = devices.filter(device => device.kind === "videoinput");
+  const captureDeviceId = cameraDeviceId ?? (cameras.length === 1 ? cameras[0]?.deviceId : undefined);
+  useEffect(() => {
+    if (!captureDeviceId || sessionActive) return;
+
+    let active = true;
+    void MediaDevices.getCameraCapabilities(captureDeviceId).then(ranges => {
+      if (active) setCameraCapabilities({ deviceId: captureDeviceId, ranges });
+    });
+    return () => { active = false; };
+  }, [captureDeviceId, devices, sessionActive]);
+  const captureOptions = captureResolutionOptions(
+    cameraCapabilities && cameraCapabilities.deviceId === captureDeviceId ? cameraCapabilities.ranges : undefined,
+  );
+  const captureFormat = captureOptions.find(option => option.key === captureResolution);
+  const { width: defaultCaptureWidth, height: defaultCaptureHeight } = cameraConfiguration.videoFormat;
+  const autoCaptureResolutionLabel = `Auto · ${defaultCaptureWidth}×${defaultCaptureHeight}`;
+
   useEffect(() => {
     const realtime = realtimeRef.current;
     if (!realtime) return;
@@ -371,11 +395,11 @@ export function App() {
           setNetworkStatistics(statistics);
         }
       });
-      const cameraSource = cameraConfiguration.isPresetLocked
-        ? { videoFormat: cameraConfiguration.videoFormat }
-        : { preset: cameraConfiguration.preset };
       const stream = await realtime.createLocalCameraStream({
-        ...cameraSource,
+        videoFormat: cameraConfiguration.isPresetLocked
+          ? cameraConfiguration.videoFormat
+          : cameraConfiguration.preset,
+        captureFormat: captureFormat && { width: captureFormat.width, height: captureFormat.height },
         camera: cameraDeviceId === undefined ? undefined : RealtimeCamera.device(cameraDeviceId),
         microphone: microphoneDeviceId === null ? RealtimeMicrophone.disabled
           : microphoneDeviceId === undefined ? RealtimeMicrophone.systemDefault
@@ -664,8 +688,17 @@ export function App() {
 
   // 移动端和大屏模式的上行统计并入主画面的统计面板。
   const showStatisticsOnMainStage = isMobileLayout || largeScreen;
+  const cameraFrameGeometry = localStream?.videoTrack?.cameraFrameGeometry;
   const localStatisticsPanels = (
     <>
+      {cameraFrameGeometry && (
+        <StatisticsPanel label="摄像头首帧" rows={[
+          { label: "请求采集尺寸", value: formatVideoResolution(cameraFrameGeometry.requested) },
+          { label: "实际采集尺寸", value: formatVideoResolution(cameraFrameGeometry.source) },
+          { label: "裁切保留区域", value: formatVideoResolution(cameraFrameGeometry.crop) },
+          { label: "处理后尺寸", value: formatVideoResolution(cameraFrameGeometry.output) },
+        ]} />
+      )}
       <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
         { label: "摄像头授权", value: formatLaunchTiming(launchTiming.cameraMs), title: "含系统授权等待与摄像头硬件启动" },
         { label: "创建会话", value: formatLaunchTiming(launchTiming.sessionMs) },
@@ -791,7 +824,10 @@ export function App() {
               </button>
               <div className="heroInputPickers">
                 <CaptureDevicePicker kind="videoinput" devices={devices} selected={cameraDeviceId}
-                  disabled={busy || requestingAccess} onSelect={deviceId => setCameraDeviceId(deviceId ?? undefined)}
+                  disabled={busy || requestingAccess} onSelect={deviceId => {
+                    setCameraDeviceId(deviceId ?? undefined);
+                    setCaptureResolution("");
+                  }}
                   onRequestAccess={handleCaptureAccess} />
                 <CaptureDevicePicker kind="audioinput" devices={devices} selected={microphoneDeviceId}
                   disabled={busy || requestingAccess} onSelect={setMicrophoneDeviceId}
@@ -814,7 +850,7 @@ export function App() {
                   大屏
                 </button>
                 <select
-                  className="heroRotationPicker"
+                  className="heroDisplayPicker heroRotationPicker"
                   aria-label="Camera rotation"
                   title="Camera rotation (clockwise)"
                   value={cameraRotation}
@@ -823,6 +859,21 @@ export function App() {
                 >
                   {CAMERA_ROTATIONS.map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
                 </select>
+                <label className="heroInputPicker heroCaptureResolutionPicker">
+                  <select
+                    aria-label="Capture resolution"
+                    title="Preferred camera capture resolution"
+                    value={captureFormat?.key ?? ""}
+                    disabled={busy || requestingAccess}
+                    onChange={(event) => setCaptureResolution(event.currentTarget.value)}
+                  >
+                    <option value="">{autoCaptureResolutionLabel}</option>
+                    {captureOptions.map(option => <option key={option.key} value={option.key}>{option.key}</option>)}
+                  </select>
+                  <span className="heroInputButton" aria-hidden="true">
+                    <span className="heroInputText">{captureFormat?.key ?? autoCaptureResolutionLabel}</span>
+                  </span>
+                </label>
               </div>
             </div>
             <p className="agreement">

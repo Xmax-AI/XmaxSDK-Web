@@ -19,7 +19,7 @@ export function cameraRotationEnvironment({ automaticFirstFrame = false } = {}) 
   const context = { setTransform: vi.fn(), rotate: vi.fn(), drawImage: vi.fn() };
   const stream = { getVideoTracks: () => [output], getTracks: () => [output] };
   const canvas = { width: 0, height: 0, getContext: vi.fn(() => context), captureStream: vi.fn(() => stream) };
-  const video = {
+  const video = Object.assign(new EventTarget(), {
     videoWidth: 1920, videoHeight: 1024, readyState: 2, srcObject: null,
     muted: false, autoplay: false, playsInline: false,
     play: vi.fn(async () => {
@@ -30,7 +30,7 @@ export function cameraRotationEnvironment({ automaticFirstFrame = false } = {}) 
     pause: vi.fn(),
     requestVideoFrameCallback: vi.fn((callback: () => void) => { callbacks.set(++nextID, callback); return nextID; }),
     cancelVideoFrameCallback: vi.fn((id: number) => callbacks.delete(id)),
-  };
+  });
   vi.stubGlobal("document", { createElement: vi.fn((tag: string) => tag === "video" ? video : canvas) });
   vi.stubGlobal("MediaStream", class {
     constructor(private tracks: MediaStreamTrack[]) {}

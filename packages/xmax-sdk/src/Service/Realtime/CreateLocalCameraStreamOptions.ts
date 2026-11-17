@@ -10,31 +10,20 @@
 
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import type { RealtimeCamera } from "./RealtimeCamera";
-import type { RealtimeCameraPreset } from "./RealtimeCameraPreset";
+import type { RealtimeCameraFormat } from "./RealtimeCameraFormat";
 import type { RealtimeMicrophone } from "./RealtimeMicrophone";
 import type { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
 /**
- * Options for camera capture. Omit the preset and video format to use the model's default target.
+ * Options for camera capture.
  */
-export type CreateLocalCameraStreamOptions = (
-  | {
+export interface CreateLocalCameraStreamOptions {
 
-    /**
-     * The model-supported preset and its recommended frame rate.
-     */
-    preset: RealtimeCameraPreset;
-    videoFormat?: never;
-  }
-  | {
-
-    /**
-     * The target format after camera rotation.
-     */
-    videoFormat?: RealtimeVideoFormat;
-    preset?: never;
-  }
-) & {
+  /**
+   * The target format after camera rotation. A predefined format uses the model's recommended
+   * frame rate and encoding settings. Omission uses the model's default target.
+   */
+  videoFormat?: RealtimeVideoFormat | RealtimeCameraFormat;
 
   /**
    * Preferred camera input dimensions before rotation. The browser selects a supported format.
@@ -68,4 +57,4 @@ export type CreateLocalCameraStreamOptions = (
    * and defaults to zero.
    */
   warmupMs?: number;
-};
+}

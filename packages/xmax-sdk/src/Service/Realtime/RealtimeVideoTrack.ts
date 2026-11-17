@@ -9,6 +9,7 @@
 //
 
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import { cameraFrameGeometryByTrack, type CameraFrameGeometry } from "../../Foundation/Media/Camera/CameraFrameGeometry";
 import { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
 /**
@@ -84,6 +85,15 @@ export class RealtimeVideoTrack {
    */
   get position(): CameraPosition | undefined {
     return this.metadata.position;
+  }
+
+  /**
+   * The first-frame dimensions for a camera track processed by the SDK.
+   *
+   * @internal
+   */
+  get cameraFrameGeometry(): CameraFrameGeometry | undefined {
+    return this.mediaStreamTrack && cameraFrameGeometryByTrack.get(this.mediaStreamTrack);
   }
 
   /**

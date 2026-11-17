@@ -89,7 +89,7 @@ export function CaptureDevicePicker({ kind, devices, selected, disabled, onSelec
 
   return (
     <label className="heroInputPicker">
-      <select aria-label={label} title={label} value={value} disabled={disabled}
+      <select aria-label={label} title={selectedText} value={value} disabled={disabled}
         onChange={event => {
           const input = event.currentTarget.value;
           if (input === ALLOW_ACCESS) onRequestAccess(kind);

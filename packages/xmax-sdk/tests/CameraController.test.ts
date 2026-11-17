@@ -5,6 +5,7 @@ import { waitForCameraWarmup } from "../src/Foundation/Media/Camera/CameraWarmup
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { AudioTrackFrameSource } from "../src/Foundation/Media/Audio/AudioTrackFrameSource";
 import { VideoTrackFrameSource } from "../src/Foundation/Media/Video/VideoTrackFrameSource";
+import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../src/Foundation/Permissions/PermissionManaging";
 import type {
@@ -334,6 +335,58 @@ describe("CameraController", () => {
     expect(controller.currentTrack).toBeUndefined();
   });
 
+  it.each([
+    { width: 1080, height: 1920, succeeds: true, crop: { width: 1080, height: 1920 } },
+    { width: 1920, height: 1080, succeeds: true, crop: { width: 1920, height: 1080 } },
+    { width: 1080, height: 1920, succeeds: false, crop: { width: 608, height: 1080 } },
+  ])("retries when the first frame has the opposite orientation to $width × $height (succeeds: $succeeds)", async ({
+    width, height, succeeds, crop,
+  }) => {
+    const { controller, env, getUserMedia, tracks } = makeController();
+    env.video.videoWidth = height;
+    env.video.videoHeight = width;
+    const open = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(async request => {
+      const result = await open(request);
+      const track = tracks[0]!;
+      const apply = track.applyConstraints.getMockImplementation()!;
+      track.applyConstraints.mockImplementationOnce(async constraints => {
+        if (!succeeds) {
+          throw new Error("Capture constraints could not be changed");
+        }
+        await apply(constraints);
+        env.video.videoWidth = width;
+        env.video.videoHeight = height;
+        env.video.dispatchEvent(new Event("resize"));
+      });
+      return result;
+    });
+
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat.resized(width, height),
+      camera: RealtimeCamera.position(CameraPosition.front),
+    }, operationSignal);
+
+    expect(getUserMedia.mock.calls).toEqual([[{ video: {
+      width: { ideal: width },
+      height: { ideal: height },
+      frameRate: { ideal: 30 },
+      facingMode: { ideal: "user" },
+    } }]]);
+    expect(tracks[0]?.applyConstraints.mock.calls).toEqual([[{
+      width: { ideal: height },
+      height: { ideal: width },
+      frameRate: { ideal: 30 },
+      facingMode: { ideal: "user" },
+    }]]);
+    expect(stream.videoTrack?.cameraFrameGeometry).toMatchObject({
+      source: succeeds ? { width, height } : { width: height, height: width },
+      crop,
+      output: { width, height },
+    });
+    await controller.stopLocalCameraStream();
+  });
+
   it("scales higher-resolution capture to the target and retains capture dimensions on update", async () => {
     const { controller, env, getUserMedia, rtc, tracks } = makeController();
     env.video.videoWidth = 3840;
@@ -353,6 +406,16 @@ describe("CameraController", () => {
     expect(getUserMedia).toHaveBeenCalledWith({ video: captureConstraints });
     expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
     expect(env.canvas).toMatchObject({ width: 1920, height: 1080 });
+    expect(stream.videoTrack?.cameraFrameGeometry).toEqual({
+      requested: { width: 3840, height: 2160 },
+      source: { width: 3840, height: 2160 },
+      crop: { width: 3840, height: 2160 },
+      output: { width: 1920, height: 1080 },
+    });
+    const view = { isMirrored: false, setMediaStream: vi.fn() };
+    VideoRenderRegistry.binding(stream.videoTrack!)!.attachHandler(view, VideoContentMode.fill);
+    const preview = view.setMediaStream.mock.calls[0]![0] as MediaStream;
+    expect(preview.getTracks()).toEqual([env.output]);
     await controller.prepareForConnection(operationSignal);
     expect(rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: env.output, source: "camera" });
 
