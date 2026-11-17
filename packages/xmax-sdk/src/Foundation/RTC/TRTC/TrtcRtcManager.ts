@@ -330,6 +330,27 @@ export class TrtcRtcManager implements RtcManaging {
     }
   }
 
+  /** Changes the video track on an existing custom-video publication. */
+  async replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void> {
+    const engine = this.requireEngine();
+    const previous = this.externalVideo;
+    if (!previous) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "SDK camera is not prepared for publication");
+    }
+    const replacement = track.clone();
+    try {
+      await engine.updateLocalVideo({ option: { videoTrack: replacement } });
+      if (this.lease?.engine !== engine || this.externalVideo !== previous) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera publication changed during replacement");
+      }
+      this.externalVideo = replacement;
+      previous.stop();
+    } catch (error) {
+      replacement.stop();
+      throw this.mapError(error);
+    }
+  }
+
   /**
    * Updates disconnected camera dimensions and frame rate without replacing its device or capture
    * lifecycle.

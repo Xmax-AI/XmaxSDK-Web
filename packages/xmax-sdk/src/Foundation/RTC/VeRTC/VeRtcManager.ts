@@ -369,6 +369,27 @@ export class VeRtcManager implements RtcManaging {
     }
   }
 
+  /** Changes the video track on the existing external main stream. */
+  async replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void> {
+    const engine = this.requireEngine();
+    const previous = this.externalVideo;
+    if (!previous) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "SDK camera is not prepared for publication");
+    }
+    const replacement = track.clone();
+    try {
+      await this.run(() => engine.setExternalVideoTrack(this.sdk!.StreamIndex.STREAM_INDEX_MAIN, replacement));
+      if (this.engine !== engine || this.externalVideo !== previous) {
+        throw this.cancelled();
+      }
+      this.externalVideo = replacement;
+      previous.stop();
+    } catch (error) {
+      replacement.stop();
+      throw error;
+    }
+  }
+
   /**
    * Starts camera capture without publication; nonzero rotation is unsupported.
    */

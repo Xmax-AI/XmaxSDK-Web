@@ -96,6 +96,8 @@ class CameraControllingStub implements CameraControlling {
   stopCalls = 0;
   previewReadyHandler?: CameraPreviewReadyHandler;
   waitForValidCameraFrame = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
+  async prepareForConnection(): Promise<void> {}
+  async releaseConnectionMedia(): Promise<void> {}
   updateVideoFormat = vi.fn(async (format: RealtimeVideoFormat): Promise<void> => {
     this.currentTrack?.updateVideoFormat(format);
   });
@@ -471,7 +473,7 @@ describe("XmaxRealtimeManager camera formats", () => {
       preset, position: CameraPosition.back, useMicrophone: true, enableFrameValidation: false,
     });
     expect(create).toHaveBeenCalledWith({ videoFormat: expected, position: CameraPosition.back,
-      useMicrophone: true, enableFrameValidation: false });
+      useMicrophone: true, enableFrameValidation: false }, expect.any(AbortSignal));
     expect(create.mock.calls[0]![0]).not.toHaveProperty("preset");
     expect(local.videoTrack?.videoFormat).toEqual(expected);
     expect(s.manager.currentCameraPreset).toBe(preset);
@@ -2966,7 +2968,7 @@ describe("XmaxRealtimeManager connect", () => {
       enableFrameValidation,
     };
     const localStream = await manager.createLocalCameraStream(options);
-    expect(create).toHaveBeenCalledWith(options);
+    expect(create).toHaveBeenCalledWith(options, expect.any(AbortSignal));
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
     stream.confirmationDeferreds[0]!.resolve();

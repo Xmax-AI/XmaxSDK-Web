@@ -110,6 +110,12 @@ button:disabled,
   margin-left: auto;
 }
 
+.cameraPickers {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+}
+
 .keyEntry {
   position: relative;
   display: inline-flex;
@@ -319,55 +325,75 @@ button:disabled,
   flex-direction: column;
   align-items: center;
   gap: 20px;
+  width: 100%;
+  padding-inline: 12px;
 }
 
-.micToggle {
-  display: inline-flex;
+.heroInputPickers {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 10px;
+  width: min(100%, 450px);
+}
+
+.heroInputPicker {
+  position: relative;
+  min-width: 0;
+  max-width: calc((100% - 10px) / 2);
+}
+
+.heroInputPicker select {
+  appearance: none;
+  field-sizing: content;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(6px);
   border-radius: 999px;
-  padding: 6px 7px 6px 14px;
-  font-size: clamp(12px, 0.28vw + 9.5px, 15px);
-  color: rgba(255, 255, 255, 0.55);
+  padding: 7px 28px 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  text-overflow: ellipsis;
+  cursor: pointer;
   transition:
-    color 0.15s ease,
+    background-color 0.15s ease,
     border-color 0.15s ease;
 }
 
-.micToggle.on {
-  color: #fff;
+.heroInputPicker select:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.42);
   border-color: rgba(255, 255, 255, 0.3);
 }
 
-.micSwitch {
-  position: relative;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  transition: background 0.15s ease;
+.heroInputPicker select:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
-.micKnob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+.heroInputPicker select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.heroInputPicker option {
+  color: var(--text);
   background: #fff;
-  transition: transform 0.15s ease;
 }
 
-.micToggle.on .micSwitch {
-  background: var(--accent);
-}
-
-.micToggle.on .micKnob {
-  transform: translateX(12px);
+.heroInputPicker::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  top: 50%;
+  right: 13px;
+  transform: translateY(-70%) rotate(45deg);
+  border-right: 1px solid rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+  pointer-events: none;
 }
 
 .agreement {
@@ -1507,7 +1533,7 @@ button:disabled,
     display: none;
   }
 
-  /* 启动按钮与麦克风开关收窄。 */
+  /* 启动按钮与设备选择收窄。 */
   .startButton {
     gap: 8px;
     padding: 10px 20px;
@@ -1519,14 +1545,18 @@ button:disabled,
     height: 16px;
   }
 
-  .micToggle {
-    gap: 6px;
-    padding: 5px 6px 5px 12px;
-    font-size: 11px;
+  .heroActions {
+    gap: 12px;
+  }
+
+  .heroInputPicker select {
+    font-size: 12px;
   }
 
   .topbarRight {
     min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
   }
 

@@ -15,7 +15,6 @@ import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundati
 import type { PermissionManaging } from "../../Foundation/Permissions/PermissionManaging";
 import { PermissionManager } from "../../Foundation/Permissions/PermissionManager";
 import type { RtcManaging } from "../../Foundation/RTC/RtcManaging";
-import { TrtcRtcManager } from "../../Foundation/RTC/TRTC/TrtcRtcManager";
 import { VideoRenderRegistry } from "../../Render/Video/VideoRenderRegistry";
 import type { MediaServicing } from "../../Service/Media/MediaServicing";
 import { MediaService } from "../../Service/Media/MediaService";
@@ -23,14 +22,15 @@ import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream"
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
 import { StreamID } from "../../Stream/StreamID";
+import { captureMicrophone } from "../Audio/MicrophoneCapture";
+import { CameraCapture } from "./CameraCapture";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./CameraControlling";
 
 /**
  * Coordinates camera capture and SDK preview.
  *
- * RTC supplies unpublished capture. Track replacement updates the existing preview stream without
- * rebinding mounted views. RTC starts microphone capture during connection; this controller retains its
- * settings and permissions.
+ * Owns browser capture and gives RTC the tracks needed for publication. Track replacement updates
+ * existing preview bindings and a connected RTC sender.
  */
 export class CameraController implements CameraControlling {
 
@@ -69,6 +69,14 @@ export class CameraController implements CameraControlling {
    */
   private activeTrack?: RealtimeVideoTrack;
 
+  /** The browser device and its fixed media format, independent of uplink adaptation. */
+  private capture?: CameraCapture;
+  private captureFormat?: RealtimeVideoFormat;
+
+  /** Microphone capture and RTC bindings belong to a connection, rather than to preview. */
+  private microphone?: MediaStreamTrack;
+  private rtcPrepared = false;
+
   /**
    * The browser media stream used for camera preview.
    */
@@ -96,6 +104,9 @@ export class CameraController implements CameraControlling {
    */
   private storedUseMicrophone = false;
 
+  /** The selected microphone input, retained across reconnection. */
+  private microphoneDeviceId?: string;
+
   /**
    * Whether the current camera source enables pre-publication warmup.
    */
@@ -115,22 +126,22 @@ export class CameraController implements CameraControlling {
    * Creates a camera controller.
    *
    * @param options.permissionManager - The permission checker.
-   * @param options.rtcManager - The capture and transport adapter.
+   * @param options.rtcManager - The transport adapter.
    * @param options.mediaService - The model-sizing service.
    * @param options.errorListener - The runtime error listener.
    */
   constructor(
-    options?: {
+    options: {
       permissionManager?: PermissionManaging;
-      rtcManager?: RtcManaging;
+      rtcManager: RtcManaging;
       mediaService?: MediaServicing;
       errorListener?: XmaxErrorListener;
     }
   ) {
-    this.permissionManager = options?.permissionManager ?? new PermissionManager();
-    this.rtcManager = options?.rtcManager ?? new TrtcRtcManager();
-    this.mediaService = options?.mediaService ?? new MediaService();
-    this.errorListener = options?.errorListener ?? (() => { });
+    this.permissionManager = options.permissionManager ?? new PermissionManager();
+    this.rtcManager = options.rtcManager;
+    this.mediaService = options.mediaService ?? new MediaService();
+    this.errorListener = options.errorListener ?? (() => { });
   }
 
   /**
@@ -210,10 +221,11 @@ export class CameraController implements CameraControlling {
    * @param options.videoFormat - The desired post-rotation dimensions, frame rate, and encoding
    * settings, resolved by model rules.
    * @param options.position - The initial camera position.
-   * @param options.rotation - Clockwise input rotation; defaults to 0. Nonzero values currently require
-   * Agora.
+   * @param options.cameraDeviceId - The exact browser camera ID, if selected.
+   * @param options.rotation - Clockwise input rotation; defaults to 0.
    * @param options.useMicrophone - Whether to request microphone permission and allow audio capture
    * during connection.
+   * @param options.microphoneDeviceId - The exact browser microphone ID, if selected.
    * @param options.enableFrameValidation - Whether to wait for a fixed 200 ms pre-publication warmup;
    * defaults to true.
    * @returns A media stream containing the local camera track.
@@ -223,10 +235,13 @@ export class CameraController implements CameraControlling {
     options: {
       videoFormat: RealtimeVideoFormat;
       position: CameraPosition;
+      cameraDeviceId?: string;
       useMicrophone: boolean;
+      microphoneDeviceId?: string;
       rotation?: CameraRotation;
       enableFrameValidation?: boolean;
-    }
+    },
+    signal: AbortSignal
   ): Promise<RealtimeMediaStream> {
     if (this.activeTrack) {
       throw new XmaxError(
@@ -248,24 +263,34 @@ export class CameraController implements CameraControlling {
       if (options.useMicrophone) {
         await this.permissionManager.ensureMicrophonePermission();
       }
-
-      await this.rtcManager.initialize();
+      if (signal.aborted) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera capture cancelled");
+      }
 
       this.activeTrack = track;
       this.storedUseMicrophone = options.useMicrophone;
+      this.microphoneDeviceId = options.microphoneDeviceId;
       this.storedFrameValidationEnabled = options.enableFrameValidation ?? true;
       this.storedRotation = options.rotation ?? 0;
       this.hasCapturedFrame = false;
       this.isPreviewAttached = false;
       this.registerPreviewBinding(track);
 
-      const mediaTrack = await this.rtcManager.startCameraCapture({
-        width: resolvedFormat.width,
-        height: resolvedFormat.height,
-        frameRate: resolvedFormat.fps,
-        position: options.position,
-        ...(options.rotation !== undefined ? { rotation: options.rotation } : {}),
-      });
+      const { capture, track: mediaTrack } = await this.openCapture(
+        resolvedFormat, options.position, signal, options.cameraDeviceId,
+      );
+      if (signal.aborted || this.activeTrack !== track) {
+        capture.stop();
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera stream changed during capture");
+      }
+      this.capture = capture;
+      this.captureFormat = resolvedFormat;
+      if (options.cameraDeviceId !== undefined) {
+        const facing = capture.source.getSettings().facingMode;
+        if (facing === "user" || facing === "environment") {
+          track.updatePosition(facing === "user" ? CameraPosition.front : CameraPosition.back);
+        }
+      }
       track.mediaStreamTrack = mediaTrack;
       this.previewStream = new MediaStream([mediaTrack]);
       this.observeMediaTrack(
@@ -278,13 +303,55 @@ export class CameraController implements CameraControlling {
         videoTrack: track
       });
     } catch (error) {
-      await this.stopLocalCameraStream();
+      if (this.activeTrack === track) {
+        await this.stopLocalCameraStream();
+      }
       throw XmaxError.from(error);
     }
   }
 
   /**
-   * Stops capture, destroys the RTC engine, and releases the camera track and preview resources.
+   * Prepares the browser tracks for RTC publication, starting microphone input only on connection.
+   */
+  async prepareForConnection(signal: AbortSignal): Promise<void> {
+    const videoTrack = this.activeTrack?.mediaStreamTrack;
+    const rtc = this.rtcManager;
+    if (!videoTrack || !rtc.setExternalMediaTracks) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera tracks cannot be published");
+    }
+    if (this.useMicrophone) {
+      const microphone = await captureMicrophone(signal, this.microphoneDeviceId);
+      this.microphone = microphone;
+      microphone.addEventListener("ended", () => {
+        if (this.microphone === microphone) {
+          this.errorListener(new XmaxError(XmaxErrorCode.mediaError, "Microphone track ended unexpectedly"));
+        }
+      }, { once: true });
+    }
+    if (signal.aborted) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera publication preparation cancelled");
+    }
+    this.rtcPrepared = true;
+    await rtc.initialize();
+    if (signal.aborted) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "Camera publication preparation cancelled");
+    }
+    await rtc.setExternalMediaTracks({ videoTrack, audioTrack: this.microphone, source: "camera" });
+  }
+
+  /** Releases connection-owned audio and RTC track clones while leaving camera preview available. */
+  async releaseConnectionMedia(): Promise<void> {
+    const microphone = this.microphone;
+    this.microphone = undefined;
+    microphone?.stop();
+    if (this.rtcPrepared) {
+      this.rtcPrepared = false;
+      await this.rtcManager.destroy();
+    }
+  }
+
+  /**
+   * Stops capture and releases the camera track and preview resources.
    */
   async stopLocalCameraStream(): Promise<void> {
     const track = this.activeTrack;
@@ -294,18 +361,21 @@ export class CameraController implements CameraControlling {
     this.previewMirrorApplier = undefined;
 
     this.storedUseMicrophone = false;
+    this.microphoneDeviceId = undefined;
     this.storedFrameValidationEnabled = true;
     this.storedRotation = 0;
     this.hasCapturedFrame = false;
     this.isPreviewAttached = false;
 
-    await this.rtcManager.stopCameraCapture();
-    await this.rtcManager.destroy();
+    this.capture?.stop();
+    this.capture = undefined;
+    this.captureFormat = undefined;
 
     if (track) {
       VideoRenderRegistry.unregister(track);
       track.mediaStreamTrack = undefined;
     }
+    await this.releaseConnectionMedia();
   }
 
   /**
@@ -313,41 +383,30 @@ export class CameraController implements CameraControlling {
    * existing bindings on failure.
    */
   async updateVideoFormat(
-    videoFormat: RealtimeVideoFormat
+    videoFormat: RealtimeVideoFormat,
+    signal: AbortSignal
   ): Promise<void> {
     const track = this.activeTrack;
-    const position = track?.position;
-    if (!track || !position || !track.mediaStreamTrack) {
+    const capture = this.capture;
+    if (!track || !capture || !track.mediaStreamTrack) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Camera preview is not started"
       );
     }
     const resolved = this.resolveVideoFormat(videoFormat);
-    if (!this.rtcManager.updateCameraCapture) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "The RTC provider does not support camera format updates"
-      );
-    }
-
     const previous = track.mediaStreamTrack;
     this.formatUpdatingTrack = track;
     try {
-      const mediaTrack = await this.rtcManager.updateCameraCapture({
-        width: resolved.width,
-        height: resolved.height,
-        frameRate: resolved.fps,
-        position,
-        rotation: this.storedRotation,
-      });
-      if (this.activeTrack !== track) {
+      const mediaTrack = await capture.updateFormat(resolved, signal);
+      if (signal.aborted || this.activeTrack !== track) {
         throw new XmaxError(
           XmaxErrorCode.cancelled,
           "Camera stream changed during format update"
         );
       }
 
+      this.captureFormat = resolved;
       track.updateVideoFormat(resolved);
       track.mediaStreamTrack = mediaTrack;
       if (previous !== mediaTrack) {
@@ -374,16 +433,16 @@ export class CameraController implements CameraControlling {
   /**
    * Switches cameras while retaining the SDK track.
    *
-   * The native replacement updates the existing preview stream; RTC owns old-track cleanup, so mounted
-   * views need no rebinding.
+   * The replacement is published and bound to preview before releasing the old device.
    *
    * @returns The stream with updated camera media.
    * @throws Rejects without active capture or if switching fails.
    */
-  async switchCamera(): Promise<RealtimeMediaStream> {
+  async switchCamera(signal: AbortSignal): Promise<RealtimeMediaStream> {
     const track = this.activeTrack;
     const position = track?.position;
-    if (!track || !position) {
+    const format = this.captureFormat;
+    if (!track || !position || !format) {
       throw new XmaxError(
         XmaxErrorCode.rtcError,
         "Local camera preview is not started",
@@ -393,29 +452,51 @@ export class CameraController implements CameraControlling {
     const nextPosition =
       position === CameraPosition.front ? CameraPosition.back : CameraPosition.front;
 
-    // Capture-switch failure retains the previous device.
-    const mediaTrack = await this.rtcManager.switchCameraCapture(nextPosition);
-
-    const previousTrack = track.mediaStreamTrack;
-    track.updatePosition(nextPosition);
-    track.mediaStreamTrack = mediaTrack;
-
-    if (this.previewStream) {
-      if (previousTrack) {
-        this.previewStream.removeTrack(previousTrack);
+    const { capture, track: mediaTrack } = await this.openCapture(format, nextPosition, signal);
+    try {
+      if (signal.aborted || this.activeTrack !== track) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera stream changed during switching");
       }
-      this.previewStream.addTrack(mediaTrack);
+      if (this.rtcPrepared) {
+        await this.rtcManager.replaceCameraVideoTrack(mediaTrack);
+      }
+      if (signal.aborted || this.activeTrack !== track) {
+        throw new XmaxError(XmaxErrorCode.cancelled, "Camera stream changed during switching");
+      }
+      const previousTrack = track.mediaStreamTrack;
+      const previousCapture = this.capture;
+      this.capture = capture;
+      track.updatePosition(nextPosition);
+      track.mediaStreamTrack = mediaTrack;
+
+      if (previousTrack) {
+        this.previewStream?.removeTrack(previousTrack);
+      }
+      this.previewStream?.addTrack(mediaTrack);
+      this.previewMirrorApplier?.(nextPosition === CameraPosition.front);
+      this.observeMediaTrack(track, mediaTrack);
+      previousCapture?.stop();
+    } catch (error) {
+      capture.stop();
+      throw error;
     }
-    this.previewMirrorApplier?.(nextPosition === CameraPosition.front);
-    this.observeMediaTrack(
-      track,
-      mediaTrack
-    );
 
     return new RealtimeMediaStream({
       id: StreamID.local,
       videoTrack: track
     });
+  }
+
+  /** Reports frame processing failures only for the camera committed as the active input. */
+  private async openCapture(format: RealtimeVideoFormat, position: CameraPosition, signal: AbortSignal, deviceId?: string) {
+    let candidate: CameraCapture | undefined;
+    const result = await CameraCapture.open(format, position, this.storedRotation, error => {
+      if (candidate && candidate === this.capture) {
+        this.errorListener(error);
+      }
+    }, signal, deviceId);
+    candidate = result.capture;
+    return result;
   }
 
   /**
@@ -462,6 +543,7 @@ export class CameraController implements CameraControlling {
     track: RealtimeVideoTrack,
     mediaTrack: MediaStreamTrack,
   ): void {
+    this.hasCapturedFrame = false;
     const isCurrent = () =>
       this.activeTrack === track && track.mediaStreamTrack === mediaTrack;
     if (mediaTrack.muted) {

@@ -169,20 +169,22 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * Creates camera media using the camera controller's RTC and preview resources.
+   * Creates local camera capture and preview without starting RTC publication.
    */
   createLocalCameraStream(
-    options: Parameters<MediaControlling["createLocalCameraStream"]>[0]
+    options: Parameters<MediaControlling["createLocalCameraStream"]>[0],
+    signal: AbortSignal
   ) {
     this.ensureNoLocalSource();
-    return this.camera.createLocalCameraStream(options);
+    return this.camera.createLocalCameraStream(options, signal);
   }
 
   /**
    * Updates the active camera format without replacing preview or other media resources.
    */
   updateCameraFormat(
-    videoFormat: RealtimeVideoFormat
+    videoFormat: RealtimeVideoFormat,
+    signal: AbortSignal
   ): Promise<void> {
     if (this.source !== "camera") {
       throw new XmaxError(
@@ -190,7 +192,19 @@ export class MediaController implements MediaControlling {
         "Camera preview is not started"
       );
     }
-    return this.camera.updateVideoFormat(videoFormat);
+    return this.camera.updateVideoFormat(videoFormat, signal);
+  }
+
+  /** Starts microphone capture if enabled and gives RTC the camera tracks for publication. */
+  async prepareCameraForConnection(signal: AbortSignal): Promise<void> {
+    if (this.source === "camera") {
+      await this.camera.prepareForConnection(signal);
+    }
+  }
+
+  /** Releases connection-owned capture resources while retaining the preview. */
+  releaseCameraConnectionMedia(): Promise<void> {
+    return this.camera.releaseConnectionMedia();
   }
 
   /**
@@ -304,14 +318,14 @@ export class MediaController implements MediaControlling {
   /**
    * Switches camera capture; external devices remain controlled by your app.
    */
-  switchCamera() {
+  switchCamera(signal: AbortSignal) {
     if (this.externalFrames.isActive || this.external.currentTrack) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "External video capture is managed by the caller"
       );
     }
-    return this.camera.switchCamera();
+    return this.camera.switchCamera(signal);
   }
 
   /**

@@ -392,6 +392,36 @@ describe("AgoraRtcManager", () => {
     return { videoTrack: track("video"), audioTrack: includeAudio ? track("audio") : undefined };
   }
 
+  it("publishes SDK camera tracks with sender-only encoding and replaces the video without rejoining", async () => {
+    const s = setup();
+    const dimensions = { width: 1920, height: 1080, frameRate: 30 };
+    const makeInput = () => ({
+      kind: "video", readyState: "live", stop: vi.fn(), getSettings: () => dimensions,
+    });
+    const original = makeInput(), replacement = makeInput();
+    const source = { ...makeInput(), clone: () => original } as unknown as MediaStreamTrack;
+    const next = { ...makeInput(), clone: () => replacement } as unknown as MediaStreamTrack;
+    const track = { ...s.camera, replaceTrack: vi.fn(async (input: MediaStreamTrack) => { s.sender.track = input; }) };
+    s.sdk.createCustomVideoTrack.mockImplementationOnce(() => {
+      s.sender.track = original as unknown as MediaStreamTrack;
+      return track;
+    });
+    await s.manager.initialize();
+    await s.manager.setExternalMediaTracks({ videoTrack: source, source: "camera" });
+    expect(s.sdk.createCustomVideoTrack).toHaveBeenCalledWith({ mediaStreamTrack: original, ...dimensions });
+    await s.manager.configureVideoEncoding({ width: 960, height: 540, frameRate: 24, minimumBitrate: 500,
+      maximumBitrate: 2000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    await s.manager.joinRoom(credentials);
+    await s.manager.publishLocalVideo();
+    await s.manager.replaceCameraVideoTrack(next);
+    expect(track.replaceTrack).toHaveBeenCalledWith(replacement, true);
+    expect(s.sender.getParameters().encodings[0]).toMatchObject({ scaleResolutionDownBy: 2, maxFramerate: 24 });
+    expect(track.setEncoderConfiguration).not.toHaveBeenCalled();
+    expect(s.client.join).toHaveBeenCalledOnce();
+    expect(s.client.publish.mock.calls).toEqual([[track]]);
+    expect(s.sdk.createCameraVideoTrack).not.toHaveBeenCalled();
+  });
+
   it("publishes cloned file tracks without accessing devices and preserves custom dimensions on mobile", async () => {
     vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 5 });
     vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });

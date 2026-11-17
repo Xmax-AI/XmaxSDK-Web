@@ -12,7 +12,7 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { CameraRotation } from "./CameraRotation";
 
 /**
- * Rotates camera frames to fixed output dimensions shared by preview and RTC. Borrows the camera track
+ * Crops and optionally rotates camera frames to fixed output dimensions. Borrows the camera track
  * and owns the output track and scheduling resources.
  */
 export class CameraRotationProcessor {
@@ -85,7 +85,7 @@ export class CameraRotationProcessor {
       width: number;
       height: number;
       frameRate: number;
-      rotation: Exclude<CameraRotation, 0>;
+      rotation: CameraRotation;
       onError: (
         error: XmaxError
       ) => void;

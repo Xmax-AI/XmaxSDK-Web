@@ -10,6 +10,7 @@ import {
   XmaxConfiguration,
   XmaxEnvironment,
   XmaxLoggerOption,
+  type CameraRotation,
   type RealtimeMediaStream,
   type RealtimeTiming,
   type UplinkVideoStatistics,
@@ -31,6 +32,7 @@ import { ResultBeautyControl, ResultBeautyPanel } from "./ResultBeautyControl";
 import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
+import { CaptureDevicePicker, useCaptureDevices, type CaptureInputKind } from "./CaptureDevicePicker";
 import { resolveCameraConfiguration } from "./cameraConfiguration";
 import { RemoteRecorder } from "./recording/RemoteRecorder";
 import { RecordingControl, type RecordingStatus } from "./recording/RecordingControl";
@@ -38,6 +40,7 @@ import { RecordingSaveDialog } from "./recording/RecordingSaveDialog";
 import type { RecordingResult } from "./recording/recordingMessages";
 
 const API_KEY_STORAGE = "xmax.xlab.apiKey";
+const CAMERA_ROTATIONS = [0, 90, 180, 270] as const satisfies readonly CameraRotation[];
 
 /** 会话计时的显示文案（mm:ss）。 */
 function formatElapsed(totalSeconds: number): string {
@@ -70,12 +73,15 @@ export function App() {
       ? RealtimeCameraPreset.resolution1080x1920
       : RealtimeCameraPreset.resolution1920x1080,
   );
+  const [cameraRotation, setCameraRotation] = useState<CameraRotation>(0);
   const [wechatOpen, setWechatOpen] = useState(false);
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
-  const [useMicrophone, setUseMicrophone] = useState(false);
+  const [cameraDeviceId, setCameraDeviceId] = useState<string>();
+  const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | null | undefined>(null);
   const [prompt, setPrompt] = useState("");
   const [activeModeKey, setActiveModeKey] = useState<ExampleModeKey>("charx");
   const [localStream, setLocalStream] = useState<RealtimeMediaStream | undefined>();
+  const { devices, requestingAccess, requestAccess } = useCaptureDevices(!localStream);
   const [remoteStream, setRemoteStream] = useState<RealtimeMediaStream | undefined>();
   const [stateText, setStateText] = useState<RealtimeConnectionState>(
     RealtimeConnectionState.idle,
@@ -305,6 +311,11 @@ export function App() {
     });
   }
 
+  function handleCaptureAccess(kind: CaptureInputKind) {
+    setErrorText("");
+    void requestAccess(kind).catch(error => setErrorText(error instanceof Error ? error.message : String(error)));
+  }
+
   /**
    * 一键完成开启摄像头到开始生成的完整流程。
    *
@@ -312,7 +323,7 @@ export function App() {
    * 首帧等待等后续过程在生成页面内完成。
    */
   async function handleStart() {
-    if (generationBusyRef.current) return;
+    if (generationBusyRef.current || requestingAccess) return;
     if (!apiKey) {
       setErrorText("API Key is required — click the key button in the top-right corner to enter it");
       return;
@@ -364,7 +375,10 @@ export function App() {
       const stream = await realtime.createLocalCameraStream({
         ...cameraSource,
         position: CameraPosition.front,
-        useMicrophone,
+        cameraDeviceId,
+        useMicrophone: microphoneDeviceId !== null,
+        microphoneDeviceId: microphoneDeviceId ?? undefined,
+        rotation: cameraRotation,
         enableFrameValidation: true
       });
       await attachStateListener(realtime, () => {
@@ -682,8 +696,21 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
-            <CameraPresetPicker value={cameraConfiguration.preset} presets={cameraConfiguration.presets}
-              disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
+            <div className="cameraPickers">
+              <CameraPresetPicker value={cameraConfiguration.preset} presets={cameraConfiguration.presets}
+                disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
+              <div className="rtcModelPicker">
+                <select className="rtcModelSelect" aria-label="Camera rotation" title="Camera rotation (clockwise)"
+                  value={cameraRotation} disabled={busy}
+                  onChange={(event) => setCameraRotation(Number(event.currentTarget.value) as CameraRotation)}>
+                  {CAMERA_ROTATIONS.map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
+                </select>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+            </div>
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
@@ -747,7 +774,7 @@ export function App() {
               <button
                 className="startButton"
                 onClick={handleStart}
-                disabled={busy}
+                disabled={busy || requestingAccess}
               >
                 {busy ? (
                   <>
@@ -774,33 +801,14 @@ export function App() {
                   </>
                 )}
               </button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={useMicrophone}
-                className={useMicrophone ? "micToggle on" : "micToggle"}
-                onClick={() => setUseMicrophone((on) => !on)}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" x2="12" y1="19" y2="22" />
-                </svg>
-                Microphone
-                <span className="micSwitch">
-                  <span className="micKnob" />
-                </span>
-              </button>
+              <div className="heroInputPickers">
+                <CaptureDevicePicker kind="videoinput" devices={devices} selected={cameraDeviceId}
+                  disabled={busy || requestingAccess} onSelect={deviceId => setCameraDeviceId(deviceId ?? undefined)}
+                  onRequestAccess={handleCaptureAccess} />
+                <CaptureDevicePicker kind="audioinput" devices={devices} selected={microphoneDeviceId}
+                  disabled={busy || requestingAccess} onSelect={setMicrophoneDeviceId}
+                  onRequestAccess={handleCaptureAccess} />
+              </div>
             </div>
             <p className="agreement">
               By clicking Start, you agree to our{" "}

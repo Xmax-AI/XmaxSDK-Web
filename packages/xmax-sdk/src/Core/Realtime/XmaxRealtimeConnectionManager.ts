@@ -521,7 +521,7 @@ export class XmaxRealtimeConnectionManager {
   /**
    * Attempts all connection cleanup, closing the server session even if leaving the room fails.
    */
-  async disconnect(): Promise<string | undefined> {
+  async disconnect(releaseLocalPublication?: () => Promise<void>): Promise<string | undefined> {
     const sessionID = this.activeSession?.id;
 
     this.stopHeartbeat();
@@ -531,6 +531,13 @@ export class XmaxRealtimeConnectionManager {
       await this.dependencies.streamController.disconnect();
     } catch (error) {
       XmaxLogger.realtime.error(() => `断开 RTC 连接失败 (Failed to Disconnect RTC)\n└─ ${XmaxError.from(error).message}`);
+    }
+
+    try {
+      await releaseLocalPublication?.();
+    } catch (error) {
+      XmaxLogger.realtime.error(() =>
+        `释放本地上行资源失败 (Failed to Release Local Publication)\n└─ ${XmaxError.from(error).message}`);
     }
 
     const track = this.activeRemoteTrack;

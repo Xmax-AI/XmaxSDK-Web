@@ -115,8 +115,12 @@ export interface RtcManaging {
     tracks: {
       videoTrack: MediaStreamTrack;
       audioTrack?: MediaStreamTrack;
+      source?: "camera";
     }
   ): Promise<void>;
+
+  /** Replaces the published SDK camera track, retaining the current room and encoding configuration. */
+  replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void>;
 
   /**
    * Configures uplink video encoding independently of capture.

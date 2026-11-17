@@ -16,6 +16,7 @@ import type { RemoteStreamBinding } from "../src/Stream/StreamControlling";
 import type { VideoEncodingConfiguration } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 class RtcManagingStub implements RtcManaging {
+  async replaceCameraVideoTrack(): Promise<void> {}
   getRemoteAudioTrack = vi.fn((_userID: string): MediaStreamTrack | undefined => undefined);
   async updateCredentials(): Promise<void> {}
   isInitialized = true;

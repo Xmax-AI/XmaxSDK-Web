@@ -60,8 +60,10 @@ export interface CameraControlling {
    *
    * @param options.videoFormat - The post-rotation format, resolved by model rules.
    * @param options.position - The camera position.
+   * @param options.cameraDeviceId - The exact browser camera ID, if selected.
    * @param options.useMicrophone - Whether to capture and publish microphone audio.
-   * @param options.rotation - Clockwise rotation; defaults to 0. Nonzero values currently require Agora.
+   * @param options.microphoneDeviceId - The exact browser microphone ID, if selected.
+   * @param options.rotation - Clockwise rotation; defaults to 0.
    * @param options.enableFrameValidation - Whether to wait for warmup; defaults to true and persists
    * across switching and reconnection.
    * @throws Rejects for active capture, invalid settings, denied permission, or capture-start failure.
@@ -70,11 +72,20 @@ export interface CameraControlling {
     options: {
       videoFormat: RealtimeVideoFormat;
       position: CameraPosition;
+      cameraDeviceId?: string;
       useMicrophone: boolean;
+      microphoneDeviceId?: string;
       rotation?: CameraRotation;
       enableFrameValidation?: boolean;
-    }
+    },
+    signal: AbortSignal
   ): Promise<RealtimeMediaStream>;
+
+  /** Prepares SDK-owned camera and microphone tracks for the connection. */
+  prepareForConnection(signal: AbortSignal): Promise<void>;
+
+  /** Releases RTC track clones and the microphone while retaining the camera preview. */
+  releaseConnectionMedia(): Promise<void>;
 
   /**
    * Stops camera and microphone capture and releases the track and local preview.
@@ -86,7 +97,8 @@ export interface CameraControlling {
    * preview binding.
    */
   updateVideoFormat(
-    videoFormat: RealtimeVideoFormat
+    videoFormat: RealtimeVideoFormat,
+    signal: AbortSignal
   ): Promise<void>;
 
   /**
@@ -94,5 +106,5 @@ export interface CameraControlling {
    *
    * @throws Rejects without active capture or if switching fails.
    */
-  switchCamera(): Promise<RealtimeMediaStream>;
+  switchCamera(signal: AbortSignal): Promise<RealtimeMediaStream>;
 }

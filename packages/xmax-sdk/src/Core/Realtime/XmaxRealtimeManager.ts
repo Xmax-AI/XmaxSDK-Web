@@ -474,7 +474,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           );
         }
         token.ensureCurrent();
-        await this.mediaController.updateCameraFormat(requested);
+        await this.mediaController.updateCameraFormat(requested, token.signal);
         token.ensureCurrent();
         const track = this.currentLocalTrack!;
         this.updateResolvedMediaVideoFormat(track.videoFormat);
@@ -908,9 +908,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * is bound.
    *
    * @param options.position - The front or rear camera.
+   * @param options.cameraDeviceId - A browser video input ID to use instead of selecting by position.
    * @param options.useMicrophone - Whether to capture and publish microphone audio.
-   * @param options.rotation - Clockwise input rotation, defaulting to 0; nonzero rotation currently
-   * requires Agora. Preview and upload are corrected independently of mirroring.
+   * @param options.microphoneDeviceId - A browser audio input ID to use when the microphone is enabled.
+   * @param options.rotation - Clockwise input rotation, defaulting to 0. Preview and upload are
+   * corrected independently of mirroring.
    * @param options.enableFrameValidation - Whether to wait for a fixed 200 ms camera warmup before
    * publishing; defaults to true. False skips the wait.
    * @param options.videoFormat - The post-rotation target format, resolved using model sizing rules.
@@ -978,7 +980,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         let stream: RealtimeMediaStream;
         try {
           token.ensureCurrent();
-          stream = await this.mediaController.createLocalCameraStream(cameraOptions);
+          stream = await this.mediaController.createLocalCameraStream(cameraOptions, token.signal);
         } catch (error) {
           this.disposePermissionWatch();
           this.timing.cancel();
@@ -1405,7 +1407,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
 
         this.qualityController?.stop();
-        const stream = await this.mediaController.switchCamera();
+        const stream = await this.mediaController.switchCamera(token.signal);
         token.ensureCurrent();
         return stream;
       },
@@ -1807,6 +1809,8 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           initialQuality.level
         )
         : initialQuality?.baseline;
+      await this.mediaController.prepareCameraForConnection(token.signal);
+      token.ensureCurrent();
       const remote = await this.connectionManager.connect({
         localTrack,
         remoteVideoFormat: this.resolvedMediaVideoFormat ?? localTrack.videoFormat,
@@ -2016,7 +2020,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     this.connectionManager.stopHeartbeat();
     await this.generationManager.reset(taskID);
-    const sessionID = await this.connectionManager.disconnect();
+    const sessionID = await this.connectionManager.disconnect(() => this.mediaController.releaseCameraConnectionMedia());
 
     if (scope === RealtimeTerminationScope.all) {
       this.setRemoteMediaTracksListener(undefined);

@@ -58,15 +58,23 @@ export interface MediaControlling extends InteractionControlling {
    * Creates camera capture and preview.
    */
   createLocalCameraStream(
-    options: Parameters<CameraControlling["createLocalCameraStream"]>[0]
+    options: Parameters<CameraControlling["createLocalCameraStream"]>[0],
+    signal: AbortSignal
   ): Promise<RealtimeMediaStream>;
 
   /**
    * Updates the camera format; other source kinds are unsupported.
    */
   updateCameraFormat(
-    videoFormat: RealtimeVideoFormat
+    videoFormat: RealtimeVideoFormat,
+    signal: AbortSignal
   ): Promise<void>;
+
+  /** Prepares connection-owned camera resources when the active source is a camera. */
+  prepareCameraForConnection(signal: AbortSignal): Promise<void>;
+
+  /** Releases connection-owned camera resources and retains local preview. */
+  releaseCameraConnectionMedia(): Promise<void>;
 
   /**
    * Creates and unlocks file-video playback; prepareSource initializes RTC.
@@ -125,7 +133,7 @@ export interface MediaControlling extends InteractionControlling {
   /**
    * Switches camera capture without taking ownership of external devices.
    */
-  switchCamera(): Promise<RealtimeMediaStream>;
+  switchCamera(signal: AbortSignal): Promise<RealtimeMediaStream>;
 
   /**
    * Stops camera capture and releases its resources.
