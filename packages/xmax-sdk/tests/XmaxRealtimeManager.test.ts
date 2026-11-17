@@ -529,6 +529,21 @@ describe("XmaxRealtimeManager camera formats", () => {
     await s.manager.close();
   });
 
+  it("forwards a capture format independently of the selected model preset", async () => {
+    const s = makeManager();
+    const create = vi.spyOn(s.camera, "createLocalCameraStream");
+    const captureFormat = { width: 3840, height: 2160 };
+    await s.manager.createLocalCameraStream({
+      preset: RealtimeCameraPreset.resolution1920x1080,
+      captureFormat,
+    });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      videoFormat: expect.objectContaining({ width: 1920, height: 1080 }),
+      captureFormat,
+    }), expect.any(AbortSignal));
+    await s.manager.close();
+  });
+
   it("rejects competing format selectors and legacy position-only input from JavaScript", async () => {
     type Options = Parameters<XmaxRealtimeManager["createLocalCameraStream"]>[0];
     const common = { camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled };

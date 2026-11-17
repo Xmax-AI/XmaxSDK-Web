@@ -110,12 +110,6 @@ button:disabled,
   margin-left: auto;
 }
 
-.cameraPickers {
-  display: flex;
-  align-items: center;
-  gap: inherit;
-}
-
 .keyEntry {
   position: relative;
   display: inline-flex;
@@ -266,12 +260,12 @@ button:disabled,
   font-size: clamp(27px, 1vw + 18px, 45px);
   font-weight: 500;
   letter-spacing: -0.03em;
-  margin: 0 0 clamp(26px, 1.1vw + 17px, 40px);
+  margin: 0 0 clamp(14px, 0.6vw + 8px, 24px);
 }
 
 .heroStage {
   position: relative;
-  width: min(100%, clamp(580px, 45vw, 940px));
+  width: min(100%, clamp(640px, 52vw, 1080px));
   aspect-ratio: 1920 / 1024;
   border-radius: 24px;
   background:
@@ -281,18 +275,32 @@ button:disabled,
   justify-content: center;
 }
 
+.heroActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(288px, calc(100% - 24px));
+}
+
 .startButton {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  border: none;
+  justify-content: center;
+  gap: 8px;
+  width: min(100%, 208px);
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
-  font-size: clamp(15px, 0.3vw + 12px, 18px);
+  font-size: 16px;
   font-weight: 600;
-  border-radius: 999px;
-  padding: clamp(12px, 0.28vw + 9px, 16px) clamp(25px, 0.75vw + 18px, 40px);
-  box-shadow: 0 10px 30px rgba(47, 70, 226, 0.35);
+}
+
+.startButton svg {
+  width: 18px;
+  height: 18px;
 }
 
 .startButton:not(:disabled):hover {
@@ -320,80 +328,193 @@ button:disabled,
   }
 }
 
-.heroActions {
+.heroDisplayControls {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 20px;
-  width: 100%;
-  padding-inline: 12px;
+  gap: 8px;
+}
+
+.heroActions .largeScreenToggle,
+.heroRotationPicker,
+.heroInputButton {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-weight: 500;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.heroActions .largeScreenToggle,
+.heroRotationPicker {
+  height: 30px;
+  font-size: 12px;
+}
+
+.heroActions .largeScreenToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.heroRotationPicker {
+  appearance: none;
+  width: 52px;
+  padding: 0;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.heroRotationPicker option {
+  background: #fff;
+  color: var(--text);
 }
 
 .heroInputPickers {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 10px;
-  width: min(100%, 450px);
+  gap: 8px;
+  width: 100%;
 }
 
 .heroInputPicker {
   position: relative;
   min-width: 0;
-  max-width: calc((100% - 10px) / 2);
+  max-width: calc((100% - 8px) / 2);
 }
 
 .heroInputPicker select {
-  appearance: none;
-  field-sizing: content;
-  max-width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
-  border-radius: 999px;
-  padding: 7px 28px 7px 14px;
-  font: inherit;
-  font-size: 13px;
-  color: #fff;
-  text-overflow: ellipsis;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease;
 }
 
-.heroInputPicker select:hover:not(:disabled) {
+.heroInputButton {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.heroInputText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heroInputButton::after {
+  content: "";
+  flex: 0 0 6px;
+  height: 6px;
+  transform: translateY(-1px) rotate(45deg);
+  border-right: 1px solid rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.heroActions .largeScreenToggle:hover:not(.active),
+.heroRotationPicker:hover:not(:disabled),
+.heroInputPicker select:hover:not(:disabled) + .heroInputButton {
   background: rgba(0, 0, 0, 0.42);
   border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
 }
 
-.heroInputPicker select:focus-visible {
+.heroActions .largeScreenToggle.active {
+  background: #454b75;
+  border-color: rgba(159, 173, 255, 0.52);
+  color: #fff;
+}
+
+.startButton:focus-visible,
+.heroActions .largeScreenToggle:focus-visible,
+.heroRotationPicker:focus-visible,
+.heroInputPicker select:focus-visible + .heroInputButton {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
 
-.heroInputPicker select:disabled {
+.heroInputPicker select:disabled,
+.heroRotationPicker:disabled {
   cursor: not-allowed;
+}
+
+.heroInputPicker select:disabled + .heroInputButton,
+.heroRotationPicker:disabled {
   opacity: 0.5;
 }
 
-.heroInputPicker option {
-  color: var(--text);
-  background: #fff;
+.cameraPresetPicker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
 }
 
-.heroInputPicker::after {
-  content: "";
+.cameraPresetOption {
+  position: relative;
+  min-width: 0;
+}
+
+.cameraPresetOption input {
   position: absolute;
-  width: 6px;
-  height: 6px;
-  top: 50%;
-  right: 13px;
-  transform: translateY(-70%) rotate(45deg);
-  border-right: 1px solid rgba(255, 255, 255, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.8);
-  pointer-events: none;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.cameraPresetOption span {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cameraPresetOption input:checked + span {
+  background: #454545;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.cameraPresetOption input:focus-visible + span {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+.cameraPresetOption input:disabled {
+  cursor: default;
+}
+
+.cameraPresetOption input:disabled:not(:checked) + span {
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cameraPresetOption span {
+    transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+  }
 }
 
 .agreement {
@@ -883,6 +1004,16 @@ button:disabled,
   justify-content: center;
 }
 
+/* 大屏在顶栏和参考图区之间按实际剩余高度布局。 */
+.sessionPage.largeScreen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(120px, 1fr) auto;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 .stage {
   position: absolute;
   top: 50%;
@@ -895,12 +1026,26 @@ button:disabled,
 }
 
 /* 两个视图向中间靠拢，保留双栏间距，作为一个整体居中。 */
-.stageSlot:first-child .stage {
+.localStageSlot .stage {
   right: 0;
 }
 
-.stageSlot:last-child .stage {
+.resultStageSlot .stage {
   left: 0;
+}
+
+.largeScreen .stageRow {
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+}
+
+.largeScreen .resultStageSlot {
+  aspect-ratio: auto;
+}
+
+.largeScreen .stage {
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 /* 远端画面的预热和渐入由 SDK 视频视图统一处理。 */
@@ -1141,23 +1286,6 @@ button:disabled,
 
 /* ── 模式页签与参考图预设 ───────────────────── */
 
-.localFramePreview {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.localFramePreview canvas {
-  width: min(100%, 200px);
-  height: min(14vh, 112px);
-  object-fit: contain;
-  border-radius: 8px;
-  background: #000;
-}
-
 .modeSection {
   margin-top: 34px;
 }
@@ -1379,6 +1507,11 @@ button:disabled,
 
 /* 触屏设备没有真正的 hover，包一层媒体查询避免点按后高亮粘住。 */
 @media (hover: hover) {
+  .cameraPresetOption input:hover:not(:checked, :disabled) + span {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
   .uploadItem:not(:disabled):hover .uploadCircle {
     border-color: var(--accent);
     color: var(--accent);
@@ -1550,23 +1683,11 @@ button:disabled,
     display: none;
   }
 
-  /* 启动按钮与设备选择收窄。 */
-  .startButton {
-    gap: 8px;
-    padding: 10px 20px;
-    font-size: 13px;
+  .heroStage {
+    min-height: 216px;
   }
 
-  .startButton svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .heroActions {
-    gap: 12px;
-  }
-
-  .heroInputPicker select {
+  .heroInputButton {
     font-size: 12px;
   }
 
@@ -1622,13 +1743,13 @@ button:disabled,
     height: 100%;
   }
 
-  .stageRow > .stageSlot:last-child {
+  .stageRow > .resultStageSlot {
     width: 100%;
     height: 100%;
     aspect-ratio: auto;
   }
 
-  .stageRow > .stageSlot:first-child {
+  .stageRow > .localStageSlot {
     position: absolute;
     right: 10px;
     bottom: 10px;
@@ -1639,24 +1760,24 @@ button:disabled,
   }
 
   /* 美颜开启时上移本地小窗，避免遮挡右下角的滑杆。 */
-  .beautyVisible .stageRow > .stageSlot:first-child {
+  .beautyVisible .stageRow > .localStageSlot {
     bottom: 138px;
   }
 
-  .stageSlot:first-child .stage {
+  .localStageSlot .stage {
     border-radius: 14px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 
-  .stageSlot:first-child .stage,
-  .stageSlot:last-child .stage {
+  .localStageSlot .stage,
+  .resultStageSlot .stage {
     left: 50%;
     right: auto;
     transform: translate(-50%, -50%);
   }
 
   /* 小画面放不下角标，移动端隐藏；上行统计面板由 JS 并入大画面左上角。 */
-  .stageSlot:first-child .stageLabel {
+  .localStageSlot .stageLabel {
     display: none;
   }
 
@@ -1678,6 +1799,8 @@ button:disabled,
   .sessionControls {
     gap: 7px;
     margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .sessionPage .topbar {

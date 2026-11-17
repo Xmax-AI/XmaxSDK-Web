@@ -334,6 +334,34 @@ describe("CameraController", () => {
     expect(controller.currentTrack).toBeUndefined();
   });
 
+  it("scales higher-resolution capture to the target and retains capture dimensions on update", async () => {
+    const { controller, env, getUserMedia, rtc, tracks } = makeController();
+    env.video.videoWidth = 3840;
+    env.video.videoHeight = 2160;
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat.resized(1920, 1080),
+      captureFormat: { width: 3840, height: 2160, fps: 60 },
+      camera: RealtimeCamera.position(CameraPosition.back),
+      mirror: false,
+    }, operationSignal);
+    const captureConstraints = {
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+      frameRate: { ideal: 60 },
+      facingMode: { ideal: "environment" },
+    };
+    expect(getUserMedia).toHaveBeenCalledWith({ video: captureConstraints });
+    expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
+    expect(env.canvas).toMatchObject({ width: 1920, height: 1080 });
+    await controller.prepareForConnection(operationSignal);
+    expect(rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: env.output, source: "camera" });
+
+    await controller.updateVideoFormat(defaultFormat, operationSignal);
+    expect(tracks[0]?.applyConstraints).toHaveBeenCalledWith(captureConstraints);
+    expect(env.canvas).toMatchObject({ width: 1080, height: 1920 });
+    await controller.stopLocalCameraStream();
+  });
+
   it("updates capture in place while retaining the SDK track and mounted preview", async () => {
     const { controller, tracks, getUserMedia } = makeController();
     const local = await controller.createLocalCameraStream({

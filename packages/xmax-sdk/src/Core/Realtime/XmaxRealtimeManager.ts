@@ -925,6 +925,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         const {
           preset,
           videoFormat,
+          captureFormat,
           camera = RealtimeCamera.position(CameraPosition.front),
           microphone = RealtimeMicrophone.disabled,
           rotation,
@@ -970,6 +971,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         }
         const cameraOptions = {
           videoFormat: requestedFormat ?? defaultCameraVideoFormat(this.options.model),
+          captureFormat,
           camera,
           microphone,
           rotation,

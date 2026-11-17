@@ -78,9 +78,11 @@ export class CameraController implements CameraControlling {
    */
   private activeTrack?: RealtimeVideoTrack;
 
-  /** The browser device and its fixed media format, independent of uplink adaptation. */
+  /** The active browser camera. */
   private capture?: CameraCapture;
-  private captureFormat?: RealtimeVideoFormat;
+
+  /** The target media format, independent of uplink adaptation. */
+  private targetFormat?: RealtimeVideoFormat;
 
   /** Microphone capture and RTC bindings belong to a connection, rather than to preview. */
   private microphone?: MediaStreamTrack;
@@ -243,7 +245,31 @@ export class CameraController implements CameraControlling {
       );
     }
 
-    const { videoFormat, camera, microphone = RealtimeMicrophone.disabled, rotation = 0, mirror, warmupMs = 0 } = options;
+    const {
+      videoFormat,
+      captureFormat,
+      camera,
+      microphone = RealtimeMicrophone.disabled,
+      rotation = 0,
+      mirror,
+      warmupMs = 0,
+    } = options;
+    if (captureFormat !== undefined && (
+      !captureFormat ||
+      !Number.isInteger(captureFormat.width) || captureFormat.width <= 0 ||
+      !Number.isInteger(captureFormat.height) || captureFormat.height <= 0 ||
+      (captureFormat.fps !== undefined && (!Number.isFinite(captureFormat.fps) || captureFormat.fps <= 0))
+    )) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "Camera capture dimensions must be positive integers and fps must be finite and positive"
+      );
+    }
+    const requestedCaptureFormat = captureFormat && {
+      width: captureFormat.width,
+      height: captureFormat.height,
+      fps: captureFormat.fps,
+    };
     validateCameraRotation(rotation);
     if (!Number.isFinite(warmupMs) || warmupMs < 0) {
       throw new XmaxError(
@@ -283,6 +309,7 @@ export class CameraController implements CameraControlling {
 
       const { capture, track: mediaTrack } = await this.openCapture(
         resolvedFormat,
+        requestedCaptureFormat,
         camera,
         signal
       );
@@ -291,7 +318,7 @@ export class CameraController implements CameraControlling {
         throw new XmaxError(XmaxErrorCode.cancelled, "Camera stream changed during capture");
       }
       this.capture = capture;
-      this.captureFormat = resolvedFormat;
+      this.targetFormat = resolvedFormat;
       track.updatePosition(capture.position);
       track.mediaStreamTrack = mediaTrack;
       this.previewStream = new MediaStream([mediaTrack]);
@@ -381,7 +408,7 @@ export class CameraController implements CameraControlling {
 
     this.capture?.stop();
     this.capture = undefined;
-    this.captureFormat = undefined;
+    this.targetFormat = undefined;
 
     if (track) {
       VideoRenderRegistry.unregister(track);
@@ -418,7 +445,7 @@ export class CameraController implements CameraControlling {
         );
       }
 
-      this.captureFormat = resolved;
+      this.targetFormat = resolved;
       track.updateVideoFormat(resolved);
       track.mediaStreamTrack = mediaTrack;
       if (previous !== mediaTrack) {
@@ -453,7 +480,7 @@ export class CameraController implements CameraControlling {
   async switchCamera(signal: AbortSignal): Promise<RealtimeMediaStream> {
     const track = this.activeTrack;
     const position = track?.position;
-    const format = this.captureFormat;
+    const format = this.targetFormat;
     if (!track || !format) {
       throw new XmaxError(
         XmaxErrorCode.rtcError,
@@ -472,6 +499,7 @@ export class CameraController implements CameraControlling {
 
     const { capture, track: mediaTrack } = await this.openCapture(
       format,
+      this.capture?.captureFormat,
       RealtimeCamera.position(nextPosition),
       signal
     );
@@ -511,12 +539,14 @@ export class CameraController implements CameraControlling {
   /** Reports frame processing failures only for the camera committed as the active input. */
   private async openCapture(
     format: RealtimeVideoFormat,
+    captureFormat: CameraStreamOptions["captureFormat"],
     camera: RealtimeCamera,
     signal: AbortSignal
   ): Promise<{ capture: CameraCapture; track: MediaStreamTrack }> {
     let candidate: CameraCapture | undefined;
     const result = await CameraCapture.open(
       format,
+      captureFormat,
       camera,
       this.storedRotation,
       this.storedMirror,

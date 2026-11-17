@@ -73,7 +73,19 @@ export function CaptureDevicePicker({ kind, devices, selected, disabled, onSelec
   const label = microphone ? "Microphone" : "Camera";
   const inputs = devices.filter(device => device.kind === kind && device.deviceId && device.deviceId !== DEFAULT_INPUT);
   const value = selected === null ? INPUT_OFF : selected === undefined ? DEFAULT_INPUT : DEVICE_PREFIX + selected;
-  const missing = typeof selected === "string" && !inputs.some(device => device.deviceId === selected);
+  const defaultLabel = `Default ${label.toLowerCase()}`;
+  const options: { value: string; text: string; disabled?: boolean }[] = [
+    ...(microphone ? [{ value: INPUT_OFF, text: "Microphone off" }] : []),
+    { value: DEFAULT_INPUT, text: defaultLabel },
+    ...inputs.map((device, index) => ({
+      value: DEVICE_PREFIX + device.deviceId,
+      text: device.label.replace(/\s*\([\da-f]{4}:[\da-f]{4}\)\s*$/i, "") || `${label} ${index + 1}`,
+    })),
+  ];
+  if (typeof selected === "string" && !options.some(option => option.value === value)) {
+    options.push({ value, text: `${label} unavailable`, disabled: true });
+  }
+  const selectedText = options.find(option => option.value === value)?.text ?? defaultLabel;
 
   return (
     <label className="heroInputPicker">
@@ -85,16 +97,14 @@ export function CaptureDevicePicker({ kind, devices, selected, disabled, onSelec
           else if (input === DEFAULT_INPUT) onSelect(undefined);
           else onSelect(input.slice(DEVICE_PREFIX.length));
         }}>
-        {microphone && <option value={INPUT_OFF}>Microphone off</option>}
-        <option value={DEFAULT_INPUT}>Default {label.toLowerCase()}</option>
-        {inputs.map((device, index) => (
-          <option key={device.deviceId} value={DEVICE_PREFIX + device.deviceId}>
-            {device.label.replace(/\s*\([\da-f]{4}:[\da-f]{4}\)\s*$/i, "") || `${label} ${index + 1}`}
-          </option>
+        {options.map(option => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>{option.text}</option>
         ))}
-        {missing && <option value={value} disabled>{label} unavailable</option>}
         {inputs.length === 0 && <option value={ALLOW_ACCESS}>Allow {label.toLowerCase()} access…</option>}
       </select>
+      <span className="heroInputButton" aria-hidden="true">
+        <span className="heroInputText">{selectedText}</span>
+      </span>
     </label>
   );
 }

@@ -13,9 +13,12 @@ import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import { CameraRotationProcessor } from "../../Foundation/Media/Camera/CameraRotationProcessor";
 import { waitForMediaOperation } from "../../Foundation/Media/MediaOperation";
+import type { CreateLocalCameraStreamOptions } from "../../Service/Realtime/CreateLocalCameraStreamOptions";
 import type { RealtimeCamera } from "../../Service/Realtime/RealtimeCamera";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { captureDeviceTrack } from "../CaptureDeviceTrack";
+
+type CaptureFormat = CreateLocalCameraStreamOptions["captureFormat"];
 
 /** The time allowed to identify the system default before using the unknown-facing behavior. */
 const DEFAULT_CAMERA_LOOKUP_TIMEOUT_MS = 1_000;
@@ -28,6 +31,7 @@ export class CameraCapture {
   private constructor(
     private readonly source: MediaStreamTrack,
     readonly position: CameraPosition | undefined,
+    readonly captureFormat: CaptureFormat,
     private readonly rotation: CameraRotation,
     private readonly mirrored: boolean,
     private readonly onError: XmaxErrorListener,
@@ -36,6 +40,7 @@ export class CameraCapture {
   /** Opens the requested camera and prepares the track shared by preview and RTC. */
   static async open(
     format: RealtimeVideoFormat,
+    captureFormat: CaptureFormat,
     camera: RealtimeCamera,
     rotation: CameraRotation,
     mirror: boolean | undefined,
@@ -43,7 +48,7 @@ export class CameraCapture {
     signal: AbortSignal
   ): Promise<{ capture: CameraCapture; track: MediaStreamTrack }> {
     const source = await captureDeviceTrack("video", {
-      ...CameraCapture.constraints(format, rotation),
+      ...CameraCapture.constraints(format, rotation, captureFormat),
       ...(camera.kind === "position"
         ? { facingMode: { ideal: camera.position === CameraPosition.front ? "user" : "environment" } }
         : { deviceId: { exact: camera.id } }),
@@ -64,6 +69,7 @@ export class CameraCapture {
       const capture = new CameraCapture(
         source,
         resolvedPosition,
+        captureFormat,
         rotation,
         mirrored,
         onError
@@ -105,7 +111,10 @@ export class CameraCapture {
   /** Updates the active device without reacquiring it. Keeps its old constraints if preparation fails. */
   async updateFormat(format: RealtimeVideoFormat, signal: AbortSignal): Promise<MediaStreamTrack> {
     const previous = this.source.getConstraints();
-    await this.source.applyConstraints({ ...previous, ...CameraCapture.constraints(format, this.rotation) });
+    await this.source.applyConstraints({
+      ...previous,
+      ...CameraCapture.constraints(format, this.rotation, this.captureFormat),
+    });
     try {
       return await this.output(format, signal);
     } catch (error) {
@@ -130,7 +139,9 @@ export class CameraCapture {
     const { width, height, fps } = format;
     const { width: sourceWidth, height: sourceHeight } = this.source.getSettings();
     const matchesSource = this.rotation === 0 && sourceWidth && sourceHeight &&
-      sourceWidth * height === sourceHeight * width;
+      (this.captureFormat
+        ? sourceWidth === width && sourceHeight === height
+        : sourceWidth * height === sourceHeight * width);
     const outputWidth = this.mirrored && matchesSource ? sourceWidth : width;
     const outputHeight = this.mirrored && matchesSource ? sourceHeight : height;
     if (this.processed) {
@@ -168,12 +179,16 @@ export class CameraCapture {
     }
   }
 
-  private static constraints(format: RealtimeVideoFormat, rotation: CameraRotation): MediaTrackConstraints {
+  private static constraints(
+    format: RealtimeVideoFormat,
+    rotation: CameraRotation,
+    captureFormat: CaptureFormat
+  ): MediaTrackConstraints {
     const quarterTurn = rotation === 90 || rotation === 270;
     return {
-      width: { ideal: quarterTurn ? format.height : format.width },
-      height: { ideal: quarterTurn ? format.width : format.height },
-      frameRate: { ideal: format.fps },
+      width: { ideal: captureFormat?.width ?? (quarterTurn ? format.height : format.width) },
+      height: { ideal: captureFormat?.height ?? (quarterTurn ? format.width : format.height) },
+      frameRate: { ideal: captureFormat?.fps ?? format.fps },
     };
   }
 }

@@ -15,7 +15,7 @@ import type { RealtimeMicrophone } from "./RealtimeMicrophone";
 import type { RealtimeVideoFormat } from "./RealtimeVideoFormat";
 
 /**
- * Options for camera capture. Omit both video settings to use the model's default camera format.
+ * Options for camera capture. Omit the preset and video format to use the model's default target.
  */
 export type CreateLocalCameraStreamOptions = (
   | {
@@ -35,6 +35,12 @@ export type CreateLocalCameraStreamOptions = (
     preset?: never;
   }
 ) & {
+
+  /**
+   * Preferred camera input dimensions before rotation. The browser selects a supported format.
+   * The frame rate defaults to the target frame rate, and the shared video uses the target dimensions.
+   */
+  captureFormat?: Pick<RealtimeVideoFormat, "width" | "height"> & Partial<Pick<RealtimeVideoFormat, "fps">>;
 
   /**
    * The selected camera. Defaults to a front-facing preference.

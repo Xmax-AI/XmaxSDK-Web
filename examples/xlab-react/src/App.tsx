@@ -21,7 +21,7 @@ import {
   type XmaxRealtimeManaging,
   type RealtimeVideoBeautyOptions,
 } from "@xmaxai/web-sdk";
-import { XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
+import { XmaxRealtimeDualVideo, XmaxRealtimeVideo } from "@xmaxai/web-sdk/react";
 import { formatNetworkQuality } from "./formatNetworkQuality";
 import { createRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { EXAMPLE_MODES, faceRestorationForMode, type ExampleModeKey } from "./presets";
@@ -34,7 +34,6 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
 import { CaptureDevicePicker, useCaptureDevices, type CaptureInputKind } from "./CaptureDevicePicker";
-import { LocalFramePreview } from "./LocalFramePreview";
 import { resolveCameraConfiguration } from "./cameraConfiguration";
 import { RemoteRecorder } from "./recording/RemoteRecorder";
 import { RecordingControl, type RecordingStatus } from "./recording/RecordingControl";
@@ -116,6 +115,7 @@ export function App() {
   const [statisticsVisible, setStatisticsVisible] = useState(
     () => !window.matchMedia("(max-width: 720px)").matches,
   );
+  const [largeScreen, setLargeScreen] = useState(false);
   // 窄屏（移动端）会话页为画中画布局，上行统计并入大画面左上角。
   const [isMobileLayout, setIsMobileLayout] = useState(
     () => window.matchMedia("(max-width: 720px)").matches,
@@ -662,7 +662,8 @@ export function App() {
     </footer>
   );
 
-  // 上行统计面板组：桌面端在本地预览画面左上角，移动端并入远端大画面左上角。
+  // 移动端和大屏模式的上行统计并入主画面的统计面板。
+  const showStatisticsOnMainStage = isMobileLayout || largeScreen;
   const localStatisticsPanels = (
     <>
       <StatisticsPanel className="launchTiming" label="启动耗时统计" rows={[
@@ -698,21 +699,6 @@ export function App() {
             <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
           </div>
           <div className="topbarRight">
-            <div className="cameraPickers">
-              <CameraPresetPicker value={cameraConfiguration.preset} presets={cameraConfiguration.presets}
-                disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
-              <div className="rtcModelPicker">
-                <select className="rtcModelSelect" aria-label="Camera rotation" title="Camera rotation (clockwise)"
-                  value={cameraRotation} disabled={busy}
-                  onChange={(event) => setCameraRotation(Number(event.currentTarget.value) as CameraRotation)}>
-                  {CAMERA_ROTATIONS.map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
-                </select>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </div>
-            </div>
             <div className="rtcModelPicker">
               <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
                 onChange={(event) => setModel(event.target.value as RealtimeModel)}>
@@ -811,6 +797,33 @@ export function App() {
                   disabled={busy || requestingAccess} onSelect={setMicrophoneDeviceId}
                   onRequestAccess={handleCaptureAccess} />
               </div>
+              <CameraPresetPicker value={cameraConfiguration.preset} presets={cameraConfiguration.presets}
+                disabled={busy || cameraConfiguration.isPresetLocked} onChange={setCameraPreset} />
+              <div className="heroDisplayControls">
+                <button
+                  type="button"
+                  className={`largeScreenToggle${largeScreen ? " active" : ""}`}
+                  aria-pressed={largeScreen}
+                  aria-controls="session-stage"
+                  title={largeScreen ? "退出大屏" : "大屏"}
+                  onClick={() => setLargeScreen(enabled => !enabled)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5" />
+                  </svg>
+                  大屏
+                </button>
+                <select
+                  className="heroRotationPicker"
+                  aria-label="Camera rotation"
+                  title="Camera rotation (clockwise)"
+                  value={cameraRotation}
+                  disabled={busy}
+                  onChange={(event) => setCameraRotation(Number(event.currentTarget.value) as CameraRotation)}
+                >
+                  {CAMERA_ROTATIONS.map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
+                </select>
+              </div>
             </div>
             <p className="agreement">
               By clicking Start, you agree to our{" "}
@@ -846,7 +859,7 @@ export function App() {
         className={sessionActive ? "pageView active" : "pageView"}
         aria-hidden={!sessionActive}
       >
-    <div className="page sessionPage">
+    <div className={`page sessionPage${largeScreen ? " largeScreen" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <img className="brandLogo" src="/xmax-wordmark.png" alt="Xmax" />
@@ -873,25 +886,34 @@ export function App() {
         </div>
       </header>
 
-      <div className={`stageViewport${beautyEnabled ? " beautyVisible" : ""}`} style={stageStyle}>
+      <div id="session-stage" className={`stageViewport${beautyEnabled ? " beautyVisible" : ""}`} style={stageStyle}>
         <div className="stageRow">
-          <div className="stageSlot">
-            <div className="stage">
-              <XmaxRealtimeVideo
-                track={localStream?.videoTrack}
-                style={{ width: "100%", height: "100%" }}
-              />
-              <span className="stageLabel">Local</span>
-              {!isMobileLayout && (
-                <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
-                  {localStatisticsPanels}
-                </div>
-              )}
+          {!largeScreen && (
+            <div className="stageSlot localStageSlot">
+              <div className="stage">
+                <XmaxRealtimeVideo
+                  track={localStream?.videoTrack}
+                  style={{ width: "100%", height: "100%" }}
+                />
+                <span className="stageLabel">Local</span>
+                {!isMobileLayout && (
+                  <div className="localStatistics" id="local-statistics" hidden={!statisticsVisible}>
+                    {localStatisticsPanels}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="stageSlot">
+          )}
+          <div className="stageSlot resultStageSlot">
             <div className="stage">
-              {remoteStream && (
+              {largeScreen ? (
+                <XmaxRealtimeDualVideo
+                  localTrack={localStream?.videoTrack}
+                  remoteTrack={remoteStream?.videoTrack}
+                  isInteractionEnabled
+                  style={{ width: "100%", height: "100%" }}
+                />
+              ) : remoteStream && (
                 <div className="remoteVideo" key={remoteStream.id}>
                   <XmaxRealtimeVideo
                     track={remoteStream.videoTrack}
@@ -900,9 +922,9 @@ export function App() {
                   />
                 </div>
               )}
-              <span className="stageLabel">Result</span>
+              {!largeScreen && <span className="stageLabel">Result</span>}
               <div className="remoteStatistics" id="remote-statistics" hidden={!statisticsVisible}>
-                {isMobileLayout && localStatisticsPanels}
+                {showStatisticsOnMainStage && localStatisticsPanels}
                 <StatisticsPanel label="下行视频统计" rows={[
                   { label: "下行分辨率", value: formatVideoResolution(remoteVideoStatistics) },
                   { label: "下行帧率", value: formatVideoMetric(remoteVideoStatistics?.decodeFrameRate, "fps") },
@@ -926,8 +948,6 @@ export function App() {
           </div>
         </div>
       </div>
-
-      {sessionActive && realtimeRef.current && <LocalFramePreview realtime={realtimeRef.current} />}
 
       <div className="modeSection">
         <div className="modeTabs">
