@@ -41,18 +41,19 @@ describe("realtime media API", () => {
     expect(XmaxRealtimeManager.prototype.stopExternalVideoStream).toBeTypeOf("function");
   });
 
-  it("accepts either a camera preset or an explicit video format", () => {
-    type CameraOptions = Parameters<XmaxRealtimeManaging["createLocalCameraStream"]>[0];
-    const common = { position: sdk.CameraPosition.front, useMicrophone: false };
-    const preset: CameraOptions = { ...common, preset: sdk.RealtimeCameraPreset.resolution1080x1920 };
-    const format: CameraOptions = { ...common, videoFormat: new sdk.RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24 }) };
+  it("accepts preset, explicit, or default camera formats with typed device selection", () => {
+    type CameraOptions = sdk.CreateLocalCameraStreamOptions;
+    const camera = sdk.RealtimeCamera.position(sdk.CameraPosition.front);
+    const preset: CameraOptions = { preset: sdk.RealtimeCameraPreset.resolution1080x1920, camera };
+    const videoFormat = new sdk.RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24 });
+    const format: CameraOptions = { videoFormat, camera, microphone: sdk.RealtimeMicrophone.systemDefault };
     // @ts-expect-error A preset and an explicit format cannot be combined.
-    const both: CameraOptions = { ...common, preset: sdk.RealtimeCameraPreset.resolution1080x1920, videoFormat: format.videoFormat };
-    // @ts-expect-error A format selector is required.
-    const neither: CameraOptions = common;
+    const both: CameraOptions = { preset: sdk.RealtimeCameraPreset.resolution1080x1920, videoFormat, camera };
+    const neither: CameraOptions = { camera: sdk.RealtimeCamera.device("camera-id") };
     expect(preset.preset).toBe(sdk.RealtimeCameraPreset.resolution1080x1920);
-    expect(format.videoFormat.fps).toBe(24);
+    expect(format.videoFormat?.fps).toBe(24);
     expect(both).toHaveProperty("preset");
+    expect(neither.camera).toEqual({ kind: "device", id: "camera-id" });
     expect(neither).not.toHaveProperty("videoFormat");
   });
 

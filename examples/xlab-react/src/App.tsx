@@ -1,10 +1,11 @@
 import {
-  CameraPosition,
+  RealtimeCamera,
   RealtimeCameraPreset,
   RealtimeConfiguration,
   RealtimeConnectionState,
   RealtimeContext,
   RealtimeModel,
+  RealtimeMicrophone,
   modelDisplayName,
   XmaxClient,
   XmaxConfiguration,
@@ -33,6 +34,7 @@ import { StatisticsPanel } from "./StatisticsPanel";
 import { compressReferenceImage } from "./compressReferenceImage";
 import { CameraPresetPicker } from "./CameraPresetPicker";
 import { CaptureDevicePicker, useCaptureDevices, type CaptureInputKind } from "./CaptureDevicePicker";
+import { LocalFramePreview } from "./LocalFramePreview";
 import { resolveCameraConfiguration } from "./cameraConfiguration";
 import { RemoteRecorder } from "./recording/RemoteRecorder";
 import { RecordingControl, type RecordingStatus } from "./recording/RecordingControl";
@@ -374,12 +376,12 @@ export function App() {
         : { preset: cameraConfiguration.preset };
       const stream = await realtime.createLocalCameraStream({
         ...cameraSource,
-        position: CameraPosition.front,
-        cameraDeviceId,
-        useMicrophone: microphoneDeviceId !== null,
-        microphoneDeviceId: microphoneDeviceId ?? undefined,
+        camera: cameraDeviceId === undefined ? undefined : RealtimeCamera.device(cameraDeviceId),
+        microphone: microphoneDeviceId === null ? RealtimeMicrophone.disabled
+          : microphoneDeviceId === undefined ? RealtimeMicrophone.systemDefault
+          : RealtimeMicrophone.device(microphoneDeviceId),
         rotation: cameraRotation,
-        enableFrameValidation: true
+        warmupMs: 0
       });
       await attachStateListener(realtime, () => {
         switchedToSession = true;
@@ -924,6 +926,8 @@ export function App() {
           </div>
         </div>
       </div>
+
+      {sessionActive && realtimeRef.current && <LocalFramePreview realtime={realtimeRef.current} />}
 
       <div className="modeSection">
         <div className="modeTabs">

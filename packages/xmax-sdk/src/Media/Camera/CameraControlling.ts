@@ -8,8 +8,9 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
-import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
+import type { CreateLocalCameraStreamOptions } from "../../Service/Realtime/CreateLocalCameraStreamOptions";
+import type { RealtimeCamera } from "../../Service/Realtime/RealtimeCamera";
+import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
 import type { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTrack";
@@ -20,6 +21,14 @@ import type { RealtimeVideoTrack } from "../../Service/Realtime/RealtimeVideoTra
 export type CameraPreviewReadyHandler = (
   isCurrent: () => boolean
 ) => void;
+
+/**
+ * Capture options with the video format resolved by Core.
+ */
+export type CameraStreamOptions = Omit<CreateLocalCameraStreamOptions, "preset" | "videoFormat" | "camera"> & {
+  videoFormat: RealtimeVideoFormat;
+  camera: RealtimeCamera;
+};
 
 /**
  * Local camera, microphone configuration, and preview resource management.
@@ -37,14 +46,21 @@ export interface CameraControlling {
   readonly useMicrophone: boolean;
 
   /**
-   * Whether pre-publication camera warmup is enabled.
+   * The camera warmup before publication, in milliseconds.
    */
-  readonly isFrameValidationEnabled: boolean;
+  readonly warmupMs: number;
 
   /**
-   * Waits for the fixed 200 ms warmup, rejecting cancellation or track replacement.
+   * Observes captured camera and microphone frames.
    */
-  waitForValidCameraFrame(
+  setLocalMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void>;
+
+  /**
+   * Waits for camera warmup, rejecting cancellation or track replacement.
+   */
+  waitForCameraWarmup(
     signal: AbortSignal
   ): Promise<void>;
 
@@ -58,26 +74,10 @@ export interface CameraControlling {
   /**
    * Creates and starts local camera media.
    *
-   * @param options.videoFormat - The post-rotation format, resolved by model rules.
-   * @param options.position - The camera position.
-   * @param options.cameraDeviceId - The exact browser camera ID, if selected.
-   * @param options.useMicrophone - Whether to capture and publish microphone audio.
-   * @param options.microphoneDeviceId - The exact browser microphone ID, if selected.
-   * @param options.rotation - Clockwise rotation; defaults to 0.
-   * @param options.enableFrameValidation - Whether to wait for warmup; defaults to true and persists
-   * across switching and reconnection.
    * @throws Rejects for active capture, invalid settings, denied permission, or capture-start failure.
    */
   createLocalCameraStream(
-    options: {
-      videoFormat: RealtimeVideoFormat;
-      position: CameraPosition;
-      cameraDeviceId?: string;
-      useMicrophone: boolean;
-      microphoneDeviceId?: string;
-      rotation?: CameraRotation;
-      enableFrameValidation?: boolean;
-    },
+    options: CameraStreamOptions,
     signal: AbortSignal
   ): Promise<RealtimeMediaStream>;
 

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { waitForValidCameraFrame } from "../src/Foundation/Media/Camera/CameraFrameValidator";
+import { waitForCameraWarmup } from "../src/Foundation/Media/Camera/CameraWarmup";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 
-function setup() {
+function setup(warmupMs = 200) {
   vi.useFakeTimers();
   const track = Object.assign(new EventTarget(), { readyState: "live", stop: vi.fn() });
   const controller = new AbortController();
-  const start = () => waitForValidCameraFrame(track as unknown as MediaStreamTrack, controller.signal);
+  const start = () => waitForCameraWarmup(track as unknown as MediaStreamTrack, warmupMs, controller.signal);
   return { track, controller, start };
 }
 
@@ -15,11 +15,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("waitForValidCameraFrame", () => {
-  it("固定等待 200ms 后放行", async () => {
-    const s = setup();
+describe("waitForCameraWarmup", () => {
+  it.each([75, 200])("waits the configured %s ms", async warmupMs => {
+    const s = setup(warmupMs);
     const pending = s.start();
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(warmupMs);
     await expect(pending).resolves.toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });

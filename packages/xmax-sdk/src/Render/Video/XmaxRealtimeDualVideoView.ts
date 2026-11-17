@@ -217,7 +217,7 @@ export class XmaxRealtimeDualVideoView {
   }
 
   /**
-   * Whether local preview is mirrored.
+   * Whether display adds a horizontal flip to the local track.
    */
   get isLocalMirrored(): boolean {
     return this.localVideoView.isMirrored;

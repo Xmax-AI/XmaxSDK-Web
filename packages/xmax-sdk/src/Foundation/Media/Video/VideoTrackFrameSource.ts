@@ -1,5 +1,5 @@
 //
-//  RemoteVideoFrameSource.ts
+//  VideoTrackFrameSource.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -11,9 +11,9 @@
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
- * An original decoded frame and its continuity information.
+ * An observed video frame and its continuity information.
  */
-export interface RemoteVideoPacket {
+export interface VideoTrackFramePacket {
 
   /**
    * The copied frame whose ownership passes to the caller.
@@ -28,9 +28,9 @@ export interface RemoteVideoPacket {
 
 /**
  * Observes an original track through a separate muted video element, independently of SDK views.
- * Presentation callbacks do not guarantee observation of every received or decoded frame.
+ * Presentation callbacks can skip frames.
  */
-export class RemoteVideoFrameSource {
+export class VideoTrackFrameSource {
 
   /**
    * The video element used for independent frame observation.
@@ -53,13 +53,12 @@ export class RemoteVideoFrameSource {
   private onEnded?: () => void;
 
   /**
-   * Starts original-video observation without affecting the main player; the owner isolates observation
-   * failures.
+   * Starts video observation independently of other uses of the borrowed track.
    */
   start(
     track: MediaStreamTrack,
     listener: (
-      packet: RemoteVideoPacket
+      packet: VideoTrackFramePacket
     ) => void,
     onError: (
       error: unknown
@@ -70,7 +69,7 @@ export class RemoteVideoFrameSource {
       typeof HTMLVideoElement.prototype.requestVideoFrameCallback !== "function") {
       throw new XmaxError(
         XmaxErrorCode.mediaError,
-        "Remote video frames require VideoFrame and requestVideoFrameCallback"
+        "Video frame observers require VideoFrame and requestVideoFrameCallback"
       );
     }
     const video = document.createElement("video");

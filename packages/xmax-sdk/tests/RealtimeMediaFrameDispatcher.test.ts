@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RealtimeMediaFrameDispatcher } from "../src/Render/Video/RealtimeMediaFrameDispatcher";
+import { RealtimeMediaFrameDispatcher } from "../src/Media/RealtimeMediaFrameDispatcher";
 import type { RealtimeMediaFrame } from "../src/Service/Realtime/RealtimeMediaFrame";
 
 function video(pts: number): RealtimeMediaFrame {

@@ -1,5 +1,5 @@
 //
-//  CameraFrameValidator.ts
+//  CameraWarmup.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -11,16 +11,17 @@
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 
 /**
- * The fixed camera startup wait covering initial capture and exposure adjustment before RTC publication.
+ * The longest delay supported by browser timers.
  */
-const CAMERA_WARMUP_MS = 200;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 /**
- * Waits a fixed interval for camera startup without brightness analysis, image storage, or stopping the
- * source track. Cancellation or track termination rejects immediately and releases listeners and timers.
+ * Waits for camera startup and exposure adjustment. Cancellation and track termination reject
+ * immediately and release listeners and timers.
  */
-export function waitForValidCameraFrame(
+export function waitForCameraWarmup(
   track: MediaStreamTrack,
+  warmupMs: number,
   signal: AbortSignal
 ): Promise<void> {
   return new Promise<void>((
@@ -78,9 +79,13 @@ export function waitForValidCameraFrame(
       return;
     }
 
-    timer = setTimeout(
-      () => finish(),
-      CAMERA_WARMUP_MS
-    );
+    const schedule = (remaining: number) => {
+      const delay = Math.min(remaining, MAX_TIMER_DELAY_MS);
+      timer = setTimeout(
+        () => remaining > delay ? schedule(remaining - delay) : finish(),
+        delay
+      );
+    };
+    schedule(warmupMs);
   });
 }

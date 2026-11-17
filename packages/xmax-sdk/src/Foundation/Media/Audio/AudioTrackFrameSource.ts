@@ -1,5 +1,5 @@
 //
-//  RemoteAudioFrameSource.ts
+//  AudioTrackFrameSource.ts
 //  XmaxSDK
 //
 //  Author: 翁跃庭 (Yueting Weng)
@@ -12,9 +12,9 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { REMOTE_AUDIO_WORKLET } from "./RemoteAudioWorklet";
 
 /**
- * A copied PCM packet and its receiver presentation timestamp.
+ * A copied PCM packet and its presentation timestamp.
  */
-export interface RemoteAudioPacket {
+export interface AudioTrackFramePacket {
 
   /**
    * The interleaved S16LE sample bytes.
@@ -48,10 +48,9 @@ export interface RemoteAudioPacket {
 }
 
 /**
- * Reads original remote audio through a separate muted graph without changing RTC playback volume or
- * subscriptions.
+ * Reads a borrowed audio track through a muted graph without changing capture or playback.
  */
-export class RemoteAudioFrameSource {
+export class AudioTrackFrameSource {
 
   /**
    * The audio context owning the current input graph.
@@ -103,7 +102,7 @@ export class RemoteAudioFrameSource {
     if (typeof AudioContext === "undefined" || typeof AudioWorkletNode === "undefined") {
       throw new XmaxError(
         XmaxErrorCode.mediaError,
-        "Remote PCM frames require AudioWorklet support"
+        "PCM frame observation requires AudioWorklet support"
       );
     }
 
@@ -115,7 +114,7 @@ export class RemoteAudioFrameSource {
       if (!context.audioWorklet) {
         throw new XmaxError(
           XmaxErrorCode.mediaError,
-          "Remote PCM frames require a secure context with AudioWorklet"
+          "PCM frame observation requires a secure context with AudioWorklet"
         );
       }
       const resumed = context.resume();
@@ -130,7 +129,7 @@ export class RemoteAudioFrameSource {
       if (context.state !== "running") {
         throw new XmaxError(
           XmaxErrorCode.mediaError,
-          "Start remote media observation from a user gesture to unlock audio"
+          "Start media observation from a user gesture to unlock audio"
         );
       }
     } catch (error) {
@@ -150,7 +149,7 @@ export class RemoteAudioFrameSource {
   setTrack(
     track: MediaStreamTrack | undefined,
     listener: (
-      packet: RemoteAudioPacket
+      packet: AudioTrackFramePacket
     ) => void
   ): void {
     this.disconnect();
@@ -246,7 +245,7 @@ export class RemoteAudioFrameSource {
   private convert(
     value: unknown,
     context: AudioContext
-  ): RemoteAudioPacket | undefined {
+  ): AudioTrackFramePacket | undefined {
     const raw = value as {
       data?: ArrayBuffer;
       sampleRate?: number;
@@ -305,13 +304,13 @@ export class RemoteAudioFrameSource {
       const timer = setTimeout(
         () => finish(new XmaxError(
           XmaxErrorCode.timeout,
-          "Remote audio initialization timed out; call setRemoteMediaFrameListener from a user gesture"
+          "Audio frame initialization timed out. Register the frame listener from a user gesture"
         )),
         3000
       );
       const abort = () => finish(new XmaxError(
         XmaxErrorCode.cancelled,
-        "Remote media observation cancelled"
+        "Audio frame observation cancelled"
       ));
       const finish = (error?: unknown) => {
         clearTimeout(timer);

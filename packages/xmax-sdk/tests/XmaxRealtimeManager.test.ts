@@ -1,3 +1,5 @@
+import { RealtimeCamera } from "../src/Service/Realtime/RealtimeCamera";
+import { RealtimeMicrophone } from "../src/Service/Realtime/RealtimeMicrophone";
 import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import type { ApiServicing } from "../src/Service/Network/ApiServicing";
 import { RemoteMediaFrameController } from "../src/Render/Video/RemoteMediaFrameController";
@@ -15,11 +17,11 @@ import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNet
 import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
-import type { CameraControlling, CameraPreviewReadyHandler } from "../src/Media/Camera/CameraControlling";
+import type { CameraControlling, CameraPreviewReadyHandler, CameraStreamOptions } from "../src/Media/Camera/CameraControlling";
 import { RealtimeConfiguration } from "../src/Core/Realtime/RealtimeConfiguration";
 import { RealtimeCameraPreset, cameraPresetSize } from "../src/Service/Realtime/RealtimeCameraPreset";
 import { RealtimeQualityLevel } from "../src/Stream/Quality/RealtimeQualityLevel";
-import { RealtimeModel, supportedVideoFormats } from "../src/Service/Realtime/RealtimeModel";
+import { RealtimeModel, defaultCameraVideoFormat, supportedVideoFormats } from "../src/Service/Realtime/RealtimeModel";
 import { XmaxRealtimeManager } from "../src/Core/Realtime/XmaxRealtimeManager";
 import { RealtimeContext } from "../src/Service/Realtime/RealtimeContext";
 import { RealtimeMediaStream } from "../src/Service/Realtime/RealtimeMediaStream";
@@ -92,10 +94,11 @@ const testVideoFormat = new RealtimeVideoFormat({
 class CameraControllingStub implements CameraControlling {
   currentTrack?: RealtimeVideoTrack;
   useMicrophone = true;
-  isFrameValidationEnabled = true;
+  warmupMs = 0;
   stopCalls = 0;
   previewReadyHandler?: CameraPreviewReadyHandler;
-  waitForValidCameraFrame = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
+  waitForCameraWarmup = vi.fn(async (_signal: AbortSignal): Promise<void> => {});
+  setLocalMediaFrameListener = vi.fn(async (..._args: Parameters<CameraControlling["setLocalMediaFrameListener"]>) => {});
   async prepareForConnection(): Promise<void> {}
   async releaseConnectionMedia(): Promise<void> {}
   updateVideoFormat = vi.fn(async (format: RealtimeVideoFormat): Promise<void> => {
@@ -106,12 +109,13 @@ class CameraControllingStub implements CameraControlling {
     this.previewReadyHandler = handler;
   }
 
-  async createLocalCameraStream(options?: { enableFrameValidation?: boolean; videoFormat?: RealtimeVideoFormat }): Promise<RealtimeMediaStream> {
-    this.isFrameValidationEnabled = options?.enableFrameValidation ?? true;
+  async createLocalCameraStream(options: CameraStreamOptions): Promise<RealtimeMediaStream> {
+    this.warmupMs = options.warmupMs ?? 0;
+    this.useMicrophone = options.microphone !== undefined && options.microphone.kind !== "disabled";
     const track = new RealtimeVideoTrack({
       id: "video0",
-      videoFormat: options?.videoFormat ?? testVideoFormat,
-      position: CameraPosition.front,
+      videoFormat: options.videoFormat,
+      position: options.camera.kind === "position" ? options.camera.position : undefined,
     });
     this.currentTrack = track;
     return new RealtimeMediaStream({ id: StreamID.local, videoTrack: track });
@@ -132,6 +136,7 @@ class CameraControllingStub implements CameraControlling {
 
   /** 准备一条由该控制器持有的本地轨道。 */
   makeActiveTrack(): RealtimeVideoTrack {
+    this.warmupMs = 200;
     const track = new RealtimeVideoTrack({
       id: "video0",
       videoFormat: testVideoFormat,
@@ -364,8 +369,8 @@ describe("resolved media size observation", () => {
     const s = makeManager();
     const local = await s.manager.createLocalCameraStream({
       videoFormat: testVideoFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     });
     s.camera.previewReadyHandler?.(() => true);
     await vi.waitFor(() => expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready));
@@ -378,7 +383,7 @@ describe("resolved media size observation", () => {
     s.manager.setResolvedMediaSizeListener(listener);
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenLastCalledWith(undefined);
-    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled });
     expect(listener).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
     const snapshot = listener.mock.lastCall![0];
     expect(Object.isFrozen(snapshot)).toBe(true);
@@ -430,7 +435,7 @@ describe("resolved media size observation", () => {
     const listener = vi.fn();
     s.manager.setResolvedMediaSizeListener(listener);
     await s.manager.close();
-    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled });
     expect(listener.mock.calls.map(call => call[0])).toEqual([
       { width: 1280, height: 720 }, undefined, { width: 1280, height: 720 },
     ]);
@@ -443,7 +448,7 @@ describe("resolved media size observation", () => {
       if (mode === "throw") throw new Error("observer failed");
       return Promise.reject(new Error("observer failed"));
     });
-    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false });
+    await s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled });
     await s.manager.close();
   });
 
@@ -452,7 +457,7 @@ describe("resolved media size observation", () => {
     const listener = vi.fn();
     s.manager.setResolvedMediaSizeListener(listener);
     vi.spyOn(s.camera, "createLocalCameraStream").mockRejectedValueOnce(new Error("capture failed"));
-    await expect(s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toThrow("capture failed");
+    await expect(s.manager.createLocalCameraStream({ videoFormat: testVideoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled })).rejects.toThrow("capture failed");
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenLastCalledWith(undefined);
     await s.manager.close();
@@ -470,10 +475,10 @@ describe("XmaxRealtimeManager camera formats", () => {
     const s = makeManager(model);
     const create = vi.spyOn(s.camera, "createLocalCameraStream");
     const local = await s.manager.createLocalCameraStream({
-      preset, position: CameraPosition.back, useMicrophone: true, enableFrameValidation: false,
+      preset, camera: RealtimeCamera.position(CameraPosition.back), microphone: RealtimeMicrophone.systemDefault, warmupMs: 0,
     });
-    expect(create).toHaveBeenCalledWith({ videoFormat: expected, position: CameraPosition.back,
-      useMicrophone: true, enableFrameValidation: false }, expect.any(AbortSignal));
+    expect(create).toHaveBeenCalledWith({ videoFormat: expected, camera: RealtimeCamera.position(CameraPosition.back),
+      microphone: RealtimeMicrophone.systemDefault, warmupMs: 0 }, expect.any(AbortSignal));
     expect(create.mock.calls[0]![0]).not.toHaveProperty("preset");
     expect(local.videoTrack?.videoFormat).toEqual(expected);
     expect(s.manager.currentCameraPreset).toBe(preset);
@@ -491,7 +496,7 @@ describe("XmaxRealtimeManager camera formats", () => {
       const s = makeManager(model);
       const create = vi.spyOn(s.camera, "createLocalCameraStream");
       await expect(s.manager.createLocalCameraStream({ preset: preset as RealtimeCameraPreset,
-        position: CameraPosition.front, useMicrophone: false })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+        camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
       expect(create).not.toHaveBeenCalled();
       expect(s.rtc.initialize).not.toHaveBeenCalled();
       expect(s.session.createCalls).toBe(0);
@@ -499,13 +504,41 @@ describe("XmaxRealtimeManager camera formats", () => {
     }
   });
 
-  it("requires JavaScript callers to supply exactly one format selector", async () => {
-    type Options = Parameters<XmaxRealtimeManager["createLocalCameraStream"]>[0];
-    const common = { position: CameraPosition.front, useMicrophone: false };
-    for (const options of [common, { ...common, videoFormat: testVideoFormat, preset: RealtimeCameraPreset.resolution1080x1920 }]) {
+  it.each([undefined, RealtimeCamera.device("camera-id")])(
+    "opens a camera with the default video format and microphone disabled using selection %s",
+    async camera => {
       const s = makeManager();
       const create = vi.spyOn(s.camera, "createLocalCameraStream");
-      await expect(s.manager.createLocalCameraStream(options as Options)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+      const stream = await s.manager.createLocalCameraStream(camera && { camera });
+      const expected = defaultCameraVideoFormat(RealtimeModel.x2_1);
+      expect(create).toHaveBeenCalledWith({
+        camera: camera ?? RealtimeCamera.position(CameraPosition.front),
+        microphone: RealtimeMicrophone.disabled,
+        videoFormat: expected,
+      }, expect.any(AbortSignal));
+      expect(stream.videoTrack?.videoFormat).toEqual(expected);
+      await s.manager.close();
+    }
+  );
+
+  it("uses a front-facing camera when only a preset is supplied", async () => {
+    const s = makeManager();
+    const local = await s.manager.createLocalCameraStream({ preset: RealtimeCameraPreset.resolution1080x1920 });
+    expect(local.videoTrack?.position).toBe(CameraPosition.front);
+    expect(local.videoTrack?.videoFormat).toMatchObject({ width: 1080, height: 1920 });
+    await s.manager.close();
+  });
+
+  it("rejects competing format selectors and legacy position-only input from JavaScript", async () => {
+    type Options = Parameters<XmaxRealtimeManager["createLocalCameraStream"]>[0];
+    const common = { camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled };
+    for (const options of [
+      { position: CameraPosition.front, videoFormat: testVideoFormat },
+      { ...common, videoFormat: testVideoFormat, preset: RealtimeCameraPreset.resolution1080x1920 },
+    ]) {
+      const s = makeManager();
+      const create = vi.spyOn(s.camera, "createLocalCameraStream");
+      await expect(s.manager.createLocalCameraStream(options as unknown as Options)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
       expect(create).not.toHaveBeenCalled();
       await s.manager.close();
     }
@@ -514,7 +547,7 @@ describe("XmaxRealtimeManager camera formats", () => {
   async function preview() {
     const s = makeManager();
     const format = new RealtimeVideoFormat({ width: 1080, height: 1920, fps: 24, minimumBitrate: 1000, maximumBitrate: 4000 });
-    const local = await s.manager.createLocalCameraStream({ videoFormat: format, position: CameraPosition.front, useMicrophone: false });
+    const local = await s.manager.createLocalCameraStream({ videoFormat: format, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled });
     s.camera.previewReadyHandler?.(() => true);
     await vi.waitFor(() => expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready));
     return { ...s, local, format };
@@ -1554,7 +1587,7 @@ describe("XmaxRealtimeManager external video", () => {
     expect(s.camera.currentTrack).toBeUndefined();
     await s.manager.connect(local);
     expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false });
-    expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(s.camera.waitForCameraWarmup).not.toHaveBeenCalled();
     expect(s.stream.encoderConfigFormats[0]).toEqual(provider === RtcProvider.agora
       ? new RealtimeVideoFormat({ ...videoFormat, width: 972, height: 1728, fps: 24 })
       : provider === RtcProvider.vertc ? videoFormat : new RealtimeVideoFormat({ ...videoFormat, fps: 24 }));
@@ -1641,7 +1674,7 @@ describe("XmaxRealtimeManager external video", () => {
     const s = setup();
     await s.manager.createExternalVideoStream(s.options);
     await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("Close the current local stream");
-    await expect(s.manager.createLocalCameraStream({ videoFormat, position: CameraPosition.front, useMicrophone: false })).rejects.toThrow("Close the current local stream");
+    await expect(s.manager.createLocalCameraStream({ videoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled })).rejects.toThrow("Close the current local stream");
     expect(s.clone.stop).not.toHaveBeenCalled();
     await s.manager.close();
   });
@@ -1831,7 +1864,7 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.stream.encoderConfigFormats).toEqual([provider === RtcProvider.agora
       ? new RealtimeVideoFormat({ ...options.videoFormat, width: 1728, height: 972, fps: 24 })
       : provider === RtcProvider.trtc ? new RealtimeVideoFormat({ ...options.videoFormat, fps: 24 }) : options.videoFormat]);
-    expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(s.camera.waitForCameraWarmup).not.toHaveBeenCalled();
     expect(s.start).not.toHaveBeenCalled();
 
     const generating = s.manager.startGeneration({ localStream: local, context: testContext });
@@ -1964,7 +1997,7 @@ describe("XmaxRealtimeManager local image", () => {
       expect(s.manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
       await s.manager.connect(local);
       expect(s.stream.connectCalls[0]).toMatchObject({ includeLocalAudio: false });
-      expect(s.camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+      expect(s.camera.waitForCameraWarmup).not.toHaveBeenCalled();
 
       const generating = s.manager.startGeneration({ localStream: local, context: testContext });
       await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(1));
@@ -2492,8 +2525,9 @@ describe("XmaxRealtimeManager launch timing", () => {
 
   const cameraOptions = {
     videoFormat: testVideoFormat,
-    position: CameraPosition.front,
-    useMicrophone: false,
+    camera: RealtimeCamera.position(CameraPosition.front),
+    microphone: RealtimeMicrophone.disabled,
+    warmupMs: 200,
   };
 
   it.each([80, 300, 2_000])("并行预热 %s ms 不计入会话和进房，实际等待保留在总耗时中", async (validationMs) => {
@@ -2503,14 +2537,14 @@ describe("XmaxRealtimeManager launch timing", () => {
     const snapshots: RealtimeTiming[] = [];
     await manager.setTimingListener((timing) => snapshots.push(timing));
     const originalCreate = camera.createLocalCameraStream.bind(camera);
-    vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async () => {
+    vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async (options) => {
       now = 50;
-      return originalCreate();
+      return originalCreate(options);
     });
     const sessionReady = makeDeferred<RealtimeSession>();
     const validationReady = makeDeferred<void>();
     const createSession = vi.spyOn(session, "createSession").mockReturnValue(sessionReady.promise);
-    camera.waitForValidCameraFrame.mockReturnValue(validationReady.promise);
+    camera.waitForCameraWarmup.mockReturnValue(validationReady.promise);
     const originalConnect = stream.connect.bind(stream);
     vi.spyOn(stream, "connect").mockImplementation(async (...args) => {
       await originalConnect(...args);
@@ -2559,7 +2593,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     const snapshots: RealtimeTiming[] = [];
     await manager.setTimingListener((timing) => snapshots.push(timing));
     const ready = makeDeferred<void>();
-    camera.waitForValidCameraFrame.mockReturnValue(ready.promise);
+    camera.waitForCameraWarmup.mockReturnValue(ready.promise);
     const localStream = await manager.createLocalCameraStream(cameraOptions);
     const pending = manager.connect(localStream);
     const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
@@ -2632,9 +2666,9 @@ describe("XmaxRealtimeManager launch timing", () => {
     expect(snapshots).toEqual([{}]);
 
     const createCamera = camera.createLocalCameraStream.bind(camera);
-    vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async () => {
+    vi.spyOn(camera, "createLocalCameraStream").mockImplementation(async (options) => {
       now += 250;
-      return createCamera();
+      return createCamera(options);
     });
     vi.spyOn(session, "createSession").mockImplementation(async () => {
       now += 120;
@@ -2714,7 +2748,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     const { manager } = makeManager();
     const listener = vi.fn();
     await manager.setTimingListener(listener);
-    const localStream = await manager.createLocalCameraStream({ ...cameraOptions, enableFrameValidation: false });
+    const localStream = await manager.createLocalCameraStream({ ...cameraOptions, warmupMs: 0 });
     await manager.connect(localStream);
     expect(listener.mock.calls.at(-1)![0]).toEqual({ cameraMs: expect.any(Number), sessionMs: expect.any(Number), rtcJoinMs: expect.any(Number), publishMs: expect.any(Number) });
     await manager.close();
@@ -2958,14 +2992,14 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
 });
 
 describe("XmaxRealtimeManager connect", () => {
-  it.each([undefined, true, false])("相机预热开关 %s 控制生成和重连，禁用时预热不参与连接", async (enableFrameValidation) => {
+  it.each([undefined, 200, 0])("相机预热时长 %s 控制生成和重连", async (warmupMs) => {
     const { manager, camera, stream } = makeManager();
     const snapshots: RealtimeTiming[] = [];
     await manager.setTimingListener((timing) => snapshots.push(timing));
     const create = vi.spyOn(camera, "createLocalCameraStream");
     const options = {
-      videoFormat: testVideoFormat, position: CameraPosition.front, useMicrophone: false,
-      enableFrameValidation,
+      videoFormat: testVideoFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled,
+      warmupMs,
     };
     const localStream = await manager.createLocalCameraStream(options);
     expect(create).toHaveBeenCalledWith(options, expect.any(AbortSignal));
@@ -2973,15 +3007,15 @@ describe("XmaxRealtimeManager connect", () => {
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
     stream.confirmationDeferreds[0]!.resolve();
     await pending;
-    if (enableFrameValidation === false) {
-      expect(camera.waitForValidCameraFrame).not.toHaveBeenCalled();
+    if (!warmupMs) {
+      expect(camera.waitForCameraWarmup).not.toHaveBeenCalled();
     } else {
-      expect(camera.waitForValidCameraFrame).toHaveBeenCalledOnce();
+      expect(camera.waitForCameraWarmup).toHaveBeenCalledOnce();
     }
     expect(snapshots.at(-1)?.rtcJoinMs).toEqual(expect.any(Number));
     await manager.disconnect();
     await manager.connect(localStream);
-    expect(camera.waitForValidCameraFrame).toHaveBeenCalledTimes(enableFrameValidation === false ? 0 : 2);
+    expect(camera.waitForCameraWarmup).toHaveBeenCalledTimes(warmupMs ? 2 : 0);
     await manager.close();
   });
 
@@ -2989,7 +3023,7 @@ describe("XmaxRealtimeManager connect", () => {
     vi.useFakeTimers();
     try {
       const { manager, camera, stream, session } = makeManager();
-      camera.waitForValidCameraFrame.mockImplementation(() =>
+      camera.waitForCameraWarmup.mockImplementation(() =>
         new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
       );
       const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext });
@@ -3013,7 +3047,7 @@ describe("XmaxRealtimeManager connect", () => {
   it("曝光与会话进房并行，但未就绪时不开始生成", async () => {
     const { manager, camera, stream, session } = makeManager();
     const ready = makeDeferred<void>();
-    camera.waitForValidCameraFrame.mockImplementation(() => ready.promise);
+    camera.waitForCameraWarmup.mockImplementation(() => ready.promise);
     const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext });
     await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
     expect(session.createCalls).toBe(1);
@@ -3029,7 +3063,7 @@ describe("XmaxRealtimeManager connect", () => {
   it("采样失败清理连接而保留相机，重试重新检查", async () => {
     const { manager, camera, stream, session } = makeManager();
     const local = makeLocalStream(camera);
-    camera.waitForValidCameraFrame.mockRejectedValueOnce(
+    camera.waitForCameraWarmup.mockRejectedValueOnce(
       new XmaxError(XmaxErrorCode.mediaError, "sampling failed"),
     );
     await expect(manager.startGeneration({ localStream: local, context: testContext }))
@@ -3038,13 +3072,13 @@ describe("XmaxRealtimeManager connect", () => {
     expect(session.closedSessionIDs).toEqual(["session-1"]);
     expect(camera.stopCalls).toBe(0);
     await manager.connect(local);
-    expect(camera.waitForValidCameraFrame).toHaveBeenCalledTimes(2);
+    expect(camera.waitForCameraWarmup).toHaveBeenCalledTimes(2);
     await manager.close();
   });
 
   it("关闭立即取消曝光等待，不发送生成信令", async () => {
     const { manager, camera, stream } = makeManager();
-    camera.waitForValidCameraFrame.mockImplementation((signal) => new Promise((_, reject) => {
+    camera.waitForCameraWarmup.mockImplementation((signal) => new Promise((_, reject) => {
       signal.addEventListener("abort", () => reject(new XmaxError(XmaxErrorCode.cancelled, "cancelled")));
     }));
     const pending = manager.startGeneration({ localStream: makeLocalStream(camera), context: testContext });
@@ -3052,18 +3086,18 @@ describe("XmaxRealtimeManager connect", () => {
     await vi.waitFor(() => expect(stream.connectCalls).toHaveLength(1));
     await manager.close();
     await rejected;
-    expect(camera.waitForValidCameraFrame.mock.calls[0]![0].aborted).toBe(true);
+    expect(camera.waitForCameraWarmup.mock.calls[0]![0].aborted).toBe(true);
     expect(stream.beginCalls).toHaveLength(0);
   });
 
   it("会话失败取消仍在运行的曝光检查", async () => {
     const { manager, camera, session } = makeManager();
     session.failCreate = new XmaxError(XmaxErrorCode.networkError, "offline");
-    camera.waitForValidCameraFrame.mockImplementation((signal) => new Promise((_, reject) => {
+    camera.waitForCameraWarmup.mockImplementation((signal) => new Promise((_, reject) => {
       signal.addEventListener("abort", () => reject(new XmaxError(XmaxErrorCode.cancelled, "cancelled")));
     }));
     await expect(manager.connect(makeLocalStream(camera))).rejects.toMatchObject({ code: XmaxErrorCode.networkError });
-    expect(camera.waitForValidCameraFrame.mock.calls[0]![0].aborted).toBe(true);
+    expect(camera.waitForCameraWarmup.mock.calls[0]![0].aborted).toBe(true);
     await manager.close();
   });
 
@@ -3258,6 +3292,16 @@ describe("XmaxRealtimeManager startGeneration", () => {
     expect(capture).toHaveBeenLastCalledWith(undefined);
     expect(s.stream.remoteMediaListener).toBeUndefined();
     vi.restoreAllMocks();
+  });
+
+  it("registers local frame observation independently of generation and removes it on close", async () => {
+    const s = makeManager();
+    const listener = vi.fn();
+    await s.manager.setLocalMediaFrameListener(listener);
+    expect(s.camera.setLocalMediaFrameListener).toHaveBeenLastCalledWith(listener);
+    expect(s.stream.beginCalls).toHaveLength(0);
+    await s.manager.close();
+    expect(s.camera.setLocalMediaFrameListener).toHaveBeenLastCalledWith(undefined);
   });
 
   it("rejects unsupported remote audio observation without changing the session", async () => {
@@ -3467,13 +3511,13 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await manager.close();
   });
 
-  it.each([CameraPosition.front, CameraPosition.back])("sends backend mirror according to camera position %s without mirroring the result", async (position) => {
+  it.each([CameraPosition.front, CameraPosition.back])("leaves backend and result-view mirroring disabled for camera position %s", async (position) => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
     localStream.videoTrack!.updatePosition(position);
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-    expect(stream.beginCalls[0]!.mirror).toBe(position === CameraPosition.front);
+    expect(stream.beginCalls[0]!.mirror).toBe(false);
     stream.confirmationDeferreds[0]!.resolve();
     const remote = await pending;
     const view = { isMirrored: true, setMediaStream: vi.fn() };

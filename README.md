@@ -200,7 +200,7 @@ Create a camera stream, start realtime generation, and display the result:
 ```javascript
 import {
   CameraPosition, RealtimeConfiguration, RealtimeContext, RealtimeModel,
-  RealtimeCameraPreset, XmaxClient, XmaxConfiguration, XmaxEnvironment,
+  RealtimeCamera, RealtimeCameraPreset, XmaxClient, XmaxConfiguration, XmaxEnvironment,
   XmaxRealtimeDualVideoView,
 } from '@xmaxai/web-sdk'
 
@@ -222,8 +222,7 @@ videoView.attach(container) // container is a sized element on your page
 // Create a camera stream and bind the preview
 const localStream = await realtime.createLocalCameraStream({
   preset: RealtimeCameraPreset.resolution1920x1080,
-  position: CameraPosition.front,
-  useMicrophone: false,
+  camera: RealtimeCamera.position(CameraPosition.front),
 })
 videoView.localTrack = localStream.videoTrack
 

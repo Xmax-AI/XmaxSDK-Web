@@ -15,6 +15,7 @@ import type { ImageController } from "./Image/ImageController";
 import type { InteractionControlling } from "./Interaction/InteractionControlling";
 import type { RealtimeVideoTrack } from "../Service/Realtime/RealtimeVideoTrack";
 import type { RealtimeMediaStream } from "../Service/Realtime/RealtimeMediaStream";
+import type { RealtimeMediaFrameListener } from "../Service/Realtime/RealtimeMediaFrame";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 
 /**
@@ -38,9 +39,16 @@ export interface MediaControlling extends InteractionControlling {
   readonly hasAudio: boolean;
 
   /**
-   * Whether camera publication waits for startup warmup.
+   * The camera warmup before publication, in milliseconds.
    */
-  readonly isFrameValidationEnabled: boolean;
+  readonly cameraWarmupMs: number;
+
+  /**
+   * Sets or removes local camera and microphone frame observation.
+   */
+  setLocalMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void>;
 
   /**
    * Requires no active or preparing local source.
@@ -126,7 +134,7 @@ export interface MediaControlling extends InteractionControlling {
   /**
    * Waits for camera warmup with connection cancellation.
    */
-  waitForValidCameraFrame(
+  waitForCameraWarmup(
     signal: AbortSignal
   ): Promise<void>;
 

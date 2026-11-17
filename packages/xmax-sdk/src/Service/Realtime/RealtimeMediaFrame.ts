@@ -34,8 +34,7 @@ export interface RealtimeAudioFrame {
   readonly samplesPerChannel: number;
 
   /**
-   * The first sample's time on the receiver presentation timeline, in microseconds; it need not start at
-   * zero.
+   * The first sample's presentation time in microseconds. It need not start at zero.
    */
   readonly presentationTimeStamp: number;
 
@@ -46,7 +45,7 @@ export interface RealtimeAudioFrame {
 }
 
 /**
- * A decoded result video frame including enabled beauty, without mirroring, cropping, or UI overlays.
+ * A local capture or remote result video frame.
  */
 export interface RealtimeVideoFrame {
 
@@ -56,7 +55,7 @@ export interface RealtimeVideoFrame {
   readonly frame: VideoFrame;
 
   /**
-   * The receiver presentation time, in microseconds, using the same time base as audio.
+   * The presentation time, in microseconds, using the same time base as audio.
    */
   readonly presentationTimeStamp: number;
 
@@ -67,14 +66,12 @@ export interface RealtimeVideoFrame {
 }
 
 /**
- * One remote media packet, not a paired audio/video sample. Synchronize packets using their timestamps
- * relative to a common recording origin.
+ * An audio packet or video frame. Synchronize packets using their presentation timestamps.
  */
 export interface RealtimeMediaFrame {
 
   /**
-   * The identifier shared by audio and video in one result-stream binding; changes on stream replacement
-   * or reconnection.
+   * The identifier shared by audio and video for the current frame observation binding.
    */
   readonly streamID: string;
 
@@ -96,7 +93,7 @@ export interface RealtimeMediaFrame {
     readonly type: "audio";
 
     /**
-     * The audio samples and their receiver presentation timestamp.
+     * The audio samples and their presentation timestamp.
      */
     readonly frame: RealtimeAudioFrame
   }

@@ -1,6 +1,10 @@
+import { RealtimeCamera } from "../src/Service/Realtime/RealtimeCamera";
+import { RealtimeMicrophone } from "../src/Service/Realtime/RealtimeMicrophone";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { waitForValidCameraFrame } from "../src/Foundation/Media/Camera/CameraFrameValidator";
+import { waitForCameraWarmup } from "../src/Foundation/Media/Camera/CameraWarmup";
 import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
+import { AudioTrackFrameSource } from "../src/Foundation/Media/Audio/AudioTrackFrameSource";
+import { VideoTrackFrameSource } from "../src/Foundation/Media/Video/VideoTrackFrameSource";
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../src/Foundation/Permissions/PermissionManaging";
 import type {
@@ -13,10 +17,11 @@ import type { XmaxRealtimeVideoView } from "../src/Render/Video/XmaxRealtimeVide
 import { RealtimeModel } from "../src/Service/Realtime/RealtimeModel";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
+import type { RealtimeMediaFrame } from "../src/Service/Realtime/RealtimeMediaFrame";
 import { cameraRotationEnvironment } from "./helpers/CameraRotationEnvironment";
 
-vi.mock("../src/Foundation/Media/Camera/CameraFrameValidator", () => ({ waitForValidCameraFrame: vi.fn() }));
-afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); });
+vi.mock("../src/Foundation/Media/Camera/CameraWarmup", () => ({ waitForCameraWarmup: vi.fn() }));
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 const operationSignal = new AbortController().signal;
 
 /** Node 环境没有 MediaStream，提供最小实现供预览流逻辑使用。 */
@@ -153,8 +158,12 @@ function makeController() {
     tracks.push(track);
     return { getTracks: () => [track as unknown as MediaStreamTrack] };
   });
-  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
-  return { controller, rtc, permission, tracks, getUserMedia };
+  const enumerateDevices = vi.fn(async (): Promise<MediaDeviceInfo[]> => []);
+  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia, enumerateDevices } });
+  const env = cameraRotationEnvironment({ automaticFirstFrame: true });
+  env.video.videoWidth = 1080;
+  env.video.videoHeight = 1920;
+  return { controller, rtc, permission, tracks, getUserMedia, enumerateDevices, env };
 }
 
 function attachPreview(track: { mediaStreamTrack?: MediaStreamTrack } & object) {
@@ -174,6 +183,85 @@ const defaultFormat = new RealtimeVideoFormat({
 });
 
 describe("CameraController", () => {
+  it("observes the preview track before RTC, follows camera replacement, and needs no audio for video-only capture", async () => {
+    const { controller, rtc, tracks, getUserMedia } = makeController();
+    vi.useFakeTimers();
+    vi.stubGlobal("VideoFrame", class {});
+    vi.stubGlobal("HTMLVideoElement", class { requestVideoFrameCallback() {} });
+    const start = vi.spyOn(VideoTrackFrameSource.prototype, "start").mockImplementation(() => {});
+    const prepareAudio = vi.spyOn(AudioTrackFrameSource.prototype, "prepare").mockResolvedValue();
+    const listener = vi.fn((_packet: RealtimeMediaFrame) => {});
+    const makeFrame = () => ({ timestamp: 30_000, duration: null, displayWidth: 320, displayHeight: 180,
+      close: vi.fn() }) as unknown as VideoFrame;
+
+    await controller.setLocalMediaFrameListener(listener);
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled,
+    }, operationSignal);
+    expect(start.mock.calls[0]?.[0]).toBe(stream.videoTrack?.mediaStreamTrack);
+    expect(rtc.initializeCalls).toBe(0);
+    const emitFirst = start.mock.calls[0]![1];
+    emitFirst({ frame: makeFrame(), discontinuous: true });
+    await vi.runAllTimersAsync();
+    expect(listener.mock.calls[0]?.[0].content.type).toBe("video");
+
+    const switched = await controller.switchCamera(operationSignal);
+    const obsolete = makeFrame();
+    emitFirst({ frame: obsolete, discontinuous: false });
+    expect(obsolete.close).toHaveBeenCalledOnce();
+    expect(start.mock.calls[1]?.[0]).toBe(switched.videoTrack?.mediaStreamTrack);
+    start.mock.calls[1]![1]({ frame: makeFrame(), discontinuous: false });
+    await vi.runAllTimersAsync();
+    expect(listener.mock.calls[1]?.[0].streamID).not.toBe(listener.mock.calls[0]?.[0].streamID);
+    expect(listener.mock.calls[1]?.[0].isDiscontinuous).toBe(true);
+    expect(prepareAudio).not.toHaveBeenCalled();
+    expect(getUserMedia.mock.calls.every(([constraints]) => !constraints.audio)).toBe(true);
+
+    await controller.setLocalMediaFrameListener();
+    expect(tracks[1]?.readyState).toBe("live");
+    await controller.stopLocalCameraStream();
+  });
+
+  it("observes the microphone only during connection and drops queued audio when it disconnects", async () => {
+    const { controller, tracks } = makeController();
+    vi.useFakeTimers();
+    vi.stubGlobal("VideoFrame", class {});
+    vi.stubGlobal("HTMLVideoElement", class { requestVideoFrameCallback() {} });
+    const start = vi.spyOn(VideoTrackFrameSource.prototype, "start").mockImplementation(() => {});
+    const prepare = vi.spyOn(AudioTrackFrameSource.prototype, "prepare").mockResolvedValue();
+    const setTrack = vi.spyOn(AudioTrackFrameSource.prototype, "setTrack").mockImplementation(() => {});
+    const close = vi.spyOn(AudioTrackFrameSource.prototype, "close").mockResolvedValue();
+    const listener = vi.fn((_packet: RealtimeMediaFrame) => {});
+
+    await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.systemDefault,
+    }, operationSignal);
+    await controller.setLocalMediaFrameListener(listener);
+    expect(start).toHaveBeenCalledOnce();
+    expect(prepare).not.toHaveBeenCalled();
+    await controller.prepareForConnection(operationSignal);
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(setTrack.mock.calls[0]?.[0]).toBe(tracks[1]);
+    const emitAudio = setTrack.mock.calls[0]![1];
+    const packet = { data: new Uint8Array(960), sampleRate: 48000, channels: 1, samplesPerChannel: 480,
+      presentationTimeStamp: 30_000, discontinuous: true };
+    emitAudio(packet);
+    await vi.runAllTimersAsync();
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({
+      duration: 10_000, content: { type: "audio", frame: { data: packet.data } },
+    });
+
+    emitAudio(packet);
+    await controller.releaseConnectionMedia();
+    emitAudio(packet);
+    await vi.runAllTimersAsync();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledOnce();
+    expect(tracks[0]?.readyState).toBe("live");
+    await controller.stopLocalCameraStream();
+  });
+
   it("crops a portrait capture to the requested landscape track used for preview and publication", async () => {
     const { controller, rtc, getUserMedia } = makeController();
     const env = cameraRotationEnvironment();
@@ -182,7 +270,7 @@ describe("CameraController", () => {
     const source = new FakeMediaStreamTrack("video", { width: { ideal: 1080 }, height: { ideal: 1920 } });
     getUserMedia.mockResolvedValueOnce({ getTracks: () => [source as unknown as MediaStreamTrack] });
     const pending = controller.createLocalCameraStream({
-      videoFormat: defaultFormat.resized(1920, 1080), position: CameraPosition.front, useMicrophone: false,
+      videoFormat: defaultFormat.resized(1920, 1080), camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
     await vi.waitFor(() => expect(env.callbacks.size).toBe(1));
     env.frame();
@@ -204,8 +292,10 @@ describe("CameraController", () => {
   it.each([undefined, "usb-microphone"])("reacquires microphone input %s on reconnect while keeping the selected camera", async microphoneDeviceId => {
     const { controller, rtc, getUserMedia, tracks } = makeController();
     const stream = await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: true,
-      cameraDeviceId: "usb-camera", microphoneDeviceId,
+      videoFormat: defaultFormat,
+      camera: RealtimeCamera.device("usb-camera"),
+      microphone: microphoneDeviceId === undefined
+        ? RealtimeMicrophone.systemDefault : RealtimeMicrophone.device(microphoneDeviceId),
     }, operationSignal);
     expect(getUserMedia.mock.calls).toEqual([[{ video: {
       width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 }, deviceId: { exact: "usb-camera" },
@@ -232,7 +322,7 @@ describe("CameraController", () => {
     let finish!: (stream: { getTracks(): MediaStreamTrack[] }) => void;
     getUserMedia.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const pending = controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled,
     }, abort.signal);
     const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
     await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
@@ -247,7 +337,7 @@ describe("CameraController", () => {
   it("updates capture in place while retaining the SDK track and mounted preview", async () => {
     const { controller, tracks, getUserMedia } = makeController();
     const local = await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.back, useMicrophone: true,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.back), microphone: RealtimeMicrophone.systemDefault,
     }, operationSignal);
     const track = local.videoTrack!;
     const original = track.mediaStreamTrack;
@@ -274,7 +364,7 @@ describe("CameraController", () => {
 
   it("keeps track metadata and preview when a capture format update fails", async () => {
     const { controller, tracks } = makeController();
-    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false }, operationSignal);
+    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled }, operationSignal);
     const track = local.videoTrack!, format = track.videoFormat, native = track.mediaStreamTrack;
     tracks[0]!.applyConstraints.mockRejectedValueOnce(new Error("capture failed"));
     await expect(controller.updateVideoFormat(defaultFormat.resized(1408, 1408), operationSignal)).rejects.toThrow("capture failed");
@@ -287,7 +377,7 @@ describe("CameraController", () => {
 
   it("does not restore metadata after close during a capture format update", async () => {
     const { controller, tracks } = makeController();
-    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false }, operationSignal);
+    const local = await controller.createLocalCameraStream({ videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled }, operationSignal);
     let finish!: () => void;
     tracks[0]!.applyConstraints.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const pending = controller.updateVideoFormat(defaultFormat.resized(1408, 1408), operationSignal);
@@ -299,11 +389,11 @@ describe("CameraController", () => {
     expect(local.videoTrack!.mediaStreamTrack).toBeUndefined();
   });
 
-  it("forwards rotation without swapping the public format or changing preview mirroring", async () => {
+  it("rotates and mirrors front-camera pixels while retaining the public format", async () => {
     const { controller, getUserMedia } = makeController();
     const env = cameraRotationEnvironment();
     const pending = controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, rotation: 90,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled, rotation: 90,
     }, operationSignal);
     await vi.waitFor(() => expect(env.callbacks.size).toBe(1));
     env.frame();
@@ -313,85 +403,86 @@ describe("CameraController", () => {
     } });
     expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
     expect(stream.videoTrack?.videoFormat).toMatchObject({ width: 1080, height: 1920 });
-    expect(attachPreview(stream.videoTrack!).isMirrored).toBe(true);
+    expect(env.context.setTransform).toHaveBeenCalledWith(-1, 0, 0, 1, 540, 960);
+    expect(attachPreview(stream.videoTrack!).isMirrored).toBe(false);
     await controller.stopLocalCameraStream();
   });
 
   it("rejects invalid rotation before capture starts", async () => {
     const { controller, rtc, getUserMedia } = makeController();
     await expect(controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, rotation: 45 as any,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled, rotation: 45 as any,
     }, operationSignal)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     expect(rtc.initializeCalls).toBe(0);
     expect(getUserMedia).not.toHaveBeenCalled();
   });
-  it.each([undefined, true, false])("uses per-stream frame validation option %s", async (enableFrameValidation) => {
+  it.each([undefined, 200, 0])("uses per-stream warmup duration %s", async (warmupMs) => {
     const { controller } = makeController();
     await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, enableFrameValidation,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), warmupMs,
     }, operationSignal);
-    expect(controller.isFrameValidationEnabled).toBe(enableFrameValidation ?? true);
-    await controller.waitForValidCameraFrame(new AbortController().signal);
-    expect(waitForValidCameraFrame).toHaveBeenCalledTimes(enableFrameValidation === false ? 0 : 1);
+    expect(controller.warmupMs).toBe(warmupMs ?? 0);
+    await controller.waitForCameraWarmup(new AbortController().signal);
+    expect(waitForCameraWarmup).toHaveBeenCalledTimes(warmupMs ? 1 : 0);
     await controller.stopLocalCameraStream();
-    expect(controller.isFrameValidationEnabled).toBe(false);
+    expect(controller.warmupMs).toBe(0);
   });
 
-  it("retains disabled validation across camera switches and restores the default for a new stream", async () => {
+  it("retains the warmup duration across camera switches and restores zero for a new stream", async () => {
     const { controller } = makeController();
-    const options = { videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false };
-    await controller.createLocalCameraStream({ ...options, enableFrameValidation: false }, operationSignal);
+    const options = { videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled };
+    await controller.createLocalCameraStream({ ...options, warmupMs: 200 }, operationSignal);
     await controller.switchCamera(operationSignal);
-    expect(controller.isFrameValidationEnabled).toBe(false);
-    await controller.waitForValidCameraFrame(new AbortController().signal);
-    expect(waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(controller.warmupMs).toBe(200);
+    await controller.waitForCameraWarmup(new AbortController().signal);
+    expect(waitForCameraWarmup).toHaveBeenCalledOnce();
     await controller.stopLocalCameraStream();
     await controller.createLocalCameraStream(options, operationSignal);
-    expect(controller.isFrameValidationEnabled).toBe(true);
-    await controller.waitForValidCameraFrame(new AbortController().signal);
-    expect(waitForValidCameraFrame).toHaveBeenCalledOnce();
+    expect(controller.warmupMs).toBe(0);
+    await controller.waitForCameraWarmup(new AbortController().signal);
+    expect(waitForCameraWarmup).toHaveBeenCalledOnce();
     await controller.stopLocalCameraStream();
   });
 
-  it("keeps cancellation effective even when frame validation is disabled", async () => {
+  it("keeps cancellation effective even with zero warmup", async () => {
     const { controller } = makeController();
     await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false, enableFrameValidation: false,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), warmupMs: 0,
     }, operationSignal);
     const abort = new AbortController();
     abort.abort();
-    await expect(controller.waitForValidCameraFrame(abort.signal))
+    await expect(controller.waitForCameraWarmup(abort.signal))
       .rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
-    expect(waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(waitForCameraWarmup).not.toHaveBeenCalled();
     await controller.stopLocalCameraStream();
   });
 
-  it("checks exposure on the active captured track using the operation signal", async () => {
+  it("waits for custom warmup on the active captured track using the operation signal", async () => {
     const { controller } = makeController();
     const stream = await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), warmupMs: 75,
     }, operationSignal);
     const signal = new AbortController().signal;
-    await controller.waitForValidCameraFrame(signal);
-    expect(waitForValidCameraFrame).toHaveBeenCalledWith(stream.videoTrack?.mediaStreamTrack, signal);
+    await controller.waitForCameraWarmup(signal);
+    expect(waitForCameraWarmup).toHaveBeenCalledWith(stream.videoTrack?.mediaStreamTrack, 75, signal);
     await controller.stopLocalCameraStream();
   });
 
   it("rejects exposure checks without active capture", async () => {
     const { controller } = makeController();
-    await expect(controller.waitForValidCameraFrame(new AbortController().signal))
+    await expect(controller.waitForCameraWarmup(new AbortController().signal))
       .rejects.toMatchObject({ code: XmaxErrorCode.mediaError });
-    expect(waitForValidCameraFrame).not.toHaveBeenCalled();
+    expect(waitForCameraWarmup).not.toHaveBeenCalled();
   });
 
-  it("rejects a stale exposure result after the camera track changes", async () => {
+  it("rejects stale warmup completion after the camera track changes", async () => {
     const { controller } = makeController();
     await controller.createLocalCameraStream({
-      videoFormat: defaultFormat, position: CameraPosition.front, useMicrophone: false,
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), warmupMs: 200,
     }, operationSignal);
     let ready!: () => void;
-    vi.mocked(waitForValidCameraFrame).mockReturnValueOnce(new Promise<void>((resolve) => { ready = resolve; }));
-    const pending = controller.waitForValidCameraFrame(new AbortController().signal);
+    vi.mocked(waitForCameraWarmup).mockReturnValueOnce(new Promise<void>((resolve) => { ready = resolve; }));
+    const pending = controller.waitForCameraWarmup(new AbortController().signal);
     await controller.switchCamera(operationSignal);
     ready();
     await expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
@@ -402,8 +493,8 @@ describe("CameraController", () => {
     const { controller, rtc, getUserMedia } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
 
     expect(stream.videoTrack?.id).toBe("video0");
@@ -418,14 +509,14 @@ describe("CameraController", () => {
     const { controller } = makeController();
     await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
     await expect(
       controller.createLocalCameraStream({
         videoFormat: defaultFormat,
-        position: CameraPosition.front,
-        useMicrophone: false,
+        camera: RealtimeCamera.position(CameraPosition.front),
+        microphone: RealtimeMicrophone.disabled,
       }, operationSignal),
     ).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
   });
@@ -436,8 +527,8 @@ describe("CameraController", () => {
     await expect(
       controller.createLocalCameraStream({
         videoFormat: defaultFormat,
-        position: CameraPosition.front,
-        useMicrophone: false,
+        camera: RealtimeCamera.position(CameraPosition.front),
+        microphone: RealtimeMicrophone.disabled,
       }, operationSignal),
     ).rejects.toMatchObject({ code: XmaxErrorCode.mediaError });
     expect(controller.currentTrack).toBeUndefined();
@@ -448,8 +539,8 @@ describe("CameraController", () => {
     const { controller, rtc, tracks } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
     await controller.prepareForConnection(operationSignal);
     await controller.stopLocalCameraStream();
@@ -463,8 +554,8 @@ describe("CameraController", () => {
     const { controller, rtc, getUserMedia, tracks } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
     const previousMediaTrack = stream.videoTrack?.mediaStreamTrack;
     await controller.prepareForConnection(operationSignal);
@@ -489,8 +580,8 @@ describe("CameraController", () => {
     const { controller, tracks } = makeController();
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
 
     let readyCount = 0;
@@ -510,18 +601,123 @@ describe("CameraController", () => {
     expect(readyCount).toBe(1);
   });
 
-  it("mirrors only the front-camera preview and updates it when switching", async () => {
-    const { controller } = makeController();
+  it("shares mirrored front-camera pixels with preview, frame callbacks, and RTC, and switches to a native rear track", async () => {
+    const { controller, env, rtc, getUserMedia, tracks } = makeController();
+    const source = new FakeMediaStreamTrack("video", { width: { ideal: 720 }, height: { ideal: 1280 } });
+    getUserMedia.mockResolvedValueOnce({ getTracks: () => [source as unknown as MediaStreamTrack] });
+    vi.stubGlobal("VideoFrame", class {});
+    vi.stubGlobal("HTMLVideoElement", class { requestVideoFrameCallback() {} });
+    const observe = vi.spyOn(VideoTrackFrameSource.prototype, "start").mockImplementation(() => {});
+    await controller.setLocalMediaFrameListener(vi.fn());
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat,
-      position: CameraPosition.front,
-      useMicrophone: false,
+      camera: RealtimeCamera.position(CameraPosition.front),
+      microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
-    const view = attachPreview(stream.videoTrack as never);
-    expect(view.isMirrored).toBe(true);
-    await controller.switchCamera(operationSignal);
+    expect(env.canvas).toMatchObject({ width: 720, height: 1280 });
+    expect(env.context.setTransform).toHaveBeenCalledWith(-1, 0, 0, 1, 360, 640);
+    expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
+    expect(observe.mock.calls[0]?.[0]).toBe(env.output);
+
+    const view = { isMirrored: true, setMediaStream: vi.fn() };
+    VideoRenderRegistry.binding(stream.videoTrack!)!.attachHandler(view, "fill" as never);
+    const preview = view.setMediaStream.mock.calls[0]![0] as MediaStream;
     expect(view.isMirrored).toBe(false);
+    expect(preview.getTracks()).toEqual([env.output]);
+    await controller.prepareForConnection(operationSignal);
+    expect(rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: env.output, audioTrack: undefined, source: "camera" });
+
+    const rear = await controller.switchCamera(operationSignal);
+    expect(rear.videoTrack?.mediaStreamTrack).toBe(tracks[0]);
+    expect(rtc.replaceCameraVideoTrack).toHaveBeenCalledWith(tracks[0]);
+    expect(preview.getTracks()).toEqual([tracks[0]]);
+    expect(observe.mock.calls[1]?.[0]).toBe(tracks[0]);
+    expect(view.isMirrored).toBe(false);
+    await controller.stopLocalCameraStream();
+  });
+
+  it("uses the selected device's reported camera position before checking the system default", async () => {
+    const { controller, env, getUserMedia, enumerateDevices } = makeController();
+    const source = new FakeMediaStreamTrack("video");
+    source.getSettings = () => ({ width: 1080, height: 1920, facingMode: "environment" });
+    getUserMedia.mockResolvedValueOnce({ getTracks: () => [source as unknown as MediaStreamTrack] });
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.device("rear"),
+    }, operationSignal);
+    expect(stream.videoTrack?.position).toBe(CameraPosition.back);
+    expect(stream.videoTrack?.mediaStreamTrack).toBe(source);
+    expect(env.canvas.captureStream).not.toHaveBeenCalled();
+    expect(enumerateDevices).not.toHaveBeenCalled();
+    await controller.stopLocalCameraStream();
+  });
+
+  it.each([
+    { id: "default-camera", mirror: undefined, expected: true },
+    { id: "other-camera", mirror: undefined, expected: false },
+    { id: "default-camera", mirror: false, expected: false },
+  ])("uses the system default to resolve unknown orientation for $id (mirror=$mirror)", async ({ id, mirror, expected }) => {
+    const { controller, env, tracks, getUserMedia, enumerateDevices } = makeController();
+    enumerateDevices.mockResolvedValue([
+      { kind: "audioinput", deviceId: "microphone" },
+      { kind: "videoinput", deviceId: "default-camera" },
+      { kind: "videoinput", deviceId: "other-camera" },
+    ] as MediaDeviceInfo[]);
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.device(id), mirror,
+    }, operationSignal);
+    expect(getUserMedia).toHaveBeenCalledWith({ video: expect.objectContaining({ deviceId: { exact: id } }) });
+    expect(stream.videoTrack?.mediaStreamTrack).toBe(expected ? env.output : tracks[0]);
+    expect(enumerateDevices).toHaveBeenCalledTimes(mirror === undefined ? 1 : 0);
+    await controller.stopLocalCameraStream();
+  });
+
+  it("releases the acquired camera when default-device lookup is cancelled", async () => {
+    const { controller, tracks, enumerateDevices } = makeController();
+    enumerateDevices.mockReturnValueOnce(new Promise(() => {}));
+    const operation = new AbortController();
+    const pending = controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.device("camera"),
+    }, operation.signal);
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(enumerateDevices).toHaveBeenCalledOnce());
+    operation.abort();
+    await rejected;
+    expect(tracks[0]?.stop).toHaveBeenCalledOnce();
+    expect(controller.currentTrack).toBeUndefined();
+  });
+
+  it.each([undefined, false, true])("mirrors an unoriented selected device only when requested (%s)", async (mirror) => {
+    const { controller, env, tracks, permission } = makeController();
+    permission.microphoneGranted = false;
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.device("usb-camera"), mirror,
+    }, operationSignal);
+    expect(stream.videoTrack?.position).toBeUndefined();
+    expect(stream.videoTrack?.mediaStreamTrack).toBe(mirror ? env.output : tracks[0]);
+    if (mirror) {
+      expect(env.context.setTransform).toHaveBeenCalledWith(-1, 0, 0, 1, 540, 960);
+    }
+    await controller.stopLocalCameraStream();
+  });
+
+  it("honors explicit mirror=false on a front camera and retains it across switches", async () => {
+    const { controller, env, tracks } = makeController();
+    const options = { videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), mirror: false };
+    const local = await controller.createLocalCameraStream(options, operationSignal);
+    expect(local.videoTrack?.mediaStreamTrack).toBe(tracks[0]);
     await controller.switchCamera(operationSignal);
-    expect(view.isMirrored).toBe(true);
+    await controller.switchCamera(operationSignal);
+    expect(local.videoTrack?.position).toBe(CameraPosition.front);
+    expect(local.videoTrack?.mediaStreamTrack).toBe(tracks[2]);
+    expect(env.canvas.captureStream).not.toHaveBeenCalled();
+    await controller.stopLocalCameraStream();
+  });
+
+  it.each([-1, Infinity, NaN])("rejects invalid warmup %s before opening capture", async warmupMs => {
+    const { controller, getUserMedia } = makeController();
+    await expect(controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front), warmupMs,
+    }, operationSignal)).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    expect(getUserMedia).not.toHaveBeenCalled();
   });
 });

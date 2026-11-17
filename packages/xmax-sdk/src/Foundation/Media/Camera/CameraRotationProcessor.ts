@@ -12,8 +12,8 @@ import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import type { CameraRotation } from "./CameraRotation";
 
 /**
- * Crops and optionally rotates camera frames to fixed output dimensions. Borrows the camera track
- * and owns the output track and scheduling resources.
+ * Crops, rotates, and mirrors camera frames in one draw. Borrows the camera track and owns the output
+ * track and scheduling resources.
  */
 export class CameraRotationProcessor {
 
@@ -23,7 +23,7 @@ export class CameraRotationProcessor {
   private readonly video = document.createElement("video");
 
   /**
-   * The canvas holding rotated output frames.
+   * The canvas holding the processed camera frames.
    */
   private readonly canvas = document.createElement("canvas");
 
@@ -38,7 +38,7 @@ export class CameraRotationProcessor {
   private stream?: MediaStream;
 
   /**
-   * The borrowed camera track before rotation.
+   * The borrowed camera track before processing.
    */
   private source?: MediaStreamTrack;
 
@@ -68,17 +68,17 @@ export class CameraRotationProcessor {
   private version = 0;
 
   /**
-   * The handler failing rotation when the borrowed camera track ends.
+   * The handler failing processing when the borrowed camera track ends.
    */
   private readonly sourceEnded = () => {
     this.fail(new XmaxError(
       XmaxErrorCode.mediaError,
-      "Camera source ended during rotation"
+      "Camera source ended during processing"
     ));
   };
 
   /**
-   * Creates the rotation canvas and player, rejecting browsers without Canvas capture.
+   * Creates the output canvas and source player.
    */
   constructor(
     private readonly options: {
@@ -86,6 +86,7 @@ export class CameraRotationProcessor {
       height: number;
       frameRate: number;
       rotation: CameraRotation;
+      mirrored?: boolean;
       onError: (
         error: XmaxError
       ) => void;
@@ -100,7 +101,7 @@ export class CameraRotationProcessor {
     if (!context || typeof this.canvas.captureStream !== "function") {
       throw new XmaxError(
         XmaxErrorCode.mediaError,
-        "Canvas camera rotation is not supported by this browser"
+        "Canvas camera processing is not supported by this browser"
       );
     }
     this.context = context;
@@ -118,14 +119,14 @@ export class CameraRotationProcessor {
     if (this.stopped) {
       throw new XmaxError(
         XmaxErrorCode.cancelled,
-        "Camera rotation has stopped"
+        "Camera processing has stopped"
       );
     }
     if (source.readyState === "ended") {
       this.stop();
       throw new XmaxError(
         XmaxErrorCode.mediaError,
-        "Camera rotation requires a live source"
+        "Camera processing requires a live source"
       );
     }
     this.cancelPending?.();
@@ -165,13 +166,13 @@ export class CameraRotationProcessor {
         const timeout = setTimeout(
           () => finish(new XmaxError(
             XmaxErrorCode.timeout,
-            "Timed out waiting for a camera rotation frame"
+            "Timed out waiting for a processed camera frame"
           )),
           10000
         );
         this.cancelPending = () => finish(new XmaxError(
           XmaxErrorCode.cancelled,
-          "Camera rotation source changed"
+          "Camera processing source changed"
         ));
         // Late play() completion must not revive rendering after a stop or source change.
         void this.video.play().then(
@@ -207,7 +208,7 @@ export class CameraRotationProcessor {
       if (this.stopped || version !== this.version) {
         throw new XmaxError(
           XmaxErrorCode.cancelled,
-          "Camera rotation source changed"
+          "Camera processing source changed"
         );
       }
       return this.stream!.getVideoTracks()[0]!;
@@ -237,7 +238,7 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * Updates rotated dimensions and output frame rate without replacing the output track or source
+   * Updates dimensions and output frame rate without replacing the output track or source
    * scheduler.
    */
   async updateFormat(
@@ -248,7 +249,7 @@ export class CameraRotationProcessor {
     if (this.stopped) {
       throw new XmaxError(
         XmaxErrorCode.cancelled,
-        "Camera rotation has stopped"
+        "Camera processing has stopped"
       );
     }
     const version = this.version;
@@ -257,7 +258,7 @@ export class CameraRotationProcessor {
     if (this.stopped || this.version !== version) {
       throw new XmaxError(
         XmaxErrorCode.cancelled,
-        "Camera rotation source changed"
+        "Camera processing source changed"
       );
     }
     Object.assign(
@@ -299,29 +300,32 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * Draws the source using a centered crop at the post-rotation target dimensions.
+   * Draws a centered crop with rotation and horizontal mirroring in the output orientation.
    */
   private draw(): boolean {
     const { videoWidth: width, videoHeight: height } = this.video;
     if (this.video.readyState < 2 || !width || !height) {
       return false;
     }
-    const { width: outWidth, height: outHeight, rotation } = this.options;
+    const { width: outWidth, height: outHeight, rotation, mirrored } = this.options;
     const quarterTurn = rotation === 90 || rotation === 270;
     const targetWidth = quarterTurn ? outHeight : outWidth;
     const targetHeight = quarterTurn ? outWidth : outHeight;
     // Use actual frame dimensions for proportional cropping; capture constraints may not be satisfied exactly.
     const scale = Math.max(targetWidth / width, targetHeight / height);
     const cropWidth = targetWidth / scale, cropHeight = targetHeight / scale;
+
     this.context.setTransform(
-      1,
+      mirrored ? -1 : 1,
       0,
       0,
       1,
       outWidth / 2,
       outHeight / 2
     );
-    this.context.rotate(rotation * Math.PI / 180);
+    if (rotation !== 0) {
+      this.context.rotate(rotation * Math.PI / 180);
+    }
     this.context.drawImage(
       this.video,
       (width - cropWidth) / 2,
@@ -333,6 +337,7 @@ export class CameraRotationProcessor {
       targetWidth,
       targetHeight
     );
+
     return true;
   }
 
@@ -392,7 +397,7 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * Releases rotation resources and reports a media failure.
+   * Releases processing resources and reports a media failure.
    */
   private fail(
     error: XmaxError

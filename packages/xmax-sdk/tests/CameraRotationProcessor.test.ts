@@ -4,10 +4,10 @@ import { validateCameraRotation } from "../src/Foundation/Media/Camera/CameraRot
 import { cameraRotationEnvironment } from "./helpers/CameraRotationEnvironment";
 
 const processors: CameraRotationProcessor[] = [];
-function setup(rotation: 90 | 180 | 270 = 90) {
+function setup(rotation: 90 | 180 | 270 = 90, mirrored = false) {
   const env = cameraRotationEnvironment();
   const onError = vi.fn();
-  const processor = new CameraRotationProcessor({ width: 1024, height: 1920, frameRate: 30, rotation, onError });
+  const processor = new CameraRotationProcessor({ width: 1024, height: 1920, frameRate: 30, rotation, mirrored, onError });
   processors.push(processor);
   return { ...env, processor, onError };
 }
@@ -61,6 +61,16 @@ describe("CameraRotationProcessor", () => {
     expect(args[3]).toBe(640);
     expect(args[4]).toBeCloseTo(1024 / 3);
     expect(args.slice(5)).toEqual([-960, -512, 1920, 1024]);
+  });
+
+  it("mirrors across the final horizontal axis in the same draw as a quarter-turn rotation", async () => {
+    const s = setup(90, true);
+    const started = s.processor.setSource(s.source);
+    await Promise.resolve(); s.frame(); await started;
+    expect(s.context.setTransform).toHaveBeenCalledWith(-1, 0, 0, 1, 512, 960);
+    expect(s.context.rotate).toHaveBeenCalledWith(Math.PI / 2);
+    expect(s.context.setTransform.mock.invocationCallOrder[0]).toBeLessThan(s.context.rotate.mock.invocationCallOrder[0]!);
+    expect(s.context.drawImage).toHaveBeenCalledOnce();
   });
 
   it("waits for valid pixels instead of publishing an empty canvas", async () => {

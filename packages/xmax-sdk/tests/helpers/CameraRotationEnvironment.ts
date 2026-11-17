@@ -1,8 +1,13 @@
 import { vi } from "vitest";
 
 /** 用可控的视频帧回调验证旋转矩阵和生命周期，不访问真实摄像头。 */
-export function cameraRotationEnvironment() {
+export function cameraRotationEnvironment({ automaticFirstFrame = false } = {}) {
   const callbacks = new Map<number, () => void>();
+  const frame = () => {
+    const current = [...callbacks.values()];
+    callbacks.clear();
+    current.forEach(callback => callback());
+  };
   let nextID = 0;
   const source = Object.assign(new EventTarget(), {
     kind: "video", readyState: "live", stop: vi.fn(),
@@ -17,13 +22,21 @@ export function cameraRotationEnvironment() {
   const video = {
     videoWidth: 1920, videoHeight: 1024, readyState: 2, srcObject: null,
     muted: false, autoplay: false, playsInline: false,
-    play: vi.fn(async () => {}), pause: vi.fn(),
+    play: vi.fn(async () => {
+      if (automaticFirstFrame) {
+        queueMicrotask(() => queueMicrotask(frame));
+      }
+    }),
+    pause: vi.fn(),
     requestVideoFrameCallback: vi.fn((callback: () => void) => { callbacks.set(++nextID, callback); return nextID; }),
     cancelVideoFrameCallback: vi.fn((id: number) => callbacks.delete(id)),
   };
   vi.stubGlobal("document", { createElement: vi.fn((tag: string) => tag === "video" ? video : canvas) });
-  vi.stubGlobal("MediaStream", class { constructor(readonly tracks: MediaStreamTrack[]) {} });
-  return { source, output, context, stream, canvas, video, callbacks,
-    frame: () => { const current = [...callbacks.values()]; callbacks.clear(); current.forEach(callback => callback()); },
-  };
+  vi.stubGlobal("MediaStream", class {
+    constructor(private tracks: MediaStreamTrack[]) {}
+    addTrack(track: MediaStreamTrack): void { this.tracks.push(track); }
+    removeTrack(track: MediaStreamTrack): void { this.tracks = this.tracks.filter(item => item !== track); }
+    getTracks(): MediaStreamTrack[] { return [...this.tracks]; }
+  });
+  return { source, output, context, stream, canvas, video, callbacks, frame };
 }

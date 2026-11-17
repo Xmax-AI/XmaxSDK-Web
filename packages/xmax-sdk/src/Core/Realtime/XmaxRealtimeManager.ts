@@ -10,7 +10,6 @@
 
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
 import { watchMediaPermissionPrompt } from "../../Foundation/Permissions/MediaPermissionWatch";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
@@ -28,7 +27,11 @@ import type { RealtimeMediaFrameListener } from "../../Service/Realtime/Realtime
 import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
 import type { MediaControlling } from "../../Media/MediaControlling";
 import type { RenderControlling } from "../../Render/RenderControlling";
-import { resolutionBuckets, supportedVideoFormats, type ModelSize } from "../../Service/Realtime/RealtimeModel";
+import { defaultCameraVideoFormat, resolutionBuckets, supportedVideoFormats, type ModelSize } from "../../Service/Realtime/RealtimeModel";
+import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
+import type { CreateLocalCameraStreamOptions } from "../../Service/Realtime/CreateLocalCameraStreamOptions";
+import { RealtimeCamera } from "../../Service/Realtime/RealtimeCamera";
+import { RealtimeMicrophone } from "../../Service/Realtime/RealtimeMicrophone";
 import type { MediaService } from "../../Service/Media/MediaService";
 import { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import { RealtimeMediaStream } from "../../Service/Realtime/RealtimeMediaStream";
@@ -903,38 +906,52 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
   /**
    * Creates a local camera stream and starts preview.
-   *
-   * Bind the returned track to a preview view; ready is entered after a valid frame arrives and the view
-   * is bound.
-   *
-   * @param options.position - The front or rear camera.
-   * @param options.cameraDeviceId - A browser video input ID to use instead of selecting by position.
-   * @param options.useMicrophone - Whether to capture and publish microphone audio.
-   * @param options.microphoneDeviceId - A browser audio input ID to use when the microphone is enabled.
-   * @param options.rotation - Clockwise input rotation, defaulting to 0. Preview and upload are
-   * corrected independently of mirroring.
-   * @param options.enableFrameValidation - Whether to wait for a fixed 200 ms camera warmup before
-   * publishing; defaults to true. False skips the wait.
-   * @param options.videoFormat - The post-rotation target format, resolved using model sizing rules.
-   * @param options.preset - A preset with the recommended frame rate, instead of videoFormat. Supply
-   * exactly one.
-   * @returns A media stream containing the local camera video track.
-   * @throws Rejects for unsupported camera input, invalid configuration, denied permission, or capture
-   * startup failure.
    */
   async createLocalCameraStream(
-    options: Parameters<XmaxRealtimeManaging["createLocalCameraStream"]>[0]
+    options: CreateLocalCameraStreamOptions = {}
   ): Promise<RealtimeMediaStream> {
     return this.lifecycleManager.run(
       RealtimeOperationKind.media,
       undefined,
       async (token) => {
         this.mediaController.ensureNoLocalSource();
-        const { preset, videoFormat, ...captureOptions } = options;
-        if ((preset === undefined) === (videoFormat === undefined)) {
+        if ("position" in options || "cameraDeviceId" in options || "useMicrophone" in options ||
+          "microphoneDeviceId" in options || "enableFrameValidation" in options) {
+          throw new XmaxError(
+            XmaxErrorCode.invalidConfiguration,
+            "Use camera, microphone, and warmupMs for local camera options"
+          );
+        }
+        const {
+          preset,
+          videoFormat,
+          camera = RealtimeCamera.position(CameraPosition.front),
+          microphone = RealtimeMicrophone.disabled,
+          rotation,
+          mirror,
+          warmupMs
+        } = options;
+        if (preset !== undefined && videoFormat !== undefined) {
           throw new XmaxError(
             XmaxErrorCode.invalidConfiguration,
             "Provide either a camera preset or a video format, not both"
+          );
+        }
+        const validCamera = camera?.kind === "position"
+          ? camera.position === CameraPosition.front || camera.position === CameraPosition.back
+          : camera?.kind === "device" && typeof camera.id === "string";
+        if (!validCamera) {
+          throw new XmaxError(
+            XmaxErrorCode.invalidConfiguration,
+            "Select a camera by position or device ID"
+          );
+        }
+        const validMicrophone = microphone?.kind === "disabled" || microphone?.kind === "systemDefault" ||
+          (microphone?.kind === "device" && typeof microphone.id === "string");
+        if (!validMicrophone) {
+          throw new XmaxError(
+            XmaxErrorCode.invalidConfiguration,
+            "Select a disabled, default, or specific microphone"
           );
         }
 
@@ -944,16 +961,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           requestedFormat = supportedVideoFormats(this.options.model).find(format =>
             format.width === size.width && format.height === size.height,
           );
-        }
-        if (!requestedFormat) {
-          throw new XmaxError(
-            XmaxErrorCode.invalidConfiguration,
-            "Model does not support the requested camera preset"
-          );
+          if (!requestedFormat) {
+            throw new XmaxError(
+              XmaxErrorCode.invalidConfiguration,
+              "Model does not support the requested camera preset"
+            );
+          }
         }
         const cameraOptions = {
-          ...captureOptions,
-          videoFormat: requestedFormat
+          videoFormat: requestedFormat ?? defaultCameraVideoFormat(this.options.model),
+          camera,
+          microphone,
+          rotation,
+          mirror,
+          warmupMs
         };
 
         await this.lifecycleManager.commit(
@@ -970,7 +991,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         // Observe permission decisions independently from camera startup.
         // Microphone permission may be requested during connection; retain observation until capture stops.
         this.disposePermissionWatch();
-        const permissionWatch = await watchMediaPermissionPrompt(options?.useMicrophone ?? false);
+        const permissionWatch = await watchMediaPermissionPrompt(microphone.kind !== "disabled");
         if (permissionWatch) {
           const completePermission = this.timing.startPermission();
           void permissionWatch.decided.then(() => completePermission()).catch(() => { });
@@ -1567,6 +1588,15 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   }
 
   /**
+   * Observes camera and microphone frames before RTC encoding.
+   */
+  setLocalMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void> {
+    return this.mediaController.setLocalMediaFrameListener(listener);
+  }
+
+  /**
    * Observes shared result video and PCM audio before or during generation; undefined releases
    * observation resources. Call from a user gesture to unlock audio. Unsupported capabilities or setup
    * failure reject without affecting playback or generation.
@@ -1790,9 +1820,9 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
 
     try {
       let beforePublish: (() => Promise<void>) | undefined;
-      if (this.mediaController.isFrameValidationEnabled) {
+      if (this.mediaController.cameraWarmupMs > 0) {
         // Warmup overlaps connection; observe early rejection while retaining the original publication barrier.
-        const cameraReady = this.mediaController.waitForValidCameraFrame(warmupController.signal).then(() => {
+        const cameraReady = this.mediaController.waitForCameraWarmup(warmupController.signal).then(() => {
           token.ensureCurrent();
         });
 
@@ -1927,8 +1957,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       context,
       restart,
       targetSize,
-      mirror: this.mediaController.source === "camera" &&
-        this.currentLocalTrack?.position === CameraPosition.front,
       faceRestoration,
       onStartSent: this.mediaController.source === "localVideo" ? async () => {
         token.ensureCurrent();
@@ -2023,6 +2051,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     const sessionID = await this.connectionManager.disconnect(() => this.mediaController.releaseCameraConnectionMedia());
 
     if (scope === RealtimeTerminationScope.all) {
+      await this.setLocalMediaFrameListener(undefined);
       this.setRemoteMediaTracksListener(undefined);
       await this.setRemoteMediaFrameListener(undefined);
       await this.renderController.closeBeauty();

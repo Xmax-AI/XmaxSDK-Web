@@ -11,6 +11,7 @@
 import { XmaxError, XmaxErrorCode } from "../Foundation/Errors/XmaxError";
 import type { RtcManaging } from "../Foundation/RTC/RtcManaging";
 import type { MediaServicing } from "../Service/Media/MediaServicing";
+import type { RealtimeMediaFrameListener } from "../Service/Realtime/RealtimeMediaFrame";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import { CameraController } from "./Camera/CameraController";
 import type { CameraControlling, CameraPreviewReadyHandler } from "./Camera/CameraControlling";
@@ -136,10 +137,19 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * Whether this camera source requires pre-publication warmup.
+   * The camera warmup before publication, in milliseconds.
    */
-  get isFrameValidationEnabled() {
-    return this.source === "camera" && this.camera.isFrameValidationEnabled;
+  get cameraWarmupMs(): number {
+    return this.source === "camera" ? this.camera.warmupMs : 0;
+  }
+
+  /**
+   * Sets or removes local camera and microphone frame observation.
+   */
+  setLocalMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void> {
+    return this.camera.setLocalMediaFrameListener(listener);
   }
 
   /**
@@ -309,10 +319,10 @@ export class MediaController implements MediaControlling {
   /**
    * Waits for camera warmup.
    */
-  waitForValidCameraFrame(
+  waitForCameraWarmup(
     signal: AbortSignal
   ): Promise<void> {
-    return this.camera.waitForValidCameraFrame(signal);
+    return this.camera.waitForCameraWarmup(signal);
   }
 
   /**

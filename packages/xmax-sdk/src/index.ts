@@ -17,6 +17,9 @@ export type { XmaxCreditBalance } from "./Core/Account/XmaxCreditBalance";
 // Core / Realtime
 export { RealtimeConfiguration } from "./Core/Realtime/RealtimeConfiguration";
 export { RealtimeCameraPreset, cameraPresetSize } from "./Service/Realtime/RealtimeCameraPreset";
+export { RealtimeCamera } from "./Service/Realtime/RealtimeCamera";
+export { RealtimeMicrophone } from "./Service/Realtime/RealtimeMicrophone";
+export type { CreateLocalCameraStreamOptions } from "./Service/Realtime/CreateLocalCameraStreamOptions";
 export { RealtimeQualityLevel } from "./Stream/Quality/RealtimeQualityLevel";
 export type { XmaxRealtimeManaging } from "./Core/Realtime/XmaxRealtimeManaging";
 

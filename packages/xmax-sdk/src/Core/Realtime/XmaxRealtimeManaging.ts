@@ -8,8 +8,7 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
-import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
+import type { CreateLocalCameraStreamOptions } from "../../Service/Realtime/CreateLocalCameraStreamOptions";
 import type { RealtimeNetworkQualityListener } from "../../Service/Realtime/RealtimeNetworkQuality";
 import type { RealtimeContext } from "../../Service/Realtime/RealtimeContext";
 import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraParams";
@@ -95,6 +94,19 @@ export interface XmaxRealtimeManaging {
    * or decoded frame is not guaranteed. Missing audio is not replaced with synthetic silence.
    */
   setRemoteMediaFrameListener(
+    listener?: RealtimeMediaFrameListener
+  ): Promise<void>;
+
+  /**
+   * Observes camera and microphone frames before RTC encoding.
+   *
+   * Camera frames include capture rotation, cropping, and the configured mirror behavior. They can arrive
+   * before generation without a mounted preview. PCM is available while the SDK captures microphone
+   * audio and the browser allows Web Audio. Register from a user gesture. Without a microphone, only
+   * video is delivered.
+   * Passing undefined or calling close() removes the listener without stopping borrowed capture tracks.
+   */
+  setLocalMediaFrameListener(
     listener?: RealtimeMediaFrameListener
   ): Promise<void>;
 
@@ -254,42 +266,14 @@ export interface XmaxRealtimeManaging {
   /**
    * Creates a local camera stream and starts preview.
    *
-   * Bind the returned track to a preview view; ready is entered after a valid frame arrives and the view
-   * is bound.
+   * Bind the returned track to a preview view. The connection becomes ready after a camera frame
+   * arrives and the view is bound. Preview, frame observation, and RTC share the processed track.
    *
-   * @param options.position - The front or rear camera.
-   * @param options.cameraDeviceId - A browser video input ID to use instead of selecting by position.
-   * @param options.useMicrophone - Whether to capture and publish microphone audio.
-   * @param options.microphoneDeviceId - A browser audio input ID to use when the microphone is enabled.
-   * @param options.rotation - Clockwise input rotation, defaulting to 0. Preview and upload are
-   * corrected independently of mirroring.
-   * @param options.enableFrameValidation - Whether to wait for a fixed 200 ms camera warmup before
-   * publishing; defaults to true. False skips the wait.
-   * @param options.videoFormat - The post-rotation target format, resolved using model sizing rules.
-   * @param options.preset - A preset with the recommended frame rate, instead of videoFormat. Supply
-   * exactly one.
-   * @returns A media stream containing the local camera video track.
    * @throws Rejects for unsupported camera input, invalid configuration, denied permission, or capture
    * startup failure.
    */
   createLocalCameraStream(
-    options: {
-      position: CameraPosition;
-      cameraDeviceId?: string;
-      useMicrophone: boolean;
-      microphoneDeviceId?: string;
-      rotation?: CameraRotation;
-      enableFrameValidation?: boolean;
-    } & (
-        | {
-          videoFormat: RealtimeVideoFormat;
-          preset?: never
-        }
-        | {
-          preset: RealtimeCameraPreset;
-          videoFormat?: never
-        }
-      )
+    options?: CreateLocalCameraStreamOptions
   ): Promise<RealtimeMediaStream>;
 
   /**

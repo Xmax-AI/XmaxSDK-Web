@@ -10,11 +10,11 @@
 
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import { RemoteAudioFrameSource } from "../../Foundation/Media/Audio/RemoteAudioFrameSource";
-import { RemoteVideoFrameSource } from "../../Foundation/Media/Video/RemoteVideoFrameSource";
+import { AudioTrackFrameSource } from "../../Foundation/Media/Audio/AudioTrackFrameSource";
+import { VideoTrackFrameSource } from "../../Foundation/Media/Video/VideoTrackFrameSource";
 import type { RemoteMediaTracks } from "../../Foundation/Media/RemoteMediaTracks";
 import type { RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
-import { RealtimeMediaFrameDispatcher } from "./RealtimeMediaFrameDispatcher";
+import { RealtimeMediaFrameDispatcher } from "../../Media/RealtimeMediaFrameDispatcher";
 
 /**
  * Coordinates shared result-media observation and bounded delivery without owning recording, files, or
@@ -35,12 +35,12 @@ export class RemoteMediaFrameController {
   /**
    * The prepared audio observation source.
    */
-  private audio?: RemoteAudioFrameSource;
+  private audio?: AudioTrackFrameSource;
 
   /**
    * The shared-video observer.
    */
-  private readonly video = new RemoteVideoFrameSource();
+  private readonly video = new VideoTrackFrameSource();
 
   /**
    * The bounded media delivery queue.
@@ -100,7 +100,7 @@ export class RemoteMediaFrameController {
         "This browser cannot provide remote video frames"
       );
     }
-    const audio = new RemoteAudioFrameSource();
+    const audio = new AudioTrackFrameSource();
     this.audio = audio;
     try {
       await audio.prepare(setup.signal);
@@ -170,21 +170,10 @@ export class RemoteMediaFrameController {
               packet.frame.close();
               return;
             }
-            const frame = Object.freeze({
-              frame: packet.frame,
-              presentationTimeStamp: packet.frame.timestamp,
-              duration: packet.frame.duration ?? undefined
-            });
-            this.dispatcher.dispatch({
+            this.dispatcher.dispatchVideo(
               streamID,
-              isDiscontinuous: packet.discontinuous,
-              content: {
-                type: "video",
-                frame
-              },
-              presentationTimeStamp: frame.presentationTimeStamp,
-              duration: frame.duration
-            });
+              packet
+            );
           },
           error => this.report(error)
         );
@@ -195,24 +184,10 @@ export class RemoteMediaFrameController {
           if (this.streamID !== streamID) {
             return;
           }
-          const frame = Object.freeze({
-            data: packet.data,
-            sampleRate: packet.sampleRate,
-            channels: packet.channels,
-            samplesPerChannel: packet.samplesPerChannel,
-            presentationTimeStamp: packet.presentationTimeStamp,
-            duration: packet.samplesPerChannel * 1_000_000 / packet.sampleRate
-          });
-          this.dispatcher.dispatch({
+          this.dispatcher.dispatchAudio(
             streamID,
-            isDiscontinuous: packet.discontinuous,
-            content: {
-              type: "audio",
-              frame
-            },
-            presentationTimeStamp: frame.presentationTimeStamp,
-            duration: frame.duration
-          });
+            packet
+          );
         }
       );
     } catch (error) {

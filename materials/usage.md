@@ -303,8 +303,7 @@ const [remoteTrack, setRemoteTrack] = useState<RealtimeVideoTrack>();
 async function start() {
   const local = await realtime.createLocalCameraStream({
     preset: RealtimeCameraPreset.resolution1080x1920,
-    position: CameraPosition.front,
-    useMicrophone: false,
+    camera: RealtimeCamera.position(CameraPosition.front),
   });
   setLocalTrack(local.videoTrack);
   const remote = await realtime.startGeneration({ localStream: local, context });

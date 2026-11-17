@@ -3,16 +3,16 @@ import type { RemoteMediaTracks } from "../src/Foundation/Media/RemoteMediaTrack
 import { RemoteMediaFrameController } from "../src/Render/Video/RemoteMediaFrameController";
 
 const state = vi.hoisted(() => ({ audio: [] as any[], video: [] as any[], prepare: vi.fn(async (_signal: AbortSignal) => {}) }));
-vi.mock("../src/Foundation/Media/Audio/RemoteAudioFrameSource", () => ({
-  RemoteAudioFrameSource: class {
+vi.mock("../src/Foundation/Media/Audio/AudioTrackFrameSource", () => ({
+  AudioTrackFrameSource: class {
     prepare = state.prepare;
     setTrack = vi.fn((_track: unknown, _listener: (packet: any) => void) => {});
     close = vi.fn(async () => {});
     constructor() { state.audio.push(this); }
   },
 }));
-vi.mock("../src/Foundation/Media/Video/RemoteVideoFrameSource", () => ({
-  RemoteVideoFrameSource: class {
+vi.mock("../src/Foundation/Media/Video/VideoTrackFrameSource", () => ({
+  VideoTrackFrameSource: class {
     start = vi.fn((_track: unknown, _listener: (packet: any) => void) => {});
     stop = vi.fn();
     constructor() { state.video.push(this); }

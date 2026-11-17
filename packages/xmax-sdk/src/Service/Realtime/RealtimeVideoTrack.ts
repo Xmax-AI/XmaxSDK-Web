@@ -103,7 +103,7 @@ export class RealtimeVideoTrack {
    * @internal
    */
   updatePosition(
-    position: CameraPosition
+    position: CameraPosition | undefined
   ): void {
     this.metadata.position = position;
   }

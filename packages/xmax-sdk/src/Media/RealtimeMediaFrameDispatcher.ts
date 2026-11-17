@@ -8,8 +8,10 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import { XmaxLogger } from "../../Foundation/Logging/XmaxLogger";
-import type { RealtimeMediaFrame, RealtimeMediaFrameListener } from "../../Service/Realtime/RealtimeMediaFrame";
+import { XmaxLogger } from "../Foundation/Logging/XmaxLogger";
+import type { AudioTrackFramePacket } from "../Foundation/Media/Audio/AudioTrackFrameSource";
+import type { VideoTrackFramePacket } from "../Foundation/Media/Video/VideoTrackFrameSource";
+import type { RealtimeMediaFrame, RealtimeMediaFrameListener } from "../Service/Realtime/RealtimeMediaFrame";
 
 /**
  * A bounded delivery queue that never blocks producers or retains frames already delivered to your app.
@@ -81,6 +83,51 @@ export class RealtimeMediaFrameDispatcher {
     this.bytes = 0;
     this.discontinuous.add("audio");
     this.discontinuous.add("video");
+  }
+
+  /**
+   * Queues a video frame with its presentation timing.
+   */
+  dispatchVideo(
+    streamID: string,
+    packet: VideoTrackFramePacket
+  ): void {
+    const frame = Object.freeze({
+      frame: packet.frame,
+      presentationTimeStamp: packet.frame.timestamp,
+      duration: packet.frame.duration ?? undefined
+    });
+    this.dispatch({
+      streamID,
+      isDiscontinuous: packet.discontinuous,
+      content: { type: "video", frame },
+      presentationTimeStamp: frame.presentationTimeStamp,
+      duration: frame.duration
+    });
+  }
+
+  /**
+   * Queues a PCM packet with the duration of its samples.
+   */
+  dispatchAudio(
+    streamID: string,
+    packet: AudioTrackFramePacket
+  ): void {
+    const frame = Object.freeze({
+      data: packet.data,
+      sampleRate: packet.sampleRate,
+      channels: packet.channels,
+      samplesPerChannel: packet.samplesPerChannel,
+      presentationTimeStamp: packet.presentationTimeStamp,
+      duration: packet.samplesPerChannel * 1_000_000 / packet.sampleRate
+    });
+    this.dispatch({
+      streamID,
+      isDiscontinuous: packet.discontinuous,
+      content: { type: "audio", frame },
+      presentationTimeStamp: frame.presentationTimeStamp,
+      duration: frame.duration
+    });
   }
 
   /**
@@ -165,6 +212,6 @@ export class RealtimeMediaFrameDispatcher {
       return;
     }
     this.reportedError = true;
-    XmaxLogger.render.warning(() => `Remote media frame listener failed: ${String(error)}`);
+    XmaxLogger.media.warning(() => `Media frame listener failed: ${String(error)}`);
   }
 }

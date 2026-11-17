@@ -1141,6 +1141,23 @@ button:disabled,
 
 /* ── 模式页签与参考图预设 ───────────────────── */
 
+.localFramePreview {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.localFramePreview canvas {
+  width: min(100%, 200px);
+  height: min(14vh, 112px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: #000;
+}
+
 .modeSection {
   margin-top: 34px;
 }

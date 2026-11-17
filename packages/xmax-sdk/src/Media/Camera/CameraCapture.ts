@@ -12,42 +12,93 @@ import { XmaxError, XmaxErrorCode, type XmaxErrorListener } from "../../Foundati
 import { CameraPosition } from "../../Foundation/Media/Camera/CameraPosition";
 import type { CameraRotation } from "../../Foundation/Media/Camera/CameraRotation";
 import { CameraRotationProcessor } from "../../Foundation/Media/Camera/CameraRotationProcessor";
+import { waitForMediaOperation } from "../../Foundation/Media/MediaOperation";
+import type { RealtimeCamera } from "../../Service/Realtime/RealtimeCamera";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
 import { captureDeviceTrack } from "../CaptureDeviceTrack";
 
-/** Owns a browser camera track and, when needed, its cropped and rotated output. */
+/** The time allowed to identify the system default before using the unknown-facing behavior. */
+const DEFAULT_CAMERA_LOOKUP_TIMEOUT_MS = 1_000;
+
+/** Owns a browser camera track and its shared output after any crop, rotation, and mirroring. */
 export class CameraCapture {
 
   private processed?: { processor: CameraRotationProcessor; track: MediaStreamTrack };
 
   private constructor(
-    readonly source: MediaStreamTrack,
+    private readonly source: MediaStreamTrack,
+    readonly position: CameraPosition | undefined,
     private readonly rotation: CameraRotation,
+    private readonly mirrored: boolean,
     private readonly onError: XmaxErrorListener,
   ) { }
 
   /** Opens the requested camera and prepares the track shared by preview and RTC. */
   static async open(
     format: RealtimeVideoFormat,
-    position: CameraPosition,
+    camera: RealtimeCamera,
     rotation: CameraRotation,
+    mirror: boolean | undefined,
     onError: XmaxErrorListener,
-    signal: AbortSignal,
-    deviceId?: string,
+    signal: AbortSignal
   ): Promise<{ capture: CameraCapture; track: MediaStreamTrack }> {
     const source = await captureDeviceTrack("video", {
       ...CameraCapture.constraints(format, rotation),
-      ...(deviceId === undefined
-        ? { facingMode: { ideal: position === CameraPosition.front ? "user" : "environment" } }
-        : { deviceId: { exact: deviceId } }),
+      ...(camera.kind === "position"
+        ? { facingMode: { ideal: camera.position === CameraPosition.front ? "user" : "environment" } }
+        : { deviceId: { exact: camera.id } }),
     }, signal);
-    const capture = new CameraCapture(source, rotation, onError);
     try {
+      const { facingMode } = source.getSettings();
+      const resolvedPosition = facingMode === "user" ? CameraPosition.front
+        : facingMode === "environment" ? CameraPosition.back
+        : camera.kind === "position" ? camera.position : undefined;
+      let mirrored = mirror ?? (resolvedPosition === CameraPosition.front);
+      if (mirror === undefined && resolvedPosition === undefined && camera.kind === "device") {
+        mirrored = await CameraCapture.isSystemDefaultCamera(
+          camera.id,
+          signal
+        );
+      }
+
+      const capture = new CameraCapture(
+        source,
+        resolvedPosition,
+        rotation,
+        mirrored,
+        onError
+      );
       const track = await capture.output(format, signal);
       return { capture, track };
     } catch (error) {
-      capture.stop();
+      source.stop();
       throw error;
+    }
+  }
+
+  /** Checks the first video input in the browser's list of available devices after capture starts. */
+  private static async isSystemDefaultCamera(
+    deviceId: string,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    const devices = globalThis.navigator?.mediaDevices;
+    if (!deviceId || !devices?.enumerateDevices) {
+      return false;
+    }
+
+    try {
+      const inputs = await waitForMediaOperation(
+        devices.enumerateDevices(),
+        signal,
+        DEFAULT_CAMERA_LOOKUP_TIMEOUT_MS,
+        "Camera default-device lookup"
+      );
+      return inputs.find(input => input.kind === "videoinput")?.deviceId === deviceId;
+    } catch (error) {
+      if (signal.aborted) {
+        throw error;
+      }
+      return false;
     }
   }
 
@@ -77,17 +128,32 @@ export class CameraCapture {
       throw new XmaxError(XmaxErrorCode.cancelled, "Camera capture is no longer active");
     }
     const { width, height, fps } = format;
+    const { width: sourceWidth, height: sourceHeight } = this.source.getSettings();
+    const matchesSource = this.rotation === 0 && sourceWidth && sourceHeight &&
+      sourceWidth * height === sourceHeight * width;
+    const outputWidth = this.mirrored && matchesSource ? sourceWidth : width;
+    const outputHeight = this.mirrored && matchesSource ? sourceHeight : height;
     if (this.processed) {
       const { processor, track } = this.processed;
-      await processor.updateFormat(width, height, fps);
+      await processor.updateFormat(
+        outputWidth,
+        outputHeight,
+        fps
+      );
       return track;
     }
-    const settings = this.source.getSettings();
-    if (this.rotation === 0 && settings.width && settings.height && settings.width * height === settings.height * width) {
+    if (!this.mirrored && matchesSource) {
       return this.source;
     }
 
-    const processor = new CameraRotationProcessor({ width, height, frameRate: fps, rotation: this.rotation, onError: this.onError });
+    const processor = new CameraRotationProcessor({
+      width: outputWidth,
+      height: outputHeight,
+      frameRate: fps,
+      rotation: this.rotation,
+      mirrored: this.mirrored,
+      onError: this.onError
+    });
     const abort = () => processor.stop();
     signal.addEventListener("abort", abort, { once: true });
     try {

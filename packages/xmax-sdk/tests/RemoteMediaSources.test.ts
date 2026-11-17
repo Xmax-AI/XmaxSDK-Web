@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RemoteAudioFrameSource } from "../src/Foundation/Media/Audio/RemoteAudioFrameSource";
-import { RemoteVideoFrameSource } from "../src/Foundation/Media/Video/RemoteVideoFrameSource";
+import { AudioTrackFrameSource } from "../src/Foundation/Media/Audio/AudioTrackFrameSource";
+import { VideoTrackFrameSource } from "../src/Foundation/Media/Video/VideoTrackFrameSource";
 
 class Track extends EventTarget {
   readyState = "live";
@@ -52,7 +52,7 @@ describe("remote audio frame source", () => {
 
   it("uses sample time on the shared presentation clock, not main-thread delivery time", async () => {
     const s = audioEnvironment();
-    const source = new RemoteAudioFrameSource();
+    const source = new AudioTrackFrameSource();
     await source.prepare(new AbortController().signal);
     const track = new Track();
     const listener = vi.fn();
@@ -75,7 +75,7 @@ describe("remote audio frame source", () => {
 
   it("discards old port messages after replacement, end or close", async () => {
     const s = audioEnvironment();
-    const source = new RemoteAudioFrameSource();
+    const source = new AudioTrackFrameSource();
     await source.prepare(new AbortController().signal);
     const first = new Track(), second = new Track(), listener = vi.fn();
     source.setTrack(first as unknown as MediaStreamTrack, listener);
@@ -96,7 +96,7 @@ describe("remote audio frame source", () => {
 
   it("ignores missing audio and malformed packets, marking later output discontinuous", async () => {
     const s = audioEnvironment();
-    const source = new RemoteAudioFrameSource();
+    const source = new AudioTrackFrameSource();
     await source.prepare(new AbortController().signal);
     const listener = vi.fn();
     source.setTrack(undefined, listener);
@@ -115,7 +115,7 @@ describe("remote audio frame source", () => {
 
   it("uses the audio context clock when an output timestamp is unavailable", async () => {
     const s = audioEnvironment();
-    const source = new RemoteAudioFrameSource();
+    const source = new AudioTrackFrameSource();
     await source.prepare(new AbortController().signal);
     s.contexts[0]!.getOutputTimestamp.mockReturnValue({ contextTime: 0, performanceTime: 0 });
     vi.spyOn(performance, "now").mockReturnValue(5000);
@@ -128,7 +128,7 @@ describe("remote audio frame source", () => {
 
   it.each(["failure", "cancel", "timeout"])("releases failed initialization: %s", async mode => {
     const s = audioEnvironment();
-    const source = new RemoteAudioFrameSource();
+    const source = new AudioTrackFrameSource();
     const abort = new AbortController();
     if (mode === "failure") s.load.mockRejectedValue(new Error("blocked worklet"));
     else s.resume.mockReturnValue(new Promise(() => {}));
@@ -186,7 +186,7 @@ describe("remote video frame source", () => {
   }
 
   it("copies raw frames, exposes gaps and Safari's constant mediaTime without altering playback", () => {
-    const video = setup(), source = new RemoteVideoFrameSource();
+    const video = setup(), source = new VideoTrackFrameSource();
     const track = new Track(), listener = vi.fn(), error = vi.fn();
     source.start(track as unknown as MediaStreamTrack, listener, error);
     expect(video.muted).toBe(true);
@@ -204,7 +204,7 @@ describe("remote video frame source", () => {
   });
 
   it("rejects stale callbacks and releases the element when the track ends", () => {
-    const video = setup(), source = new RemoteVideoFrameSource();
+    const video = setup(), source = new VideoTrackFrameSource();
     const track = new Track(), listener = vi.fn();
     source.start(track as unknown as MediaStreamTrack, listener, vi.fn());
     const late = [...video.callbacks.values()][0]!;
@@ -217,7 +217,7 @@ describe("remote video frame source", () => {
   });
 
   it("closes a copied frame when handing it off fails", () => {
-    const video = setup(), source = new RemoteVideoFrameSource();
+    const video = setup(), source = new VideoTrackFrameSource();
     const error = vi.fn();
     let copied: VideoFrame | undefined;
     source.start(new Track() as unknown as MediaStreamTrack, packet => {
@@ -234,7 +234,7 @@ describe("remote video frame source", () => {
   it("fails explicitly on unsupported browsers without allocating media", () => {
     setup();
     vi.stubGlobal("VideoFrame", undefined);
-    expect(() => new RemoteVideoFrameSource().start(new Track() as unknown as MediaStreamTrack, vi.fn(), vi.fn())).toThrow("require VideoFrame");
+    expect(() => new VideoTrackFrameSource().start(new Track() as unknown as MediaStreamTrack, vi.fn(), vi.fn())).toThrow("require VideoFrame");
     expect(document.createElement).not.toHaveBeenCalled();
   });
 });
