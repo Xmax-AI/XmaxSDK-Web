@@ -9,7 +9,6 @@
 //
 
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
-import { XmaxLogger, XmaxLoggerOption } from "../../Logging/XmaxLogger";
 import { cameraFrameGeometryByTrack, type CameraFrameGeometry } from "./CameraFrameGeometry";
 import type { CameraRotation } from "./CameraRotation";
 
@@ -369,14 +368,6 @@ export class CameraRotationProcessor {
         crop,
         output: { width: outWidth, height: outHeight },
       });
-      XmaxLogger.media.info(() => [
-        "Camera first frame",
-        `requested=${requestedWidth ?? "?"}×${requestedHeight ?? "?"}`,
-        `source=${width}×${height}`,
-        `crop=${crop.width}×${crop.height}`,
-        `output=${outWidth}×${outHeight}`,
-        `rotation=${rotation}°`,
-      ].join(" · "), XmaxLoggerOption.performance);
     }
 
     return true;

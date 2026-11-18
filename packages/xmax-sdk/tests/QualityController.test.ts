@@ -5,7 +5,7 @@ import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 
 function setup() {
   let now = 0;
-  const apply = vi.fn(async (_change: QualityChange, _signal: AbortSignal) => {});
+  const apply = vi.fn(async (_change: QualityChange, _signal: AbortSignal): Promise<void | false> => {});
   const controller = new QualityController(apply, () => now);
   const sample = (quality: number | undefined, delta = 2000) => {
     now += delta;
@@ -156,6 +156,17 @@ describe("QualityController", () => {
     s.apply.mockRejectedValueOnce(new Error("encoder failed"));
     await s.samples(5, 2);
     await expect(s.sample(5)).rejects.toThrow("encoder failed");
+    expect(s.controller.snapshot).toMatchObject({ level: 1, switching: false });
+    await s.sample(5);
+    await s.samples(5, 3);
+    expect(s.controller.snapshot.level).toBe(2);
+  });
+
+  it("keeps the current quality level when an encoder update is ignored", async () => {
+    const s = setup(); s.controller.start();
+    s.apply.mockResolvedValueOnce(false);
+    await s.samples(5, 2);
+    await expect(s.sample(5)).resolves.toBeUndefined();
     expect(s.controller.snapshot).toMatchObject({ level: 1, switching: false });
     await s.sample(5);
     await s.samples(5, 3);

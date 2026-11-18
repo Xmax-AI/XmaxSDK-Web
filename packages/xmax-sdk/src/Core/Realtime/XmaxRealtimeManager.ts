@@ -540,7 +540,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     level: number,
     token: RealtimeOperationToken,
     signal?: AbortSignal
-  ): Promise<void> {
+  ): Promise<void | false> {
     const track = this.currentLocalTrack;
     const state = track && this.qualityStates.get(track);
     const ensureActive = () => {
@@ -563,15 +563,20 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       state.baseline,
       level
     );
-    let format: RealtimeVideoFormat;
+    let format: RealtimeVideoFormat | undefined;
     if (this.options.provider === RtcProvider.trtc) {
       // TRTC changes frame rate only, retaining the applied dimensions, bitrate, and encoding preference.
       format = await this.streamController.updateUplinkFrameRate(target.fps);
     } else {
-      await this.streamController.updateUplinkVideoFormat(target);
-      format = target;
+      const applied = await this.streamController.updateUplinkVideoFormat(target);
+      if (applied !== false) {
+        format = target;
+      }
     }
     ensureActive();
+    if (!format) {
+      return false;
+    }
 
     // Uplink adaptation must not alter generation, downlink dimensions, or the original L1 baseline.
     if (!this.resolvedMediaVideoFormat) {
@@ -656,10 +661,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             token
           );
         } else {
-          await this.applyUplinkQuality(
+          const applied = await this.applyUplinkQuality(
             level,
             token
           );
+          if (applied === false) {
+            return;
+          }
         }
         controller?.start(level);
       }
@@ -1234,8 +1242,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         this.qualityController?.stop();
 
         // Uplink dimensions do not snap to model buckets or send generation/target-size signaling.
-        await this.streamController.updateUplinkVideoFormat(resolvedFormat);
+        const applied = await this.streamController.updateUplinkVideoFormat(resolvedFormat);
         token.ensureCurrent();
+        if (applied === false) {
+          return;
+        }
 
         if (!this.resolvedMediaVideoFormat) {
           this.updateResolvedMediaVideoFormat(previousFormat);
@@ -1267,10 +1278,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async (token) => {
         this.qualityController?.stop();
-        await this.applyUplinkFrameRate(
+        const applied = await this.applyUplinkFrameRate(
           fps,
           token
         );
+        if (!applied) {
+          return;
+        }
         const track = this.currentLocalTrack;
         if (track?.videoFormat) {
           this.qualityStates.set(
@@ -1295,7 +1309,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   private async applyUplinkFrameRate(
     fps: number,
     token: RealtimeOperationToken
-  ): Promise<void> {
+  ): Promise<boolean> {
     const track = this.currentLocalTrack;
     const previous = track?.videoFormat;
     const state = this.currentState.connectionState;
@@ -1315,10 +1329,14 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     }
     const format = await this.streamController.updateUplinkFrameRate(fps);
     token.ensureCurrent();
+    if (!format) {
+      return false;
+    }
     if (!this.resolvedMediaVideoFormat) {
       this.updateResolvedMediaVideoFormat(previous);
     }
     track.updateVideoFormat(format);
+    return true;
   }
 
   /**

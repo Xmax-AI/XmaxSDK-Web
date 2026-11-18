@@ -125,11 +125,12 @@ export interface RtcManaging {
   /**
    * Configures uplink video encoding independently of capture.
    *
+   * @returns False if the browser silently ignored the requested sender limits.
    * @throws Rejects if capture has not started or encoding configuration fails.
    */
   configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
-  ): Promise<void>;
+  ): Promise<void | false>;
 
   /**
    * Joins an RTC room.

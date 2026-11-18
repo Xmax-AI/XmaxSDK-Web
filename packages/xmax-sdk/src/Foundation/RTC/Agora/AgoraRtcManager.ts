@@ -684,12 +684,12 @@ export class AgoraRtcManager implements RtcManaging {
    */
   async configureVideoEncoding(
     config: VideoEncodingConfiguration
-  ): Promise<void> {
+  ): Promise<void | false> {
     const camera = this.requireLocalVideo();
     if (camera === this.cameraSenderTrack) {
       const client = this.requireClient(), version = this.roomVersion;
       const published = this.videoPublishRequested;
-      await this.run(() => this.queueSenderUpdate(async () => {
+      return this.run(() => this.queueSenderUpdate(async () => {
         const ensureActive = () => {
           if (this.cameraSenderTrack !== camera || this.client !== client || this.roomVersion !== version ||
             (published && !this.videoPublishRequested)) {
@@ -698,16 +698,18 @@ export class AgoraRtcManager implements RtcManaging {
         };
         ensureActive();
         if (this.videoPublishRequested) {
-          await AgoraVideoSender.apply(
+          const applied = await AgoraVideoSender.apply(
             camera,
             config,
             ensureActive
           );
+          if (!applied) {
+            return false;
+          }
         }
         // Only target settings exist before publication; the sender becomes available after publish completes.
         this.cameraSenderConfiguration = { ...config };
       }));
-      return;
     }
     const encodingSize = config;
     await this.run(async () => {
@@ -733,11 +735,11 @@ export class AgoraRtcManager implements RtcManaging {
   /**
    * Serializes camera sender changes to preserve update order.
    */
-  private queueSenderUpdate(
-    operation: () => Promise<void>
-  ): Promise<void> {
+  private queueSenderUpdate<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
     const next = this.senderUpdateTail.then(operation);
-    this.senderUpdateTail = next.catch(() => { });
+    this.senderUpdateTail = next.then(() => {}, () => {});
     return next;
   }
 

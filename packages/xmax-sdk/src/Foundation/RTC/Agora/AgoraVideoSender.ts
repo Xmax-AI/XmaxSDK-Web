@@ -10,6 +10,7 @@
 
 import type { ILocalVideoTrack } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
+import { XmaxLogger } from "../../Logging/XmaxLogger";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 
 /**
@@ -19,13 +20,14 @@ import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../V
 export class AgoraVideoSender {
 
   /**
-   * Applies bitrate and frame-rate limits to the browser video sender.
+   * Applies bitrate and frame-rate limits to the browser video sender. Returns false if the browser
+   * accepts the update but does not retain the requested limits.
    */
   static async apply(
     track: ILocalVideoTrack,
     config: VideoEncodingConfiguration,
     ensureActive: () => void
-  ): Promise<void> {
+  ): Promise<boolean> {
     ensureActive();
     const sender = track.getRTCRtpTransceiver()?.sender;
     if (!sender) {
@@ -34,6 +36,15 @@ export class AgoraVideoSender {
         "WebRTC video sender is unavailable"
       );
     }
+    const ensureCurrentSender = () => {
+      ensureActive();
+      if (track.getRTCRtpTransceiver()?.sender !== sender) {
+        throw new XmaxError(
+          XmaxErrorCode.cancelled,
+          "WebRTC video sender changed during configuration"
+        );
+      }
+    };
     const capture = sender.track?.getSettings();
     if (!capture?.width || !capture.height) {
       throw new XmaxError(
@@ -59,17 +70,17 @@ export class AgoraVideoSender {
     parameters.degradationPreference = config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate
       ? "maintain-framerate" : "maintain-resolution";
     await sender.setParameters(parameters);
-    ensureActive();
-    if (track.getRTCRtpTransceiver()?.sender !== sender) {
-      throw new XmaxError(
-        XmaxErrorCode.cancelled,
-        "WebRTC video sender changed during configuration"
-      );
-    }
+    ensureCurrentSender();
     const applied = sender.getParameters();
     const actual = applied.encodings?.[0];
     if (!actual || Math.abs((actual.scaleResolutionDownBy ?? 1) - scale) > 0.0001 ||
       actual.maxFramerate !== encoding.maxFramerate || actual.maxBitrate !== encoding.maxBitrate) {
+      XmaxLogger.rtc.warning(() =>
+        "Browser did not retain WebRTC video sender parameters " +
+        `(scale ${actual?.scaleResolutionDownBy ?? "unset"}/${scale}, ` +
+        `fps ${actual?.maxFramerate ?? "unset"}/${encoding.maxFramerate}, ` +
+        `bps ${actual?.maxBitrate ?? "unset"}/${encoding.maxBitrate}, actual/requested)`
+      );
       // Browsers may silently ignore fields; attempt to restore sender parameters without
       // falling back to capture-constraint changes.
       if (actual && applied.encodings.length === 1) {
@@ -87,12 +98,15 @@ export class AgoraVideoSender {
         else {
           applied.degradationPreference = previousPreference;
         }
-        await sender.setParameters(applied);
+        try {
+          await sender.setParameters(applied);
+        } catch {
+          XmaxLogger.rtc.warning(() => "Failed to restore previous WebRTC video sender parameters");
+        }
+        ensureCurrentSender();
       }
-      throw new XmaxError(
-        XmaxErrorCode.rtcError,
-        "Browser did not retain WebRTC video sender parameters"
-      );
+      return false;
     }
+    return true;
   }
 }

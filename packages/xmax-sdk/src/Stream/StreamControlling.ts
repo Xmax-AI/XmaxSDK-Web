@@ -147,19 +147,20 @@ export interface StreamControlling {
    *
    * Encoding affects the sender, not capture; configure it before publishing local media.
    *
+   * @returns False if the browser silently ignored the requested sender limits.
    * @throws Rejects if the format or bitrate range is invalid, or RTC configuration fails.
    */
   updateUplinkVideoFormat(
     videoFormat: RealtimeVideoFormat
-  ): Promise<void>;
+  ): Promise<void | false>;
 
   /**
    * Updates only the uplink target frame rate, retaining the last successfully applied encoding
-   * configuration.
+   * configuration. Returns undefined if the browser silently ignored the update.
    */
   updateUplinkFrameRate(
     fps: number
-  ): Promise<RealtimeVideoFormat>;
+  ): Promise<RealtimeVideoFormat | undefined>;
 
   /**
    * Joins an RTC room and publishes local media.

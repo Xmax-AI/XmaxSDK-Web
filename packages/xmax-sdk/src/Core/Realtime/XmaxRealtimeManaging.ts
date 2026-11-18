@@ -156,8 +156,7 @@ export interface XmaxRealtimeManaging {
 
   /**
    * Sets the uplink encoding level during generation without changing capture format or the generation
-   * canvas. Automatic adaptation resumes from this level for Agora and TRTC; VeRTC applies manual levels
-   * only.
+   * canvas. If enabled, automatic adaptation resumes from this level.
    */
   setUplinkQualityLevel(
     level: RealtimeQualityLevel

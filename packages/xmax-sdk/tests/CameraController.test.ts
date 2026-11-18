@@ -339,12 +339,16 @@ describe("CameraController", () => {
     { width: 1080, height: 1920, succeeds: true, crop: { width: 1080, height: 1920 } },
     { width: 1920, height: 1080, succeeds: true, crop: { width: 1920, height: 1080 } },
     { width: 1080, height: 1920, succeeds: false, crop: { width: 608, height: 1080 } },
-  ])("retries when the first frame has the opposite orientation to $width × $height (succeeds: $succeeds)", async ({
-    width, height, succeeds, crop,
+    { width: 1080, height: 1920, manual: true, succeeds: true, crop: { width: 1080, height: 1920 } },
+    { width: 1920, height: 1080, manual: true, succeeds: true, crop: { width: 1920, height: 1080 } },
+    { width: 1080, height: 1920, manual: true, captureWidth: 2160, captureHeight: 3840,
+      succeeds: true, crop: { width: 2160, height: 3840 } },
+  ])("retries when the first frame has the opposite orientation to $width × $height (manual: $manual, succeeds: $succeeds)", async ({
+    width, height, manual = false, captureWidth = width, captureHeight = height, succeeds, crop,
   }) => {
     const { controller, env, getUserMedia, tracks } = makeController();
-    env.video.videoWidth = height;
-    env.video.videoHeight = width;
+    env.video.videoWidth = captureHeight;
+    env.video.videoHeight = captureWidth;
     const open = getUserMedia.getMockImplementation()!;
     getUserMedia.mockImplementationOnce(async request => {
       const result = await open(request);
@@ -355,8 +359,8 @@ describe("CameraController", () => {
           throw new Error("Capture constraints could not be changed");
         }
         await apply(constraints);
-        env.video.videoWidth = width;
-        env.video.videoHeight = height;
+        env.video.videoWidth = captureWidth;
+        env.video.videoHeight = captureHeight;
         env.video.dispatchEvent(new Event("resize"));
       });
       return result;
@@ -364,25 +368,44 @@ describe("CameraController", () => {
 
     const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat.resized(width, height),
+      captureFormat: manual ? { width: captureWidth, height: captureHeight } : undefined,
       camera: RealtimeCamera.position(CameraPosition.front),
     }, operationSignal);
 
     expect(getUserMedia.mock.calls).toEqual([[{ video: {
-      width: { ideal: width },
-      height: { ideal: height },
+      width: { ideal: captureWidth },
+      height: { ideal: captureHeight },
       frameRate: { ideal: 30 },
       facingMode: { ideal: "user" },
     } }]]);
     expect(tracks[0]?.applyConstraints.mock.calls).toEqual([[{
-      width: { ideal: height },
-      height: { ideal: width },
+      width: { ideal: captureHeight },
+      height: { ideal: captureWidth },
       frameRate: { ideal: 30 },
       facingMode: { ideal: "user" },
     }]]);
     expect(stream.videoTrack?.cameraFrameGeometry).toMatchObject({
-      source: succeeds ? { width, height } : { width: height, height: width },
+      source: succeeds ? { width: captureWidth, height: captureHeight } : { width: captureHeight, height: captureWidth },
       crop,
       output: { width, height },
+    });
+    await controller.stopLocalCameraStream();
+  });
+
+  it("retains an explicitly selected landscape capture for portrait model input", async () => {
+    const { controller, env, tracks } = makeController();
+    env.video.videoWidth = 3840;
+    env.video.videoHeight = 2160;
+    const stream = await controller.createLocalCameraStream({
+      videoFormat: defaultFormat,
+      captureFormat: { width: 3840, height: 2160 },
+      camera: RealtimeCamera.position(CameraPosition.front),
+    }, operationSignal);
+    expect(tracks[0]?.applyConstraints).not.toHaveBeenCalled();
+    expect(stream.videoTrack?.cameraFrameGeometry).toMatchObject({
+      source: { width: 3840, height: 2160 },
+      crop: { width: 1215, height: 2160 },
+      output: { width: 1080, height: 1920 },
     });
     await controller.stopLocalCameraStream();
   });

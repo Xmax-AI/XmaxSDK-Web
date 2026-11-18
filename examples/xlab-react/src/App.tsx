@@ -689,6 +689,9 @@ export function App() {
   // 移动端和大屏模式的上行统计并入主画面的统计面板。
   const showStatisticsOnMainStage = isMobileLayout || largeScreen;
   const cameraFrameGeometry = localStream?.videoTrack?.cameraFrameGeometry;
+  const sendFrameRate = localVideoStatistics?.sendFrameRate;
+  const encodeFrameRate = localVideoStatistics?.encodeFrameRate;
+  const showsEncodeFrameRate = sendFrameRate === undefined && encodeFrameRate !== undefined;
   const localStatisticsPanels = (
     <>
       {cameraFrameGeometry && (
@@ -710,7 +713,10 @@ export function App() {
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
         { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
-        { label: "上行帧率", value: formatVideoMetric(localVideoStatistics?.sendFrameRate, "fps") },
+        {
+          label: showsEncodeFrameRate ? "上行编码帧率" : "上行帧率",
+          value: formatVideoMetric(sendFrameRate ?? encodeFrameRate, "fps"),
+        },
         { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
       ]} />
       <StatisticsPanel label="上行网络统计" rows={[

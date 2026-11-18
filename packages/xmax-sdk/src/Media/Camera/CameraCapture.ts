@@ -176,9 +176,12 @@ export class CameraCapture {
         video => {
           const targetOrientation = Math.sign(width - height);
           const sourceOrientation = Math.sign(video.videoWidth - video.videoHeight);
-          if (!this.captureFormat && this.rotation === 0 && targetOrientation !== 0 &&
+          const requestedWidth = this.captureFormat?.width ?? width;
+          const requestedHeight = this.captureFormat?.height ?? height;
+          const requestedOrientation = Math.sign(requestedWidth - requestedHeight);
+          if (this.rotation === 0 && targetOrientation !== 0 && requestedOrientation === targetOrientation &&
             sourceOrientation === -targetOrientation) {
-            return this.retryCaptureOrientation(video, width, height, signal);
+            return this.retryCaptureOrientation(video, requestedWidth, requestedHeight, signal);
           }
         }
       );

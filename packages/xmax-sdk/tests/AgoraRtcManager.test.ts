@@ -324,6 +324,29 @@ describe("AgoraRtcManager", () => {
     expect(s.camera.setOptimizationMode).not.toHaveBeenCalled();
   });
 
+  it.each(["native", "wrapped"])("keeps %s camera publication active when the browser ignores sender settings", async kind => {
+    const s = setup();
+    await s.manager.initialize();
+    let camera = s.camera;
+    if (kind === "wrapped") {
+      const source = { ...s.native, readyState: "live" as const, clone: () => s.native };
+      await s.manager.setExternalMediaTracks({ videoTrack: source, source: "camera" });
+      camera = s.sdk.createCustomVideoTrack.mock.results[0]!.value;
+    } else {
+      await s.manager.startCameraCapture({ width: 1920, height: 1024, frameRate: 30, position: CameraPosition.front });
+    }
+    await s.manager.configureVideoEncoding({ width: 960, height: 512, frameRate: 24, minimumBitrate: 1000, maximumBitrate: 2000,
+      encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
+    await s.manager.joinRoom(credentials);
+    s.sender.setParameters.mockImplementationOnce(async () => {});
+    await expect(s.manager.publishLocalVideo()).resolves.toBeUndefined();
+    expect(s.client.publish).toHaveBeenCalledWith(camera);
+    expect(s.sender.setParameters).toHaveBeenCalledTimes(2);
+    expect(s.client.unpublish).not.toHaveBeenCalled();
+    expect(camera.setEncoderConfiguration).not.toHaveBeenCalled();
+    expect(s.listener.onError).not.toHaveBeenCalled();
+  });
+
   it("keeps the last successful target on failure and restores it after sender replacement", async () => {
     const s = setup();
     await s.manager.initialize();
@@ -335,6 +358,8 @@ describe("AgoraRtcManager", () => {
     await s.manager.publishLocalVideo();
     s.sender.setParameters.mockRejectedValueOnce(new Error("failed"));
     await expect(s.manager.configureVideoEncoding({ ...config, width: 960, height: 512, frameRate: 20 })).rejects.toThrow();
+    s.sender.setParameters.mockImplementationOnce(async () => {});
+    await expect(s.manager.configureVideoEncoding({ ...config, width: 960, height: 512, frameRate: 20 })).resolves.toBe(false);
     const replacement = setup().sender;
     s.camera.getRTCRtpTransceiver.mockReturnValue({ sender: replacement } as unknown as RTCRtpTransceiver);
     s.client.localTracks = [s.camera];

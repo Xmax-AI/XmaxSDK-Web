@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ILocalVideoTrack } from "agora-rtc-sdk-ng";
 import { AgoraVideoSender } from "../src/Foundation/RTC/Agora/AgoraVideoSender";
+import { XmaxLogger } from "../src/Foundation/Logging/XmaxLogger";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 
 const config = { width: 960, height: 512, frameRate: 24, minimumBitrate: 1000, maximumBitrate: 2000,
@@ -25,7 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("AgoraVideoSender", () => {
   it("updates only sending limits, preserves negotiated fields, and scales from capture each time", async () => {
     const s = setup();
-    await s.apply();
+    await expect(s.apply()).resolves.toBe(true);
     expect(s.sender.getParameters()).toMatchObject({ transactionId: "native", degradationPreference: "maintain-framerate",
       encodings: [{ rid: "main", active: true, scaleResolutionDownBy: 2, maxFramerate: 24, maxBitrate: 2000000 }],
     });
@@ -70,12 +71,19 @@ describe("AgoraVideoSender", () => {
     expect(s.track.setEncoderConfiguration).not.toHaveBeenCalled();
   });
 
-  it("detects silently ignored parameters and attempts to restore the previous limits", async () => {
+  it.each([false, true])("warns without throwing when parameters are ignored (rollback rejects: %s)", async rollbackRejects => {
     const s = setup();
+    const warn = vi.spyOn(XmaxLogger.rtc, "warning");
     const previous = s.sender.getParameters();
     s.sender.setParameters.mockImplementationOnce(async () => {});
-    await expect(s.apply()).rejects.toThrow("did not retain");
+    if (rollbackRejects) {
+      s.sender.setParameters.mockRejectedValueOnce(new Error("rollback failed"));
+    }
+    await expect(s.apply()).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledTimes(rollbackRejects ? 2 : 1);
+    expect(warn.mock.calls[0]?.[0]()).toContain("did not retain");
     expect(s.sender.setParameters).toHaveBeenCalledTimes(2);
+    expect(s.sender.setParameters).toHaveBeenLastCalledWith(previous);
     expect(s.sender.getParameters()).toEqual(previous);
     expect(s.native.applyConstraints).not.toHaveBeenCalled();
   });

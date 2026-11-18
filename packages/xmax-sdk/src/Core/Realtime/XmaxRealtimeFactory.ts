@@ -137,7 +137,7 @@ export interface XmaxRealtimeBindings {
     level: number,
     token: RealtimeOperationToken,
     signal: AbortSignal
-  ): Promise<void>;
+  ): Promise<void | false>;
 
   /**
    * Applies a downlink quality change inside the admitted configuration operation.
@@ -402,8 +402,7 @@ export class XmaxRealtimeFactory {
     let qualityController: QualityController | undefined;
     let downlinkQualityController: QualityController | undefined;
 
-    if (options.isAdaptiveQualityEnabled &&
-      (options.provider === RtcProvider.agora || options.provider === RtcProvider.trtc)) {
+    if (options.isAdaptiveQualityEnabled) {
       qualityHistory = new QualityHistory(
         options.model,
         options.provider
@@ -413,16 +412,14 @@ export class XmaxRealtimeFactory {
           change,
           signal
         ) => {
-          await lifecycleManager.run(
+          return lifecycleManager.run(
             RealtimeOperationKind.configuration,
             undefined,
-            async token => {
-              await bindings.applyUplinkQuality(
-                change.to,
-                token,
-                signal
-              );
-            }
+            token => bindings.applyUplinkQuality(
+              change.to,
+              token,
+              signal
+            )
           );
         },
         undefined,

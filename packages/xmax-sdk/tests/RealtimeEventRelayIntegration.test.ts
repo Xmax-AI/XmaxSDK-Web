@@ -79,16 +79,18 @@ afterEach(() => {
 
 describe("HTTP event relay assembly", () => {
   it.each([
-    [XmaxEnvironment.china, RtcProvider.agora],
-    [XmaxEnvironment.global, RtcProvider.agora],
-  ] as const)("uses both RTC and the %s HTTP endpoint for %s controls with the assigned instance", async (environment, provider) => {
-    const s = setup(environment, provider);
+    [XmaxEnvironment.china, RealtimeModel.x2_1],
+    [XmaxEnvironment.global, RealtimeModel.x2_1],
+  ] as const)("uses both RTC and the %s HTTP endpoint for %s controls with the assigned instance", async (environment, model) => {
+    const s = setup(environment, RtcProvider.agora, model);
     const origin = environment === XmaxEnvironment.china ? "https://cloud.xmax.22duck.cn" : "https://api.xmax.ai";
     try {
       expect(s.fetch).not.toHaveBeenCalled();
       await s.connect();
       await s.change();
-      expect(s.fetch.mock.calls[0]![0]).toBe(`${origin}/open/api/v1/session`);
+      const [sessionURL, sessionRequest] = s.fetch.mock.calls[0]!;
+      expect(sessionURL).toBe(`${origin}/open/api/v1/session`);
+      expect(JSON.parse(sessionRequest.body as string)).toEqual({ model });
       expect(s.relays()).toHaveLength(1);
       const [url, request] = s.relays()[0]!;
       expect(url).toBe(`${origin}/open/api/v1/client-event/relay`);
