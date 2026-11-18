@@ -145,22 +145,21 @@ export interface StreamControlling {
   /**
    * Configures uplink encoding, including the bitrate range and policy.
    *
-   * Encoding affects the sender, not capture; configure it before publishing local media.
+   * Configure it before publishing local media.
    *
-   * @returns False if the browser silently ignored the requested sender limits.
    * @throws Rejects if the format or bitrate range is invalid, or RTC configuration fails.
    */
   updateUplinkVideoFormat(
     videoFormat: RealtimeVideoFormat
-  ): Promise<void | false>;
+  ): Promise<void>;
 
   /**
    * Updates only the uplink target frame rate, retaining the last successfully applied encoding
-   * configuration. Returns undefined if the browser silently ignored the update.
+   * configuration.
    */
   updateUplinkFrameRate(
     fps: number
-  ): Promise<RealtimeVideoFormat | undefined>;
+  ): Promise<RealtimeVideoFormat>;
 
   /**
    * Joins an RTC room and publishes local media.

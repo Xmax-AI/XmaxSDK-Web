@@ -442,8 +442,8 @@ export class StreamController implements StreamControlling {
    */
   async updateUplinkVideoFormat(
     videoFormat: RealtimeVideoFormat
-  ): Promise<void | false> {
-    return this.encodingController.configure(videoFormat);
+  ): Promise<void> {
+    await this.encodingController.configure(videoFormat);
   }
 
   /**
@@ -451,7 +451,7 @@ export class StreamController implements StreamControlling {
    */
   async updateUplinkFrameRate(
     fps: number
-  ): Promise<RealtimeVideoFormat | undefined> {
+  ): Promise<RealtimeVideoFormat> {
     return this.encodingController.updateFrameRate(fps);
   }
 

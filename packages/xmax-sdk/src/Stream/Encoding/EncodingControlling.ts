@@ -18,18 +18,17 @@ export interface EncodingControlling {
   /**
    * Configures encoding from a video format.
    *
-   * @returns False if the browser silently ignored the requested sender limits.
    * @throws Rejects for an invalid format or bitrate range, or RTC configuration failure.
    */
   configure(
     videoFormat: RealtimeVideoFormat
-  ): Promise<void | false>;
+  ): Promise<void>;
 
   /**
    * Updates frame rate while retaining other resolved settings and returns the successfully applied
-   * complete format, or undefined if the browser silently ignored the update.
+   * complete format.
    */
   updateFrameRate(
     fps: number
-  ): Promise<RealtimeVideoFormat | undefined>;
+  ): Promise<RealtimeVideoFormat>;
 }

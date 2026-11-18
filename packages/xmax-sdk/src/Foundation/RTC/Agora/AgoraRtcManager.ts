@@ -17,7 +17,8 @@ import type {
   ICameraVideoTrack,
   IMicrophoneAudioTrack,
   ILocalVideoTrack,
-  ILocalAudioTrack
+  ILocalAudioTrack,
+  VideoEncoderConfiguration
 } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
@@ -28,7 +29,6 @@ import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
-import { AgoraVideoSender } from "./AgoraVideoSender";
 import { validateCameraRotation } from "../../Media/Camera/CameraRotation";
 import { CameraRotationProcessor } from "../../Media/Camera/CameraRotationProcessor";
 
@@ -192,19 +192,14 @@ export class AgoraRtcManager implements RtcManaging {
   private readonly appliedOptimizationModes = new WeakMap<ILocalVideoTrack, RtcVideoEncoderPreference>();
 
   /**
-   * The camera sender's current target encoding settings.
+   * The encoder profile to reapply when the SDK replaces the camera input.
    */
-  private cameraSenderConfiguration?: VideoEncodingConfiguration;
+  private externalCameraEncoding?: VideoEncoderConfiguration;
 
   /**
-   * The serialized sender-parameter update chain.
+   * Serializes encoder updates with SDK camera input replacement.
    */
-  private senderUpdateTail: Promise<void> = Promise.resolve();
-
-  /**
-   * The listener restoring parameters after sender replacement.
-   */
-  private cameraTransceiverListener?: () => void;
+  private videoUpdateTail: Promise<void> = Promise.resolve();
 
   /**
    * The active room identity and credentials.
@@ -400,6 +395,8 @@ export class AgoraRtcManager implements RtcManaging {
     this.externalAudio?.close();
     this.externalVideo = undefined;
     this.externalCamera = false;
+    this.externalCameraEncoding = undefined;
+    this.videoUpdateTail = Promise.resolve();
     this.externalAudio = undefined;
     this.camera = undefined;
     this.microphone = undefined;
@@ -475,7 +472,6 @@ export class AgoraRtcManager implements RtcManaging {
         });
       }
       this.camera = camera;
-      this.observeCameraSender(client, camera);
       return camera.getMediaStreamTrack();
     } catch (error) {
       if (version === this.captureVersion) {
@@ -568,9 +564,6 @@ export class AgoraRtcManager implements RtcManaging {
         throw this.cancelled();
       }
     }
-    if (this.videoPublishRequested) {
-      await this.restoreCameraSender(camera);
-    }
     return camera.getMediaStreamTrack();
   }
 
@@ -582,12 +575,11 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Releases camera capture, rotation output, and sender state.
+   * Releases camera capture and rotation output.
    */
   private releaseCameraCapture(): void {
     ++this.captureVersion;
     const camera = this.camera;
-    this.releaseCameraSender();
     this.camera = undefined;
     camera?.close();
     this.cameraRotation?.stop();
@@ -609,7 +601,7 @@ export class AgoraRtcManager implements RtcManaging {
       source?: "camera";
     }
   ): Promise<void> {
-    const client = this.requireClient();
+    this.requireClient();
     if (this.camera || this.cameraSource || this.microphone || this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
@@ -630,19 +622,12 @@ export class AgoraRtcManager implements RtcManaging {
     let wrappedAudio: ILocalAudioTrack | undefined;
     try {
       audio = tracks.audioTrack?.clone();
-      const capture = tracks.source === "camera" ? video.getSettings() : undefined;
-      wrappedVideo = this.sdk!.createCustomVideoTrack({
-        mediaStreamTrack: video,
-        ...(capture && { width: capture.width, height: capture.height, frameRate: capture.frameRate }),
-      });
+      wrappedVideo = this.sdk!.createCustomVideoTrack({ mediaStreamTrack: video });
       if (audio) {
         wrappedAudio = this.sdk!.createCustomAudioTrack({
           mediaStreamTrack: audio,
           encoderConfig: tracks.source === "camera" ? "speech_standard" : "music_standard"
         });
-      }
-      if (tracks.source === "camera") {
-        this.observeCameraSender(client, wrappedVideo);
       }
       this.externalVideo = wrappedVideo;
       this.externalAudio = wrappedAudio;
@@ -656,150 +641,89 @@ export class AgoraRtcManager implements RtcManaging {
     }
   }
 
-  /** Replaces SDK camera input on the existing Agora track and restores its sender settings. */
+  /** Replaces SDK camera input on the existing Agora track and reapplies its encoder profile. */
   async replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void> {
     const camera = this.externalCamera ? this.externalVideo : undefined;
     if (!camera) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "SDK camera is not prepared for publication");
     }
-    const replacement = track.clone();
-    try {
-      await this.run(() => camera.replaceTrack(replacement, true));
+    await this.run(() => this.queueVideoUpdate(async () => {
       if (this.externalVideo !== camera) {
         throw this.cancelled();
       }
-    } catch (error) {
-      replacement.stop();
-      throw error;
-    }
-    if (this.videoPublishRequested) {
-      await this.restoreCameraSender(camera).catch(() => {
-        XmaxLogger.rtc.warning(() => "Agora 发送参数恢复失败 (Agora Sender Parameters Restore Failed)");
-      });
-    }
+      const replacement = track.clone();
+      try {
+        await camera.replaceTrack(replacement, true);
+        if (this.externalVideo !== camera) {
+          throw this.cancelled();
+        }
+      } catch (error) {
+        replacement.stop();
+        throw error;
+      }
+      if (this.externalCameraEncoding) {
+        // The replacement is already active. Keep it attached if Agora rejects reapplying the profile.
+        try {
+          await camera.setEncoderConfiguration(this.externalCameraEncoding);
+        } catch {
+          XmaxLogger.rtc.warning(() => "Agora 编码配置恢复失败 (Agora Encoder Configuration Restore Failed)");
+        }
+      }
+    }));
   }
 
   /**
-   * Configures camera senders directly and uses Agora encoding configuration for other video sources.
+   * Applies the encoder configuration to the Agora track used for publication.
    */
   async configureVideoEncoding(
     config: VideoEncodingConfiguration
-  ): Promise<void | false> {
-    const camera = this.requireLocalVideo();
-    if (camera === this.cameraSenderTrack) {
-      const client = this.requireClient(), version = this.roomVersion;
-      const published = this.videoPublishRequested;
-      return this.run(() => this.queueSenderUpdate(async () => {
-        const ensureActive = () => {
-          if (this.cameraSenderTrack !== camera || this.client !== client || this.roomVersion !== version ||
-            (published && !this.videoPublishRequested)) {
-            throw this.cancelled();
-          }
-        };
-        ensureActive();
-        if (this.videoPublishRequested) {
-          const applied = await AgoraVideoSender.apply(
-            camera,
-            config,
-            ensureActive
-          );
-          if (!applied) {
-            return false;
-          }
-        }
-        // Only target settings exist before publication; the sender becomes available after publish completes.
-        this.cameraSenderConfiguration = { ...config };
-      }));
-    }
-    const encodingSize = config;
-    await this.run(async () => {
-      await camera.setEncoderConfiguration({
-        width: encodingSize.width,
-        height: encodingSize.height,
-        frameRate: config.frameRate,
-        bitrateMin: config.minimumBitrate,
-        bitrateMax: config.maximumBitrate,
-      });
-      if (this.appliedOptimizationModes.get(camera) !== config.encoderPreference) {
-        await camera.setOptimizationMode(
+  ): Promise<void> {
+    const video = this.requireLocalVideo();
+    const client = this.requireClient();
+    const version = this.roomVersion;
+    const published = this.videoPublishRequested;
+    const ensureActive = () => {
+      if ((this.externalVideo ?? this.camera) !== video || this.client !== client || this.roomVersion !== version ||
+        (published && !this.videoPublishRequested)) {
+        throw this.cancelled();
+      }
+    };
+    const encoding: VideoEncoderConfiguration = {
+      width: config.width,
+      height: config.height,
+      frameRate: config.frameRate,
+      bitrateMin: config.minimumBitrate,
+      bitrateMax: config.maximumBitrate,
+    };
+    await this.run(() => this.queueVideoUpdate(async () => {
+      ensureActive();
+      await video.setEncoderConfiguration(encoding);
+      ensureActive();
+      if (this.appliedOptimizationModes.get(video) !== config.encoderPreference) {
+        await video.setOptimizationMode(
           config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail"
         );
+        ensureActive();
         this.appliedOptimizationModes.set(
-          camera,
+          video,
           config.encoderPreference
         );
       }
-    });
-  }
-
-  /**
-   * Serializes camera sender changes to preserve update order.
-   */
-  private queueSenderUpdate<T>(
-    operation: () => Promise<T>
-  ): Promise<T> {
-    const next = this.senderUpdateTail.then(operation);
-    this.senderUpdateTail = next.then(() => {}, () => {});
-    return next;
-  }
-
-  /** The local track whose capture is independent of sender encoding. */
-  private get cameraSenderTrack(): ILocalVideoTrack | undefined {
-    return this.externalCamera ? this.externalVideo : this.camera;
-  }
-
-  /** Restores camera settings after Agora replaces an active WebRTC sender. */
-  private observeCameraSender(client: IAgoraRTCClient, camera: ILocalVideoTrack): void {
-    this.cameraTransceiverListener = () => {
-      if (this.client === client && client.localTracks.includes(camera) && this.videoPublishRequested && !this.rejoinTask) {
-        void this.restoreCameraSender(camera).catch(() => {
-          if (this.cameraSenderTrack === camera && this.videoPublishRequested) {
-            XmaxLogger.rtc.warning(() => "Agora 发送参数恢复失败 (Agora Sender Parameters Restore Failed)");
-          }
-        });
+      if (this.externalCamera) {
+        this.externalCameraEncoding = encoding;
       }
-    };
-    camera.on("transceiver-updated", this.cameraTransceiverListener);
+    }));
   }
 
   /**
-   * Restores the latest successful settings after publication or sender replacement without capturing
-   * obsolete queued settings.
+   * Serializes operations that change the active Agora video track or its encoder.
    */
-  private restoreCameraSender(
-    camera: ILocalVideoTrack
+  private queueVideoUpdate(
+    operation: () => Promise<void>
   ): Promise<void> {
-    const client = this.client, version = this.roomVersion;
-    return this.queueSenderUpdate(async () => {
-      const ensureActive = () => {
-        if (this.cameraSenderTrack !== camera || this.client !== client || this.roomVersion !== version || !this.videoPublishRequested) {
-          throw this.cancelled();
-        }
-      };
-      ensureActive();
-      const config = this.cameraSenderConfiguration;
-      if (config) {
-        await AgoraVideoSender.apply(
-          camera,
-          config,
-          ensureActive
-        );
-      }
-    });
-  }
-
-  /**
-   * Removes sender-change observation and clears encoding settings.
-   */
-  private releaseCameraSender(): void {
-    if (this.cameraTransceiverListener) {
-      this.cameraSenderTrack?.off(
-        "transceiver-updated",
-        this.cameraTransceiverListener
-      );
-    }
-    this.cameraTransceiverListener = undefined;
-    this.cameraSenderConfiguration = undefined;
+    const next = this.videoUpdateTail.then(operation);
+    this.videoUpdateTail = next.catch(() => {});
+    return next;
   }
 
   /**
@@ -1068,9 +992,6 @@ export class AgoraRtcManager implements RtcManaging {
         client,
         version
       );
-      if (video === this.cameraSenderTrack) {
-        await this.restoreCameraSender(video);
-      }
     }
     if (this.audioPublishRequested && audio) {
       await this.run(() => client.publish(audio));
@@ -1118,9 +1039,6 @@ export class AgoraRtcManager implements RtcManaging {
       return;
     }
     await this.run(() => client.publish(camera));
-    if (camera === this.cameraSenderTrack) {
-      await this.run(() => this.restoreCameraSender(camera));
-    }
   }
 
   /**

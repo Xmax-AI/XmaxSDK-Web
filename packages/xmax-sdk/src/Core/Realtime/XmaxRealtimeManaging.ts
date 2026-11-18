@@ -155,8 +155,8 @@ export interface XmaxRealtimeManaging {
   readonly downlinkQualityLevel?: RealtimeQualityLevel;
 
   /**
-   * Sets the uplink encoding level during generation without changing capture format or the generation
-   * canvas. If enabled, automatic adaptation resumes from this level.
+   * Sets the uplink encoding level during generation. Agora can adjust local track constraints when
+   * applying the new encoding profile. If enabled, automatic adaptation resumes from this level.
    */
   setUplinkQualityLevel(
     level: RealtimeQualityLevel

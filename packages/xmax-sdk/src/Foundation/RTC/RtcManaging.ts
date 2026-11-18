@@ -123,14 +123,13 @@ export interface RtcManaging {
   replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void>;
 
   /**
-   * Configures uplink video encoding independently of capture.
+   * Configures uplink video encoding on the provider's local track.
    *
-   * @returns False if the browser silently ignored the requested sender limits.
    * @throws Rejects if capture has not started or encoding configuration fails.
    */
   configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
-  ): Promise<void | false>;
+  ): Promise<void>;
 
   /**
    * Joins an RTC room.

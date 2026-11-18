@@ -137,7 +137,7 @@ export interface XmaxRealtimeBindings {
     level: number,
     token: RealtimeOperationToken,
     signal: AbortSignal
-  ): Promise<void | false>;
+  ): Promise<void>;
 
   /**
    * Applies a downlink quality change inside the admitted configuration operation.
@@ -412,7 +412,7 @@ export class XmaxRealtimeFactory {
           change,
           signal
         ) => {
-          return lifecycleManager.run(
+          await lifecycleManager.run(
             RealtimeOperationKind.configuration,
             undefined,
             token => bindings.applyUplinkQuality(

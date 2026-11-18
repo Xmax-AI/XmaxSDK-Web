@@ -48,7 +48,7 @@ export class EncodingController implements EncodingControlling {
   private readonly rtcManager: RtcManaging;
 
   /**
-   * The last encoding settings accepted by RTC, including settings staged before publication.
+   * The last encoding settings successfully applied to RTC.
    */
   private lastAppliedConfiguration?: VideoEncodingConfiguration;
 
@@ -68,7 +68,7 @@ export class EncodingController implements EncodingControlling {
    */
   async configure(
     videoFormat: RealtimeVideoFormat
-  ): Promise<void | false> {
+  ): Promise<void> {
     videoFormat.validate();
 
     let minimum: number;
@@ -104,9 +104,7 @@ export class EncodingController implements EncodingControlling {
       maximumBitrate: maximum,
       encoderPreference: ENCODER_PREFERENCE_MAP[videoFormat.encoderPreference],
     };
-    if (await this.rtcManager.configureVideoEncoding(configuration) === false) {
-      return false;
-    }
+    await this.rtcManager.configureVideoEncoding(configuration);
     this.lastAppliedConfiguration = { ...configuration };
   }
 
@@ -116,7 +114,7 @@ export class EncodingController implements EncodingControlling {
    */
   async updateFrameRate(
     fps: number
-  ): Promise<RealtimeVideoFormat | undefined> {
+  ): Promise<RealtimeVideoFormat> {
     const previous = this.lastAppliedConfiguration;
     if (!previous) {
       throw new XmaxError(
@@ -139,9 +137,7 @@ export class EncodingController implements EncodingControlling {
         ...previous,
         frameRate: fps
       };
-      if (await this.rtcManager.configureVideoEncoding(next) === false) {
-        return;
-      }
+      await this.rtcManager.configureVideoEncoding(next);
       this.lastAppliedConfiguration = next;
     }
     return format;

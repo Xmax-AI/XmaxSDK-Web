@@ -120,7 +120,7 @@ export class QualityController {
     private readonly apply: (
       change: QualityChange,
       signal: AbortSignal
-    ) => Promise<void | false>,
+    ) => Promise<void>,
     private readonly now: () => number = () => performance.now(),
     policy: Partial<QualityPolicy> = {},
     private readonly canApply: (
@@ -274,15 +274,11 @@ export class QualityController {
     };
     this.switching = true;
     try {
-      const applied = await this.apply(
+      await this.apply(
         change,
         lifecycle.signal
       );
       if (lifecycle.signal.aborted) {
-        return;
-      }
-      if (applied === false) {
-        this.stableUntil = this.now() + this.policy.stabilizationMs;
         return;
       }
       this.index = index;
