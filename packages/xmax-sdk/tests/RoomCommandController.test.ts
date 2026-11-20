@@ -48,7 +48,14 @@ describe("RoomCommandController", () => {
     expect(warning).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(warning).toHaveBeenCalledOnce();
-    expect(warning.mock.calls[0]!.join(" ")).toContain("retries stopped");
+    expect(warning.mock.calls[0]!.join(" ")).toContain([
+      "[Xmax][Room] RTC 指令回执超时 (RTC Command ACK Timeout)",
+      `├─ event: ${kind}`,
+      "├─ xid: xid-1",
+      "├─ timeout: 6000 ms",
+      "├─ attempts: 6",
+      "└─ action: 已停止后台重发",
+    ].join("\n"));
     expect(s.sends.every(x => x.signal.aborted)).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(6000);

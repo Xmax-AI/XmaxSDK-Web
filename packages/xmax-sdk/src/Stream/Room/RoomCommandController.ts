@@ -266,7 +266,12 @@ export class RoomCommandController {
           return;
         }
         XmaxLogger.room.warning(() =>
-          `RTC command ACK not received after ${RETRY_DEADLINE_MS} ms; retries stopped: ${command.kind}, xid: ${command.xid}, attempts: ${command.attempts}`);
+          `RTC 指令回执超时 (RTC Command ACK Timeout)\n` +
+          `├─ event: ${command.kind}\n` +
+          `├─ xid: ${command.xid}\n` +
+          `├─ timeout: ${RETRY_DEADLINE_MS} ms\n` +
+          `├─ attempts: ${command.attempts}\n` +
+          `└─ action: ${XmaxLogger.localized("已停止后台重发", "Background retries stopped")}`);
         this.stopRetries(command);
       }, RETRY_DEADLINE_MS));
     }
