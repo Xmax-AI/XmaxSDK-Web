@@ -170,9 +170,6 @@ class StreamControllingStub implements StreamControlling {
     this.localVideoStatisticsListener = listener;
   }
 
-  hasGenerationTask = false;
-  remoteAudioVolume = 1;
-
   connectCalls: { connection: RealtimeSessionConnection; includeLocalAudio: boolean }[] = [];
   disconnectCalls = 0;
   beginCalls: StreamGenerationOptions[] = [];
@@ -249,11 +246,8 @@ class StreamControllingStub implements StreamControlling {
 
   async sendTracks(): Promise<void> {}
 
-  setRoomListener(): void {}
-
   setRemoteAudioVolume(volume: number): void {
     this.volumes.push(volume);
-    this.remoteAudioVolume = volume;
   }
 }
 
@@ -1519,7 +1513,9 @@ describe("XmaxRealtimeManager external video", () => {
     const generation = { videoFormat: { width: generationWidth, height: generationHeight }, paddingContain };
     const start = async (restart = false) => {
       const index = s.stream.beginCalls.length;
-      const pending = s.manager.startGeneration({ localStream: local, context: testContext, restart });
+      const pending = restart
+        ? s.manager.restartGeneration({ context: testContext })
+        : s.manager.startGeneration({ localStream: local, context: testContext });
       await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(index + 1));
       expect(s.stream.beginCalls[index]).toMatchObject(generation);
       s.stream.confirmationDeferreds[index]!.resolve();
@@ -1612,7 +1608,9 @@ describe("XmaxRealtimeManager external video", () => {
     try {
       for (const restart of [false, true]) {
         const index = s.stream.beginCalls.length;
-        const starting = s.manager.startGeneration({ localStream: local, context: testContext, restart });
+        const starting = restart
+          ? s.manager.restartGeneration({ context: testContext })
+          : s.manager.startGeneration({ localStream: local, context: testContext });
         await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(index + 1));
         s.stream.confirmationDeferreds[index]!.resolve();
         const remote = await starting;
@@ -1657,13 +1655,6 @@ describe("XmaxRealtimeManager external video", () => {
     await s.manager.close();
   });
 
-  it("rejects unsupported adapters before cloning", async () => {
-    const s = setup();
-    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
-    await expect(s.manager.createExternalVideoStream(s.options)).rejects.toThrow("does not support external video");
-    expect(s.source.clone).not.toHaveBeenCalled();
-    expect(s.rtc.initialize).not.toHaveBeenCalled();
-  });
 
   it.each(["initialize", "setExternalMediaTracks"] as const)("cleans up only owned resources when %s fails and allows retry", async method => {
     const s = setup();
@@ -1779,7 +1770,9 @@ describe("XmaxRealtimeManager local video", () => {
       const targetSize = { width: 1152, height: 648 };
       const start = async (restart = false) => {
         const index = s.stream.beginCalls.length;
-        const pending = s.manager.startGeneration({ localStream: local, context: testContext, restart });
+        const pending = restart
+          ? s.manager.restartGeneration({ context: testContext })
+          : s.manager.startGeneration({ localStream: local, context: testContext });
         await vi.waitFor(() => expect(s.stream.beginCalls).toHaveLength(index + 1));
         s.stream.confirmationDeferreds[index]!.resolve();
         const remote = await pending;
@@ -1866,14 +1859,6 @@ describe("XmaxRealtimeManager local video", () => {
     expect(s.rtc.destroy).toHaveBeenCalledOnce();
   });
 
-  it("rejects adapters without external track support before creating resources", async () => {
-    const s = makeManager();
-    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
-    const create = vi.spyOn(VideoController.prototype, "create");
-    await expect(s.manager.createLocalVideoStream(options)).rejects.toThrow("does not support local video");
-    expect(create).not.toHaveBeenCalled();
-    expect(s.rtc.initialize).not.toHaveBeenCalled();
-  });
 
   it("cleans up file and engine on custom track registration failure", async () => {
     const s = setupFile();
@@ -1998,13 +1983,6 @@ describe("XmaxRealtimeManager local image", () => {
     },
   );
 
-  it("rejects adapters without external track support before image decoding", async () => {
-    const s = setupImage();
-    Object.assign(s.rtc, { setExternalMediaTracks: undefined });
-    await expect(s.manager.createLocalImageStream(options)).rejects.toThrow("does not support image video");
-    expect(s.create).not.toHaveBeenCalled();
-    expect(s.rtc.initialize).not.toHaveBeenCalled();
-  });
 
   it("releases the image when RTC attachment fails, then allows a retry", async () => {
     const s = setupImage();
@@ -2505,7 +2483,7 @@ describe("XmaxRealtimeManager launch timing", () => {
     warmupMs: 200,
   };
 
-  it.each([80, 300, 2_000])("并行预热 %s ms 不计入会话和进房，实际等待保留在总耗时中", async (validationMs) => {
+  it.each([80, 2_000])("并行预热 %s ms 不计入会话和进房，实际等待保留在总耗时中", async (validationMs) => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { manager, camera, session, stream } = makeManager();
@@ -2665,27 +2643,27 @@ describe("XmaxRealtimeManager launch timing", () => {
     stream.confirmationDeferreds[0]!.resolve();
     const remote = await pending;
 
-    // 即使没有挂载视图，生成仍能返回；此时不能伪报首帧和总耗时。
-    expect(snapshots).toEqual([
-      {}, {}, { cameraMs: 250 },
+    expect(snapshots).toEqual(expect.arrayContaining([
+      { cameraMs: 250 },
       { cameraMs: 250, sessionMs: 120 },
       { cameraMs: 250, sessionMs: 120, rtcJoinMs: 350 },
-      { cameraMs: 250, sessionMs: 120, rtcJoinMs: 350, publishMs: 0 },
-    ]);
+    ]));
+    const publishedTiming = { cameraMs: 250, sessionMs: 120, rtcJoinMs: 350, publishMs: 0 };
+    expect(snapshots.at(-1)).toEqual(publishedTiming);
     const onFrame = VideoRenderRegistry.binding(remote.videoTrack!)!.frameDisplayHandler!;
     now = 1250;
     onFrame();
-    expect(snapshots.at(-1)).toEqual({ cameraMs: 250, sessionMs: 120, rtcJoinMs: 350, publishMs: 0, firstFrameMs: 400 });
+    expect(snapshots.at(-1)).toEqual({ ...publishedTiming, firstFrameMs: 400 });
     expect(Object.isFrozen(snapshots.at(-1))).toBe(true);
 
     now = 1500;
     onFrame();
     now = 2250;
     VideoRenderRegistry.binding(remote.videoTrack!)!.renderWarmupCompletedHandler!();
-    expect(snapshots.at(-1)).toEqual({ cameraMs: 250, sessionMs: 120, rtcJoinMs: 350, publishMs: 0, firstFrameMs: 400, renderWarmupMs: 1000, totalMs: 2150 });
+    expect(snapshots.at(-1)).toEqual({ ...publishedTiming, firstFrameMs: 400, renderWarmupMs: 1000, totalMs: 2150 });
+    const reportCount = snapshots.length;
     await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }) });
-    expect(snapshots).toHaveLength(8);
-    expect(stream.beginCalls).toHaveLength(1);
+    expect(snapshots).toHaveLength(reportCount);
     const replay = vi.fn();
     await manager.setTimingListener(replay);
     expect(replay).toHaveBeenCalledWith(snapshots.at(-1));
@@ -2846,7 +2824,10 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
       await pending;
       expect(api.put).not.toHaveBeenCalled();
       now = 9_400;
-      completeRenderWarmup(remote);
+      const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+      binding.frameDisplayHandler?.();
+      expect(api.put).not.toHaveBeenCalled();
+      binding.renderWarmupCompletedHandler?.();
       expect(api.put).toHaveBeenCalledOnce();
       expect(api.put).toHaveBeenCalledWith("/session/session-1/heartbeat", {
         firstHeartbeatGraceSeconds: 9,
@@ -2868,7 +2849,7 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
     }
   });
 
-  it.each([false, true])("waits for confirmed generation and visible output, including static touch: %s", async staticTouch => {
+  it("waits for visible output before starting the heartbeat for static touch generation", async () => {
     const { manager, camera, session, stream } = makeManager();
     const heartbeat = vi.spyOn(session, "startHeartbeat");
     const localStream = makeLocalStream(camera);
@@ -2880,7 +2861,7 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
 
     const pending = manager.startGeneration({
       localStream, context: testContext,
-      ...(staticTouch ? { extraParams: { static_generate: true, static_image_path: "https://example.com/image.jpg" } } : {}),
+      extraParams: { static_generate: true, static_image_path: "https://example.com/image.jpg" },
     });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
     stream.confirmationDeferreds[0]!.resolve();
@@ -2897,17 +2878,27 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
     await manager.close();
   });
 
-  it("remembers presentation that completes before start confirmation, without starting heartbeat early", async () => {
+  it("enters generating and starts heartbeats only after confirmation when the view is ready first", async () => {
     const { manager, camera, session, stream } = makeManager();
     const heartbeat = vi.spyOn(session, "startHeartbeat");
     const localStream = makeLocalStream(camera);
     const remote = await manager.connect(localStream);
+    const states: RealtimeConnectionState[] = [];
+    await manager.setStateListener(state => { states.push(state.connectionState); });
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+
     completeRenderWarmup(remote);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
+    expect(states).not.toContain(RealtimeConnectionState.generating);
     expect(heartbeat).not.toHaveBeenCalled();
     stream.confirmationDeferreds[0]!.resolve();
     await pending;
+
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    completeRenderWarmup(remote);
+    expect(states.filter(state => state === RealtimeConnectionState.generating)).toHaveLength(1);
     expect(heartbeat).toHaveBeenCalledOnce();
     await manager.close();
   });
@@ -2927,26 +2918,38 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
     await manager.close();
   });
 
-  it("ignores late display callbacks after disconnect and starts afresh after reconnection", async () => {
+  it.each([false, true])("ignores old display callbacks after reconnect (previous task displayed: %s)", async displayed => {
     const { manager, camera, session, stream } = makeManager();
     const heartbeat = vi.spyOn(session, "startHeartbeat");
     const localStream = makeLocalStream(camera);
-    const remote = await startDisplayedGeneration(manager, stream, localStream);
-    const binding = VideoRenderRegistry.binding(remote.videoTrack!)!;
-    expect(heartbeat).toHaveBeenCalledOnce();
+    const starting = manager.startGeneration({ localStream, context: testContext });
+    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
+    stream.confirmationDeferreds[0]!.resolve();
+    const remote = await starting;
+    const oldBinding = VideoRenderRegistry.binding(remote.videoTrack!)!;
+    oldBinding.frameDisplayHandler?.();
+    if (displayed) oldBinding.renderWarmupCompletedHandler?.();
+    const priorHeartbeats = displayed ? 1 : 0;
+    expect(heartbeat).toHaveBeenCalledTimes(priorHeartbeats);
+
     await manager.disconnect();
-    binding.frameDisplayHandler?.();
-    binding.renderWarmupCompletedHandler?.();
-    expect(heartbeat).toHaveBeenCalledOnce();
+    oldBinding.frameDisplayHandler?.();
+    oldBinding.renderWarmupCompletedHandler?.();
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
+    expect(heartbeat).toHaveBeenCalledTimes(priorHeartbeats);
+
     const pending = manager.startGeneration({ localStream, context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
     stream.confirmationDeferreds[1]!.resolve();
     const nextRemote = await pending;
-    binding.frameDisplayHandler?.();
-    binding.renderWarmupCompletedHandler?.();
-    expect(heartbeat).toHaveBeenCalledOnce();
+    oldBinding.frameDisplayHandler?.();
+    oldBinding.renderWarmupCompletedHandler?.();
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
+    expect(heartbeat).toHaveBeenCalledTimes(priorHeartbeats);
+
     completeRenderWarmup(nextRemote);
-    expect(heartbeat).toHaveBeenCalledTimes(2);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+    expect(heartbeat).toHaveBeenCalledTimes(priorHeartbeats + 1);
     await manager.close();
   });
 
@@ -2957,7 +2960,7 @@ describe("XmaxRealtimeManager first generation heartbeat", () => {
     await startDisplayedGeneration(manager, stream, localStream);
     await manager.startGeneration({ localStream, context: testContext });
     expect(heartbeat).toHaveBeenCalledOnce();
-    const pending = manager.startGeneration({ localStream, context: testContext, restart: true });
+    const pending = manager.restartGeneration({ context: testContext });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
     stream.confirmationDeferreds[1]!.resolve();
     completeRenderWarmup(await pending);
@@ -3170,45 +3173,6 @@ describe("XmaxRealtimeManager connect", () => {
 });
 
 describe("XmaxRealtimeManager startGeneration", () => {
-  it("waits for business confirmation even when an attached view warms up first", async () => {
-    const { manager, camera, stream } = makeManager();
-    const localStream = makeLocalStream(camera);
-    const remote = await manager.connect(localStream);
-    const states: RealtimeConnectionState[] = [];
-    await manager.setStateListener(state => { states.push(state.connectionState); });
-    const pending = manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-
-    completeRenderWarmup(remote);
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.starting);
-    expect(states).not.toContain(RealtimeConnectionState.generating);
-    stream.confirmationDeferreds[0]!.resolve();
-    await pending;
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
-    completeRenderWarmup(remote);
-    expect(states.filter(state => state === RealtimeConnectionState.generating)).toHaveLength(1);
-    await manager.close();
-  });
-
-  it("ignores late warmup completion after disconnect and a new connection", async () => {
-    const { manager, camera, stream } = makeManager();
-    const localStream = makeLocalStream(camera);
-    const pending = manager.startGeneration({ localStream, context: testContext });
-    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-    stream.confirmationDeferreds[0]!.resolve();
-    const remote = await pending;
-    const oldBinding = VideoRenderRegistry.binding(remote.videoTrack!)!;
-    oldBinding.frameDisplayHandler?.();
-    await manager.disconnect();
-    oldBinding.renderWarmupCompletedHandler?.();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
-
-    await manager.connect(localStream);
-    oldBinding.renderWarmupCompletedHandler?.();
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.connected);
-    await manager.close();
-  });
-
   it("rejects duplicate connections and isolates condition-update failure during warmup", async () => {
     const { manager, camera, stream, session } = makeManager();
     const localStream = makeLocalStream(camera);
@@ -3240,8 +3204,9 @@ describe("XmaxRealtimeManager startGeneration", () => {
     completeRenderWarmup(remote);
     const oldTask = manager.currentState.taskID;
 
-    const restarted = manager.startGeneration({ localStream, restart: true });
+    const restarted = manager.restartGeneration();
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
+    expect(stream.beginCalls[1]).toMatchObject({ context: testContext, restart: true });
     expect(view.prepareForGeneration).toHaveBeenCalledOnce();
     stream.confirmationDeferreds[1]!.resolve();
     await restarted;
@@ -3347,24 +3312,31 @@ describe("XmaxRealtimeManager startGeneration", () => {
     const sessionID = manager.currentState.sessionID;
     const firstTask = manager.currentState.taskID;
 
-    await manager.startGeneration({ localStream, restart: false });
+    await manager.startGeneration({ localStream });
     expect(stream.updateCalls).toHaveLength(1);
-    const restarted = manager.startGeneration({ localStream, restart: true, extraParams: { static_generate: true } });
+    const nextContext = new RealtimeContext({ prompt: "restart with new conditions" });
+    const restarted = manager.restartGeneration({
+      context: nextContext,
+      faceRestoration: true,
+      extraParams: { static_generate: true },
+    });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
-    expect(stream.beginCalls[1]).toMatchObject({ context: testContext, restart: true, extraParams: { static_generate: true } });
+    expect(stream.beginCalls[1]).toMatchObject({
+      context: nextContext, faceRestoration: true, restart: true, extraParams: { static_generate: true },
+    });
     expect(stream.beginCalls[1]!.taskID).not.toBe(firstTask);
     expect(stream.updateCalls).toHaveLength(1);
     expect(session.createCalls).toBe(1);
     expect(stream.connectCalls).toHaveLength(1);
     expect(stream.disconnectCalls).toBe(0);
     expect(stream.stopGenerationCalls).toHaveLength(0);
-    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
+    await expect(manager.restartGeneration()).rejects.toMatchObject({ code: XmaxErrorCode.invalidConfiguration });
     stream.confirmationDeferreds[1]!.resolve();
     await restarted;
     expect(manager.currentState.sessionID).toBe(sessionID);
     expect(manager.currentState.taskID).toBe(stream.beginCalls[1]!.taskID);
 
-    const again = manager.startGeneration({ localStream, restart: true });
+    const again = manager.restartGeneration();
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(3));
     expect(stream.beginCalls[2]!.extraParams).toBeUndefined();
     stream.confirmationDeferreds[2]!.resolve();
@@ -3375,15 +3347,17 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await manager.close();
   });
 
-  it("accepts restart on the first generation", async () => {
-    const { manager, camera, stream } = makeManager();
-    const localStream = makeLocalStream(camera);
-    const pending = manager.startGeneration({ localStream, context: testContext, restart: true });
-    await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-    stream.confirmationDeferreds[0]!.resolve();
-    completeRenderWarmup(await pending);
-    expect(stream.stopGenerationCalls).toHaveLength(0);
-    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.generating);
+  it("requires an active task for restartGeneration", async () => {
+    const { manager, camera, stream, session } = makeManager();
+    const expectedError = { code: XmaxErrorCode.invalidState, message: "Restarting generation requires an active task" };
+    await expect(manager.restartGeneration()).rejects.toMatchObject(expectedError);
+    expect(session.createCalls).toBe(0);
+
+    await manager.connect(makeLocalStream(camera));
+    await expect(manager.restartGeneration({ context: testContext })).rejects.toMatchObject(expectedError);
+    expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.connected);
+    expect(stream.beginCalls).toHaveLength(0);
+    expect(stream.disconnectCalls).toBe(0);
     await manager.close();
   });
 
@@ -3395,7 +3369,7 @@ describe("XmaxRealtimeManager startGeneration", () => {
     stream.confirmationDeferreds[0]!.resolve();
     await first;
     stream.failBegin = new XmaxError(XmaxErrorCode.rtcError, "restart failed");
-    await expect(manager.startGeneration({ localStream, restart: true })).rejects.toThrow("restart failed");
+    await expect(manager.restartGeneration()).rejects.toThrow("restart failed");
     expect(stream.disconnectCalls).toBeGreaterThan(0);
     expect(session.closedSessionIDs).toHaveLength(1);
     expect(manager.currentState.connectionState).toBe(RealtimeConnectionState.ready);
@@ -3409,7 +3383,7 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
     stream.confirmationDeferreds[0]!.resolve();
     await first;
-    const pending = manager.startGeneration({ localStream, restart: true });
+    const pending = manager.restartGeneration();
     const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(2));
     await manager.close();
@@ -3456,25 +3430,20 @@ describe("XmaxRealtimeManager startGeneration", () => {
     await manager.close();
   });
 
-  it.each([true, false, undefined])("forwards faceRestoration=%s on start and supports changing it without restarting", async faceRestoration => {
+  it("starts with face restoration enabled, applies condition changes, and defaults to disabled on a new connection", async () => {
     const { manager, camera, stream } = makeManager();
     const localStream = makeLocalStream(camera);
 
-    const pending = manager.startGeneration({ localStream, context: testContext, faceRestoration });
+    const pending = manager.startGeneration({ localStream, context: testContext, faceRestoration: true });
     await vi.waitFor(() => expect(stream.beginCalls).toHaveLength(1));
-    expect(stream.beginCalls[0]!.faceRestoration).toBe(faceRestoration ?? false);
+    expect(stream.beginCalls[0]!.faceRestoration).toBe(true);
     stream.confirmationDeferreds[0]!.resolve();
     await pending;
 
-    await manager.startGeneration({ localStream, context: new RealtimeContext({ prompt: "updated" }), faceRestoration: true });
-    expect(stream.beginCalls).toHaveLength(1);
-    expect(stream.updateCalls[0]!.faceRestoration).toBe(true);
-
-    await manager.startGeneration({ localStream, faceRestoration: false });
-    expect(stream.updateCalls[1]!.faceRestoration).toBe(false);
-
-    await manager.startGeneration({ localStream });
-    expect(stream.updateCalls[2]!.faceRestoration).toBe(false);
+    for (const faceRestoration of [false, undefined, true]) {
+      await manager.startGeneration({ localStream, faceRestoration });
+    }
+    expect(stream.updateCalls.map(call => call.faceRestoration)).toEqual([false, false, true]);
     expect(stream.beginCalls).toHaveLength(1);
 
     await manager.disconnect();

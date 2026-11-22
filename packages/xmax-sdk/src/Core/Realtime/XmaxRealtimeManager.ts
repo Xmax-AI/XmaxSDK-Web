@@ -57,7 +57,6 @@ import {
   type RealtimeCleanupResult,
   type RealtimeOperationToken,
 } from "./XmaxRealtimeLifecycleManager";
-import type { XmaxRealtimeErrorManager } from "./XmaxRealtimeErrorManager";
 import { RealtimeTiming } from "../../Service/Realtime/RealtimeTiming";
 import type { RealtimeTimingListener } from "../../Service/Realtime/RealtimeTimingSnapshot";
 import type { XmaxRealtimeManaging } from "./XmaxRealtimeManaging";
@@ -159,11 +158,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    * The coordinator owning lifecycle admission, state, and cleanup.
    */
   private readonly lifecycleManager: XmaxRealtimeLifecycleManager;
-
-  /**
-   * The handler for asynchronous realtime failures.
-   */
-  private readonly errorManager: XmaxRealtimeErrorManager;
 
   /**
    * The active media source and interaction sampling controller.
@@ -358,7 +352,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     );
 
     this.mediaService = components.mediaService;
-    this.errorManager = components.errorManager;
     this.canReadRemoteAudio = components.canReadRemoteAudio;
     this.streamController = components.streamController;
     this.mediaController = components.mediaController;
@@ -1050,7 +1043,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async (token) => {
         this.mediaController.ensureNoLocalSource();
-        this.mediaController.validateExternalMediaSupport("local");
         token.setFailureScope(RealtimeTerminationScope.all);
         this.timing.start();
         this.clearVideoStatistics();
@@ -1085,7 +1077,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       undefined,
       async token => {
         this.mediaController.ensureNoLocalSource();
-        this.mediaController.validateExternalMediaSupport("image");
         token.setFailureScope(RealtimeTerminationScope.all);
         this.timing.start();
         this.clearVideoStatistics();
@@ -1122,7 +1113,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       async token => {
         this.mediaController.ensureNoLocalSource();
 
-        this.mediaController.validateExternalMediaSupport("external");
 
         const stream = await this.mediaController.createExternalVideoStream(
           options,
@@ -1488,7 +1478,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
   /**
    * Connects if needed and starts generation.
    *
-   * Active generation updates conditions unless restart is true. The first task requires a context;
+   * Updates conditions when generation is already active. The first task requires a context;
    * later calls may reuse cached conditions. Mount the returned remote stream in an SDK video view;
    * generating is entered only after the first frame and render warmup.
    *
@@ -1497,8 +1487,6 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
    *
    * @param options.localStream - This manager's local camera, external, image, or video-file stream.
    * @param options.context - The generation conditions; omission reuses cached conditions.
-   * @param options.restart - Whether to retain RTC and start a new task without first sending stop;
-   * defaults to false.
    * @param options.faceRestoration - Whether to restore the original face; defaults to false and updates
    * active tasks through change_condition.
    * @param options.extraParams - Additional start/change_condition parameters. Not cached or included in
@@ -1514,14 +1502,13 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
     options: {
       localStream: RealtimeMediaStream;
       context?: RealtimeContext;
-      restart?: boolean;
       faceRestoration?: boolean;
       extraParams?: RealtimeExtraParams;
     }
   ): Promise<RealtimeMediaStream> {
     const extraParams = snapshotExtraParams(options.extraParams);
     return this.lifecycleManager.run(
-      options.restart === true ? RealtimeOperationKind.generationRestart : RealtimeOperationKind.generation,
+      RealtimeOperationKind.generation,
       undefined,
       async (token) => {
         const localTrack = options.localStream.videoTrack;
@@ -1531,18 +1518,11 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
             "The local stream must be created and started by this realtime manager",
           );
         }
-        const videoFormat = this.resolvedMediaVideoFormat ?? localTrack.videoFormat;
-        if (!videoFormat) {
-          throw new XmaxError(
-            XmaxErrorCode.invalidConfiguration,
-            "The local video format is unavailable",
-          );
-        }
-        // Update conditions by default; an explicit restart retains RTC and creates a new task.
+        const videoFormat = this.requireGenerationVideoFormat(localTrack);
         const currentState = this.lifecycleManager.currentState;
         const hasGeneration = currentState.connectionState === RealtimeConnectionState.generating ||
           (currentState.connectionState === RealtimeConnectionState.starting && !!currentState.taskID);
-        if (hasGeneration && options.restart !== true) {
+        if (hasGeneration) {
           await this.generationManager.update(
             currentState.taskID,
             {
@@ -1560,7 +1540,7 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
         const context = this.generationManager.validateContext(options.context);
 
         // Establish the connection before starting generation when necessary.
-        if (currentState.connectionState !== RealtimeConnectionState.connected && !hasGeneration) {
+        if (currentState.connectionState !== RealtimeConnectionState.connected) {
           await this.performConnect(
             options.localStream,
             token
@@ -1571,7 +1551,42 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
           token,
           videoFormat,
           context,
-          options.restart ?? false,
+          false,
+          options.faceRestoration ?? false,
+          extraParams,
+        );
+      },
+    );
+  }
+
+  /**
+   * Replaces the active generation task using the current local media and RTC session.
+   */
+  async restartGeneration(
+    options: {
+      context?: RealtimeContext;
+      faceRestoration?: boolean;
+      extraParams?: RealtimeExtraParams;
+    } = {}
+  ): Promise<RealtimeMediaStream> {
+    const extraParams = snapshotExtraParams(options.extraParams);
+    return this.lifecycleManager.run(
+      RealtimeOperationKind.generationRestart,
+      undefined,
+      async token => {
+        const state = this.currentState;
+        if (!state.taskID || (state.connectionState !== RealtimeConnectionState.starting &&
+          state.connectionState !== RealtimeConnectionState.generating)) {
+          throw new XmaxError(
+            XmaxErrorCode.invalidState,
+            "Restarting generation requires an active task",
+          );
+        }
+        return this.performStartGeneration(
+          token,
+          this.requireGenerationVideoFormat(this.currentLocalTrack),
+          this.generationManager.validateContext(options.context),
+          true,
           options.faceRestoration ?? false,
           extraParams,
         );
@@ -1898,6 +1913,22 @@ export class XmaxRealtimeManager implements XmaxRealtimeManaging {
       );
       abortWarmup();
     }
+  }
+
+  /**
+   * Resolves the fixed media baseline used by generation.
+   */
+  private requireGenerationVideoFormat(
+    localTrack: RealtimeVideoTrack | undefined
+  ): RealtimeVideoFormat {
+    const videoFormat = localTrack && (this.resolvedMediaVideoFormat ?? localTrack.videoFormat);
+    if (!videoFormat) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "The local video format is unavailable",
+      );
+    }
+    return videoFormat;
   }
 
   /**

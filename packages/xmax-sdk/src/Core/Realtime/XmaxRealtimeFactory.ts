@@ -188,11 +188,6 @@ export interface XmaxRealtimeComponents {
   readonly mediaService: MediaService;
 
   /**
-   * The shared runtime error logger.
-   */
-  readonly errorManager: XmaxRealtimeErrorManager;
-
-  /**
    * Whether original remote audio can be observed independently of playback volume.
    */
   readonly canReadRemoteAudio: boolean;
@@ -278,8 +273,8 @@ export class XmaxRealtimeFactory {
     let connectionManager: XmaxRealtimeConnectionManager;
     let lifecycleManager: XmaxRealtimeLifecycleManager;
     const eventRelayService = dependencies?.eventRelayService;
-    // Temporary: restrict redundant RTC controls and HTTP relay to the exact X2.1 model ID.
-    const redundantSignalingEnabled = options.model === RealtimeModel.x2_1;
+    const redundantSignalingEnabled = options.model === RealtimeModel.x2_1 ||
+      options.model === RealtimeModel.x2_1_fix;
 
     const streamController = dependencies?.streamController ?? new StreamController({
       rtcManager,
@@ -446,7 +441,6 @@ export class XmaxRealtimeFactory {
 
     return {
       mediaService,
-      errorManager,
       canReadRemoteAudio,
       streamController,
       mediaController,

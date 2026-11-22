@@ -7,7 +7,9 @@ import {
   RealtimeContext,
   RealtimeModel,
   RealtimeMicrophone,
+  RtcProvider,
   modelDisplayName,
+  supportedRtcProviders,
   XmaxClient,
   XmaxConfiguration,
   XmaxEnvironment,
@@ -70,6 +72,7 @@ export function App() {
     () => localStorage.getItem(API_KEY_STORAGE) ?? "",
   );
   const [model, setModel] = useState<RealtimeModel>(RealtimeModel.x2_1);
+  const [provider, setProvider] = useState<RtcProvider>(RtcProvider.agora);
   const [cameraPreset, setCameraPreset] = useState<RealtimeCameraFormat>(() =>
     window.matchMedia("(max-width: 720px)").matches
       ? RealtimeCameraFormat.resolution1080x1920
@@ -262,6 +265,7 @@ export function App() {
   }, []);
 
   const sessionActive = localStream !== undefined;
+  const availableProviders = supportedRtcProviders(model);
   const cameraConfiguration = resolveCameraConfiguration(model, cameraPreset, isMobileLayout);
   const cameras = devices.filter(device => device.kind === "videoinput");
   const captureDeviceId = cameraDeviceId ?? (cameras.length === 1 ? cameras[0]?.deviceId : undefined);
@@ -360,6 +364,7 @@ export function App() {
     const realtime = client.createRealtimeManager(
       new RealtimeConfiguration({
         model,
+        provider,
       }),
     );
     realtimeRef.current = realtime;
@@ -689,14 +694,16 @@ export function App() {
   // 移动端和大屏模式的上行统计并入主画面的统计面板。
   const showStatisticsOnMainStage = isMobileLayout || largeScreen;
   const cameraFrameGeometry = localStream?.videoTrack?.cameraFrameGeometry;
-  const sendFrameRate = localVideoStatistics?.sendFrameRate;
-  const encodeFrameRate = localVideoStatistics?.encodeFrameRate;
-  const showsEncodeFrameRate = sendFrameRate === undefined && encodeFrameRate !== undefined;
+  const initialCaptureSize = formatVideoResolution(cameraFrameGeometry?.initialRequest);
+  const firstFrameCaptureConstraints = formatVideoResolution(cameraFrameGeometry?.requested);
   const localStatisticsPanels = (
     <>
       {cameraFrameGeometry && (
         <StatisticsPanel label="摄像头首帧" rows={[
-          { label: "请求采集尺寸", value: formatVideoResolution(cameraFrameGeometry.requested) },
+          { label: "首次采集请求", value: initialCaptureSize },
+          ...(cameraFrameGeometry.requested && firstFrameCaptureConstraints !== initialCaptureSize
+            ? [{ label: "首帧采集约束", value: firstFrameCaptureConstraints }]
+            : []),
           { label: "实际采集尺寸", value: formatVideoResolution(cameraFrameGeometry.source) },
           { label: "裁切保留区域", value: formatVideoResolution(cameraFrameGeometry.crop) },
           { label: "处理后尺寸", value: formatVideoResolution(cameraFrameGeometry.output) },
@@ -708,15 +715,13 @@ export function App() {
         { label: "RTC 进房", value: formatLaunchTiming(launchTiming.rtcJoinMs), title: "仅统计 RTC 进房调用耗时" },
         { label: "发布本地流", value: formatLaunchTiming(launchTiming.publishMs) },
         { label: "首帧到达", value: formatLaunchTiming(launchTiming.firstFrameMs) },
-        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "首帧后预热 750 ms，再渐入画面；不含渐入动画" },
+        { label: "渲染预热", value: formatLaunchTiming(launchTiming.renderWarmupMs), title: "从首帧到开始渐入的耗时" },
         { label: "完整启动耗时", value: formatLaunchTiming(launchTiming.totalMs), className: "launchTimingTotal" },
       ]} />
       <StatisticsPanel label="上行视频统计" rows={[
         { label: "上行分辨率", value: formatVideoResolution(localVideoStatistics) },
-        {
-          label: showsEncodeFrameRate ? "上行编码帧率" : "上行帧率",
-          value: formatVideoMetric(sendFrameRate ?? encodeFrameRate, "fps"),
-        },
+        { label: "上行编码帧率", value: formatVideoMetric(localVideoStatistics?.encodeFrameRate, "fps") },
+        { label: "上行发送帧率", value: formatVideoMetric(localVideoStatistics?.sendFrameRate, "fps") },
         { label: "上行码率", value: formatVideoMetric(localVideoStatistics?.bitrateKbps, "kbps") },
       ]} />
       <StatisticsPanel label="上行网络统计" rows={[
@@ -739,11 +744,29 @@ export function App() {
           </div>
           <div className="topbarRight">
             <div className="rtcModelPicker">
-              <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy}
-                onChange={(event) => setModel(event.target.value as RealtimeModel)}>
+              <select className="rtcModelSelect" aria-label="Model" value={model} disabled={busy || sessionActive}
+                onChange={(event) => {
+                  const selectedModel = event.target.value as RealtimeModel;
+                  const providers = supportedRtcProviders(selectedModel);
+                  setModel(selectedModel);
+                  setProvider(current => providers.includes(current) ? current : providers[0]!);
+                }}>
                 {Object.values(RealtimeModel).map((option) => (
                   <option key={option} value={option}>{modelDisplayName(option)}</option>
                 ))}
+              </select>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </div>
+            <div className="rtcModelPicker">
+              <select className="rtcModelSelect" aria-label="RTC provider" value={provider}
+                disabled={busy || sessionActive}
+                onChange={(event) => setProvider(event.target.value as RtcProvider)}>
+                <option value={RtcProvider.agora} disabled={!availableProviders.includes(RtcProvider.agora)}>Agora</option>
+                <option value={RtcProvider.trtc} disabled={!availableProviders.includes(RtcProvider.trtc)}>TRTC</option>
+                <option value={RtcProvider.vertc} disabled={!availableProviders.includes(RtcProvider.vertc)}>VeRTC</option>
               </select>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

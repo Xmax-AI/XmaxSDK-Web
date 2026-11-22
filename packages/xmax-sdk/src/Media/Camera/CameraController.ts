@@ -345,7 +345,7 @@ export class CameraController implements CameraControlling {
   async prepareForConnection(signal: AbortSignal): Promise<void> {
     const videoTrack = this.activeTrack?.mediaStreamTrack;
     const rtc = this.rtcManager;
-    if (!videoTrack || !rtc.setExternalMediaTracks) {
+    if (!videoTrack) {
       throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Camera tracks cannot be published");
     }
     const selection = this.microphoneSelection;

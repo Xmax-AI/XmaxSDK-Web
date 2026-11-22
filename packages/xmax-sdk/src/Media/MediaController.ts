@@ -165,20 +165,6 @@ export class MediaController implements MediaControlling {
   }
 
   /**
-   * Validates the adapter's external-media capability.
-   */
-  validateExternalMediaSupport(
-    kind: "local" | "external" | "image"
-  ): void {
-    if (!this.dependencies.rtcManager.setExternalMediaTracks) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        `The RTC provider does not support ${kind} video streams`
-      );
-    }
-  }
-
-  /**
    * Creates local camera capture and preview without starting RTC publication.
    */
   createLocalCameraStream(
@@ -299,7 +285,7 @@ export class MediaController implements MediaControlling {
       ?? this.video.currentTrack
       ?? this.image.currentTrack;
     if (track?.mediaStreamTrack) {
-      await rtc.setExternalMediaTracks!({
+      await rtc.setExternalMediaTracks({
         videoTrack: track.mediaStreamTrack,
         audioTrack: this.externalFrames.isActive ? this.externalFrames.audioTrack : this.video.audioTrack
       });

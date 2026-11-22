@@ -9,7 +9,6 @@ import { VideoContentMode } from "../src/Foundation/Media/Video/VideoContentMode
 import { XmaxError, XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
 import type { PermissionManaging } from "../src/Foundation/Permissions/PermissionManaging";
 import type {
-  RtcCameraCaptureOptions,
   RtcManaging,
 } from "../src/Foundation/RTC/RtcManaging";
 import { CameraController } from "../src/Media/Camera/CameraController";
@@ -95,15 +94,6 @@ class RtcManagingStub implements RtcManaging {
     this.isInitialized = false;
   }
 
-  async startCameraCapture(_options: RtcCameraCaptureOptions): Promise<MediaStreamTrack> {
-    throw new Error("RTC must not open the camera");
-  }
-
-  async switchCameraCapture(): Promise<MediaStreamTrack> {
-    throw new Error("RTC must not switch the browser camera");
-  }
-
-  async stopCameraCapture(): Promise<void> { throw new Error("RTC does not own the camera"); }
   setExternalMediaTracks = vi.fn(async (_tracks: { videoTrack: MediaStreamTrack; audioTrack?: MediaStreamTrack; source?: "camera" }) => {});
   replaceCameraVideoTrack = vi.fn(async (_track: MediaStreamTrack) => {});
   async configureVideoEncoding(): Promise<void> {}
@@ -264,29 +254,32 @@ describe("CameraController", () => {
   });
 
   it("crops a portrait capture to the requested landscape track used for preview and publication", async () => {
-    const { controller, rtc, getUserMedia } = makeController();
-    const env = cameraRotationEnvironment();
+    const { controller, rtc, getUserMedia, env, tracks } = makeController();
     env.video.videoWidth = 1080;
     env.video.videoHeight = 1920;
-    const source = new FakeMediaStreamTrack("video", { width: { ideal: 1080 }, height: { ideal: 1920 } });
-    getUserMedia.mockResolvedValueOnce({ getTracks: () => [source as unknown as MediaStreamTrack] });
-    const pending = controller.createLocalCameraStream({
+    const stream = await controller.createLocalCameraStream({
       videoFormat: defaultFormat.resized(1920, 1080), camera: RealtimeCamera.position(CameraPosition.front), microphone: RealtimeMicrophone.disabled,
     }, operationSignal);
-    await vi.waitFor(() => expect(env.callbacks.size).toBe(1));
-    env.frame();
-    const stream = await pending;
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(env.canvas).toMatchObject({ width: 1920, height: 1080 });
     const [, x, y, width, height] = env.context.drawImage.mock.calls[0]!;
     expect(x).toBe(0);
     expect(width).toBe(1080);
     expect(height).toBeCloseTo(607.5);
     expect(y).toBeCloseTo((1920 - 607.5) / 2);
+    expect(stream.videoTrack?.cameraFrameGeometry).toEqual({
+      initialRequest: { width: 1920, height: 1080 },
+      requested: { width: 1080, height: 1920 },
+      source: { width: 1080, height: 1920 },
+      crop: { width: 1080, height: 608 },
+      output: { width: 1920, height: 1080 },
+    });
     expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
     await controller.prepareForConnection(operationSignal);
     expect(rtc.setExternalMediaTracks).toHaveBeenCalledWith({ videoTrack: env.output, audioTrack: undefined, source: "camera" });
     await controller.stopLocalCameraStream();
-    expect(source.stop).toHaveBeenCalledOnce();
+    expect(tracks[0]!.stop).toHaveBeenCalledOnce();
+    expect(tracks[1]!.stop).toHaveBeenCalledOnce();
     expect(env.output.stop).toHaveBeenCalledOnce();
   });
 
@@ -335,6 +328,37 @@ describe("CameraController", () => {
     expect(controller.currentTrack).toBeUndefined();
   });
 
+  it("reopens the selected device and releases a late replacement after cancellation", async () => {
+    const { controller, getUserMedia, env } = makeController();
+    env.video.videoWidth = 1920;
+    env.video.videoHeight = 1080;
+    const source = new FakeMediaStreamTrack("video");
+    vi.spyOn(source, "getSettings").mockReturnValue({ deviceId: "front-wide", facingMode: "user" });
+    const abort = new AbortController();
+    let finish!: (stream: { getTracks(): MediaStreamTrack[] }) => void;
+    getUserMedia
+      .mockResolvedValueOnce({ getTracks: () => [source as unknown as MediaStreamTrack] })
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+
+    const pending = controller.createLocalCameraStream({
+      videoFormat: defaultFormat, camera: RealtimeCamera.position(CameraPosition.front),
+      captureFormat: { width: 1080, height: 1920, fps: 24 },
+    }, abort.signal);
+    const rejected = expect(pending).rejects.toMatchObject({ code: XmaxErrorCode.cancelled });
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    expect(source.stop).toHaveBeenCalledOnce();
+    expect(getUserMedia).toHaveBeenLastCalledWith({ video: {
+      deviceId: { exact: "front-wide" }, facingMode: { ideal: "user" },
+      width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 24 },
+    } });
+    abort.abort();
+    await rejected;
+    const lateTrack = new FakeMediaStreamTrack("video");
+    finish({ getTracks: () => [lateTrack as unknown as MediaStreamTrack] });
+    await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce());
+    expect(controller.currentTrack).toBeUndefined();
+  });
+
   it.each([
     { width: 1080, height: 1920, succeeds: true, crop: { width: 1080, height: 1920 } },
     { width: 1920, height: 1080, succeeds: true, crop: { width: 1920, height: 1080 } },
@@ -343,27 +367,21 @@ describe("CameraController", () => {
     { width: 1920, height: 1080, manual: true, succeeds: true, crop: { width: 1920, height: 1080 } },
     { width: 1080, height: 1920, manual: true, captureWidth: 2160, captureHeight: 3840,
       succeeds: true, crop: { width: 2160, height: 3840 } },
-  ])("retries when the first frame has the opposite orientation to $width × $height (manual: $manual, succeeds: $succeeds)", async ({
+  ])("reopens when the first frame has the opposite orientation to $width × $height (manual: $manual, succeeds: $succeeds)", async ({
     width, height, manual = false, captureWidth = width, captureHeight = height, succeeds, crop,
   }) => {
     const { controller, env, getUserMedia, tracks } = makeController();
     env.video.videoWidth = captureHeight;
     env.video.videoHeight = captureWidth;
     const open = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(open);
     getUserMedia.mockImplementationOnce(async request => {
-      const result = await open(request);
-      const track = tracks[0]!;
-      const apply = track.applyConstraints.getMockImplementation()!;
-      track.applyConstraints.mockImplementationOnce(async constraints => {
-        if (!succeeds) {
-          throw new Error("Capture constraints could not be changed");
-        }
-        await apply(constraints);
+      expect(tracks[0]?.stop).toHaveBeenCalledOnce();
+      if (succeeds) {
         env.video.videoWidth = captureWidth;
         env.video.videoHeight = captureHeight;
-        env.video.dispatchEvent(new Event("resize"));
-      });
-      return result;
+      }
+      return open(request);
     });
 
     const stream = await controller.createLocalCameraStream({
@@ -377,14 +395,17 @@ describe("CameraController", () => {
       height: { ideal: captureHeight },
       frameRate: { ideal: 30 },
       facingMode: { ideal: "user" },
-    } }]]);
-    expect(tracks[0]?.applyConstraints.mock.calls).toEqual([[{
+    } }], [{ video: {
       width: { ideal: captureHeight },
       height: { ideal: captureWidth },
       frameRate: { ideal: 30 },
       facingMode: { ideal: "user" },
-    }]]);
+    } }]]);
+    expect(tracks[0]?.applyConstraints).not.toHaveBeenCalled();
+    expect(tracks[1]?.applyConstraints).not.toHaveBeenCalled();
     expect(stream.videoTrack?.cameraFrameGeometry).toMatchObject({
+      initialRequest: { width: captureWidth, height: captureHeight },
+      requested: { width: captureHeight, height: captureWidth },
       source: succeeds ? { width: captureWidth, height: captureHeight } : { width: captureHeight, height: captureWidth },
       crop,
       output: { width, height },
@@ -430,6 +451,7 @@ describe("CameraController", () => {
     expect(stream.videoTrack?.mediaStreamTrack).toBe(env.output);
     expect(env.canvas).toMatchObject({ width: 1920, height: 1080 });
     expect(stream.videoTrack?.cameraFrameGeometry).toEqual({
+      initialRequest: { width: 3840, height: 2160 },
       requested: { width: 3840, height: 2160 },
       source: { width: 3840, height: 2160 },
       crop: { width: 3840, height: 2160 },

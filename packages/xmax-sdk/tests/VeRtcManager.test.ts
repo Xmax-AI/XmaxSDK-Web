@@ -2,7 +2,6 @@ import { RtcProvider } from "../src/Foundation/RTC/RtcProvider";
 import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VeRtcManager, VERTC_APP_ID } from "../src/Foundation/RTC/VeRTC/VeRtcManager";
-import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
 import type { VeRtcRoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
@@ -16,6 +15,12 @@ function deferred<T>() {
   let reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { resolve, reject, promise };
+}
+
+function track(kind: string) {
+  const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
+  const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
+  return { original, cloned };
 }
 
 function setup() {
@@ -57,8 +62,12 @@ function setup() {
   manager.setEventListener(listener);
   const emit = (event: string, ...args: unknown[]) => handlers.get(event)?.(...args);
   const joined = async () => { await manager.initialize(); await manager.joinRoom(credentials); };
-  const capture = () => manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30, position: CameraPosition.front });
-  return { manager, engine, sdk, native, remote, audio, loadSDK, listener, emit, joined, capture, players };
+  const attachCamera = (includeAudio = false) => manager.setExternalMediaTracks({
+    videoTrack: track("video").original,
+    audioTrack: includeAudio ? track("audio").original : undefined,
+    source: "camera",
+  });
+  return { manager, engine, sdk, native, remote, audio, loadSDK, listener, emit, joined, attachCamera, players };
 }
 
 afterEach(async () => {
@@ -69,11 +78,7 @@ afterEach(async () => {
 });
 
 describe("VeRTC file media", () => {
-  function track(kind: string) {
-    const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
-    const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
-    return { original, cloned };
-  }
+
 
   it.each([true, false])("publishes and rejoins using file tracks with audio=%s", async (includeAudio) => {
     const s = setup(), video = track("video"), audio = track("audio");
@@ -107,10 +112,7 @@ describe("VeRTC file media", () => {
     expect(s.engine.publishStream.mock.calls.map(([type]) => type)).toEqual(includeAudio ? [2, 1, 2, 1] : [2, 2]);
     expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
     expect(s.engine.startAudioCapture).not.toHaveBeenCalled();
-    await s.manager.stopCameraCapture();
     expect(s.engine.stopVideoCapture).not.toHaveBeenCalled();
-    await expect(s.manager.switchCameraCapture(CameraPosition.back)).rejects.toThrow();
-    await expect(s.capture()).rejects.toThrow();
     await s.manager.destroy();
     expect(video.cloned.stop).toHaveBeenCalledOnce();
     expect(audio.cloned.stop).toHaveBeenCalledTimes(includeAudio ? 1 : 0);
@@ -167,41 +169,17 @@ describe("VeRTC file media", () => {
     expect(s.listener.onTokenWillExpire).toHaveBeenCalledOnce();
   });
 
-  it("rejects invalid tracks and an existing camera without changing the source", async () => {
+  it("rejects invalid tracks and a second source without changing the binding", async () => {
     const s = setup();
     await s.manager.initialize();
     await expect(s.manager.setExternalMediaTracks({ videoTrack: track("audio").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
-    await s.capture();
+    await s.attachCamera();
     await expect(s.manager.setExternalMediaTracks({ videoTrack: track("video").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
-    expect(s.engine.setVideoSourceType).not.toHaveBeenCalled();
+    expect(s.engine.setVideoSourceType).toHaveBeenCalledOnce();
   });
 });
 
 describe("VeRTC media and protocol", () => {
-  it("updates camera preview without restarting capture and rejects changes after joining", async () => {
-    const s = setup();
-    await s.manager.initialize();
-    await s.capture();
-    expect(await s.manager.updateCameraCapture({ width: 832, height: 1472, frameRate: 24, position: CameraPosition.front })).toBe(s.native);
-    expect(s.engine.setVideoEncoderConfig).toHaveBeenLastCalledWith({
-      width: 832, height: 1472, frameRate: 24, maxKbps: 1000, preferCodecName: "H264", contentHint: "motion",
-    });
-    expect(s.engine.startVideoCapture).toHaveBeenCalledOnce();
-    expect(s.engine.stopVideoCapture).not.toHaveBeenCalled();
-    await s.manager.joinRoom(credentials);
-    await expect(s.manager.updateCameraCapture({ width: 1472, height: 832, frameRate: 24, position: CameraPosition.front })).rejects.toThrow("Disconnect VeRTC");
-  });
-
-  it("does not restore a camera after stopping during a format update", async () => {
-    const s = setup();
-    await s.manager.initialize(); await s.capture();
-    const gate = deferred<void>();
-    s.engine.setVideoEncoderConfig.mockReturnValueOnce(gate.promise);
-    const pending = s.manager.updateCameraCapture({ width: 832, height: 1472, frameRate: 24, position: CameraPosition.front });
-    const rejected = expect(pending).rejects.toMatchObject({ code: "CANCELLED" });
-    await s.manager.stopCameraCapture(); gate.resolve(); await rejected;
-  });
-
   it("exposes raw remote audio independently of playback volume", async () => {
     const s = setup();
     await s.joined();
@@ -212,12 +190,6 @@ describe("VeRTC media and protocol", () => {
     expect(s.engine.getRemoteStreamTrack).toHaveBeenCalledWith("bot", s.sdk.StreamIndex.STREAM_INDEX_MAIN, "audio");
   });
 
-  it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
-    const s = setup();
-    await expect(s.manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,
-      position: CameraPosition.front, rotation: 90 })).rejects.toThrow("Camera rotation currently requires Agora");
-    expect(s.engine.startVideoCapture).not.toHaveBeenCalled();
-  });
   it("loads once, creates the fixed AppID engine and disables automatic playback", async () => {
     const s = setup(); expect(s.loadSDK).not.toHaveBeenCalled();
     await Promise.all([s.manager.initialize(), s.manager.initialize()]);
@@ -235,39 +207,12 @@ describe("VeRTC media and protocol", () => {
     expect(s.sdk.default.createEngine).not.toHaveBeenCalled();
   });
 
-  it("uses SDK capture without publishing, switches and keeps capture when unpublishing", async () => {
-    const s = setup(); await s.joined(); expect(await s.capture()).toBe(s.native);
-    expect(s.engine.startVideoCapture).toHaveBeenCalledWith("user");
-    expect(s.engine.publishStream).not.toHaveBeenCalled();
-    expect(await s.manager.switchCameraCapture(CameraPosition.back)).toBe(s.native);
-    expect(s.engine.setVideoCaptureDevice).toHaveBeenCalledWith("environment");
-    await s.manager.configureVideoEncoding({ width: 1920, height: 1024, frameRate: 30, minimumBitrate: 4000, maximumBitrate: 8000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
-    expect(s.engine.setVideoEncoderConfig).toHaveBeenLastCalledWith({ width: 1920, height: 1024, frameRate: 30, maxKbps: 8000, preferCodecName: "H264", contentHint: "motion" });
-    await s.manager.publishLocalVideo(); await s.manager.unpublishLocalVideo();
-    expect(s.engine.stopVideoCapture).not.toHaveBeenCalled();
-    await s.manager.stopCameraCapture(); expect(s.engine.stopVideoCapture).toHaveBeenCalledOnce();
-  });
-
-  it("transposes mobile portrait capture dimensions", async () => {
-    const s = setup();
-    vi.stubGlobal("navigator", { userAgent: "iPhone", maxTouchPoints: 1 });
-    vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
-    await s.manager.initialize(); await s.capture();
-    expect(s.engine.setVideoEncoderConfig).toHaveBeenCalledWith(expect.objectContaining({ width: 1920, height: 1024 }));
-  });
-
-  it("stops a late capture after cancellation", async () => {
-    const s = setup(), capture = deferred<MediaTrackSettings>(); await s.manager.initialize();
-    s.engine.startVideoCapture.mockReturnValueOnce(capture.promise);
-    const result = expect(s.capture()).rejects.toMatchObject({ code: "CANCELLED" });
-    await vi.waitFor(() => expect(s.engine.startVideoCapture).toHaveBeenCalled());
-    await s.manager.stopCameraCapture(); capture.resolve({}); await result;
-    expect(s.engine.stopVideoCapture).toHaveBeenCalledTimes(2);
-  });
-
   it("rejects an unexpected AppID before calling the vendor", async () => {
     const s = setup(); await s.manager.initialize();
-    await expect(s.manager.joinRoom({ ...credentials, appID: "other" })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    await expect(s.manager.joinRoom({ ...credentials, appID: "other" })).rejects.toMatchObject({
+      code: "INVALID_CONFIGURATION",
+      message: `VeRTC AppID mismatch: engine ${VERTC_APP_ID}, session other`,
+    });
     expect(s.engine.joinRoom).not.toHaveBeenCalled();
   });
 
@@ -323,10 +268,8 @@ describe("VeRTC media and protocol", () => {
     expect(s.players).toHaveLength(0);
   });
 
-  it("maps permission denial but never exposes raw vendor errors or tokens", async () => {
+  it("maps vendor errors without exposing raw messages or tokens", async () => {
     const s = setup(); await s.joined();
-    s.engine.startVideoCapture.mockRejectedValueOnce({ name: "NotAllowedError", message: "secret-v1" });
-    await expect(s.capture()).rejects.toMatchObject({ code: "CAMERA_PERMISSION_DENIED", message: "VeRTC operation failed (UNKNOWN)" });
     s.emit("onError", { errorCode: "DUPLICATE_LOGIN", message: "secret-v1" });
     expect(s.listener.onError).toHaveBeenCalledWith(expect.objectContaining({ code: "RTC_ERROR", message: "VeRTC operation failed (DUPLICATE_LOGIN)" }));
   });
@@ -343,7 +286,7 @@ describe("VeRTC token recovery", () => {
   });
 
   it("rejoins after token expiry, restores publication and preserves remote audio intent", async () => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo(); await s.manager.publishLocalAudio();
+    const s = setup(); await s.joined(); await s.attachCamera(true); await s.manager.publishLocalVideo(); await s.manager.publishLocalAudio();
     s.emit("onUserPublishStream", { userId: "bot", mediaType: 3 });
     await s.manager.subscribeRemoteAudio("bot", true); s.manager.setRemoteAudioVolume(40, "bot");
     s.emit("onError", { errorCode: "TOKEN_EXPIRED" }); s.emit("onError", { errorCode: "TOKEN_EXPIRED" });
@@ -354,11 +297,12 @@ describe("VeRTC token recovery", () => {
     expect(s.listener.onRoomRejoining).toHaveBeenCalledOnce();
     expect(s.engine.publishStream.mock.calls.map(args => args[0])).toEqual([2, 1, 2, 1]);
     expect(s.players.at(-1).volume).toBe(0.4); expect(s.players.at(-1).play).toHaveBeenCalled();
-    expect(s.engine.startVideoCapture).toHaveBeenCalledOnce(); expect(s.engine.startAudioCapture).toHaveBeenCalledOnce();
+    expect(s.engine.setExternalVideoTrack).toHaveBeenCalledOnce();
+    expect(s.engine.setExternalAudioTrack).toHaveBeenCalledOnce();
   });
 
   it.each(["Publish", "Subscribe"])("recovers %s privilege expiry without unnecessarily rejoining", async (kind) => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo();
+    const s = setup(); await s.joined(); await s.attachCamera(); await s.manager.publishLocalVideo();
     s.emit(`onToken${kind}PrivilegeDidExpired`, {});
     await s.manager.updateCredentials({ ...credentials, roomToken: "new" });
     expect(s.engine.updateToken).toHaveBeenCalledWith("new"); expect(s.engine.joinRoom).toHaveBeenCalledOnce();
@@ -373,7 +317,7 @@ describe("VeRTC token recovery", () => {
   });
 
   it("cancels stalled rejoin immediately and releases a late successful join", async () => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo();
+    const s = setup(); await s.joined(); await s.attachCamera(); await s.manager.publishLocalVideo();
     s.emit("onError", { errorCode: "TOKEN_EXPIRED" });
     const joining = deferred<void>(); s.engine.joinRoom.mockReturnValueOnce(joining.promise);
     const abort = new AbortController();
@@ -398,7 +342,7 @@ describe("VeRTC statistics", () => {
   it("logs the same normalized objects as the callbacks using the shared formatter", async () => {
     const s = setup();
     await s.joined();
-    await s.capture();
+    await s.attachCamera();
     await s.manager.publishLocalVideo();
     await s.manager.subscribeRemoteVideo("private-bot", true);
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -425,7 +369,7 @@ describe("VeRTC statistics", () => {
   });
 
   it("normalizes units, excludes screen streams and clears departed statistics", async () => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo(); await s.manager.subscribeRemoteVideo("bot", true);
+    const s = setup(); await s.joined(); await s.attachCamera(); await s.manager.publishLocalVideo(); await s.manager.subscribeRemoteVideo("bot", true);
     s.emit("onLocalStreamStats", { isScreen: false, videoStats: { encodedFrameWidth: 1920, encodedFrameHeight: 1024, inputFrameRate: 30, encoderOutputFrameRate: 28, sentFrameRate: 27, sentKBitrate: 4500, videoLossRate: 0.02, rtt: 24.5 } });
     expect(s.listener.onLocalVideoStatistics).toHaveBeenLastCalledWith({ width: 1920, height: 1024, captureFrameRate: 30, encodeFrameRate: 28, sendFrameRate: 27, bitrateKbps: 4500, packetLossPercent: 2 });
     s.emit("onRemoteStreamStats", { userId: "bot", isScreen: false, videoStats: { width: 1920, height: 1024, receivedKBitrate: 4000, decoderOutputFrameRate: 25, rendererOutputFrameRate: 23, videoLossRate: 0.03, rtt: 10, totalRtt: 50, e2eDelay: 90 } });
@@ -438,7 +382,7 @@ describe("VeRTC statistics", () => {
   });
 
   it.each([0, undefined, -1, NaN, Infinity])("preserves zero and excludes unavailable frame rates (%s)", async (fps) => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo();
+    const s = setup(); await s.joined(); await s.attachCamera(); await s.manager.publishLocalVideo();
     s.emit("onLocalStreamStats", { isScreen: false, videoStats: { videoLossRate: 0, inputFrameRate: fps, encoderOutputFrameRate: fps, sentFrameRate: fps } });
     expect(s.listener.onLocalVideoStatistics).toHaveBeenLastCalledWith(expect.objectContaining({
       captureFrameRate: fps === 0 ? 0 : undefined,
@@ -474,7 +418,7 @@ describe("VeRTC overlapping operations", () => {
   });
 
   it("honors unpublish requested while recovery is republishing", async () => {
-    const s = setup(); await s.joined(); await s.capture(); await s.manager.publishLocalVideo();
+    const s = setup(); await s.joined(); await s.attachCamera(); await s.manager.publishLocalVideo();
     s.emit("onError", { errorCode: "TOKEN_EXPIRED" });
     const publishing = deferred<void>(); s.engine.publishStream.mockReturnValueOnce(publishing.promise);
     const renewing = s.manager.updateCredentials({ ...credentials, roomToken: "new" });

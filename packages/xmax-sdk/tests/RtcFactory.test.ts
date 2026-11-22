@@ -30,7 +30,7 @@ describe("RTC provider selection", () => {
     }
   });
 
-  it.each(["future-model", "toString", "__proto__", "constructor"])("accepts custom model %s with preview defaults and explicit provider overrides", (model) => {
+  it.each([RealtimeModel.x2_1_fix, "future-model", "toString", "__proto__", "constructor"])("accepts configurable model %s with preview defaults and explicit provider overrides", (model) => {
     const configuration = new RealtimeConfiguration({ model });
     expect(configuration.model).toBe(model);
     expect(configuration.provider).toBe(RtcProvider.agora);

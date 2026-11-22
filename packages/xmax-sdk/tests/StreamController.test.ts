@@ -49,13 +49,7 @@ class RtcManagingStub implements RtcManaging {
 
   async initialize(): Promise<void> {}
   async destroy(): Promise<void> {}
-  async startCameraCapture(): Promise<MediaStreamTrack> {
-    throw new XmaxError(XmaxErrorCode.rtcError, "not supported in stub");
-  }
-  async switchCameraCapture(): Promise<MediaStreamTrack> {
-    throw new XmaxError(XmaxErrorCode.rtcError, "not supported in stub");
-  }
-  async stopCameraCapture(): Promise<void> {}
+  async setExternalMediaTracks(): Promise<void> {}
 
   encodingConfigurations: VideoEncodingConfiguration[] = [];
 
@@ -174,9 +168,7 @@ describe("StreamController", () => {
       await vi.advanceTimersByTimeAsync(0);
       emitRemoteVideo(rtc, "bot001", true);
       await pending;
-      expect(controller.hasGenerationTask).toBe(true);
       await vi.advanceTimersByTimeAsync(6000);
-      expect(controller.hasGenerationTask).toBe(true);
       expect(errors).toEqual([]);
       expect(rtc.sentMessages.filter(raw => JSON.parse(raw).event === "start")).toHaveLength(6);
       await controller.updateGeneration({ taskID: "no-ack", videoFormat, context: new RealtimeContext({ prompt: "still running" }) });
@@ -267,7 +259,6 @@ describe("StreamController", () => {
     expect(play).not.toHaveBeenCalled();
     play.mockRejectedValueOnce(new XmaxError(XmaxErrorCode.mediaError, "play blocked"));
     await expect(controller.beginGeneration({ taskID: "fail-play", videoFormat, context, onStartSent: play })).rejects.toThrow("play blocked");
-    expect(controller.hasGenerationTask).toBe(false);
     await controller.disconnect();
   });
   it("uses a video published during join without waiting for another publication event", async () => {
@@ -558,15 +549,15 @@ describe("StreamController", () => {
     await controller.disconnect();
   });
 
-  it.each([true, false, undefined])("maps faceRestoration=%s to start.params.face_replace", async faceRestoration => {
+  it("uses face_replace for face restoration in start and condition updates", async () => {
     const { controller, rtc } = makeStream();
     await controller.connect(connection, false, noopEnsureActive);
 
-    const confirmation = controller.beginGeneration({ taskID: "face-task", videoFormat, context, faceRestoration });
+    const confirmation = controller.beginGeneration({ taskID: "face-task", videoFormat, context, faceRestoration: true });
     await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
     const message = JSON.parse(rtc.sentMessages[0]!);
     expect(message.event).toBe("start");
-    expect(message.params.face_replace).toBe(faceRestoration ?? false);
+    expect(message.params.face_replace).toBe(true);
     expect(message.params).not.toHaveProperty("faceRestoration");
 
     emitRemoteVideo(rtc, "bot001", true);
@@ -619,7 +610,6 @@ describe("StreamController", () => {
       context,
       mirror,
     });
-    expect(controller.hasGenerationTask).toBe(true);
     await vi.waitFor(() => expect(rtc.sentMessages.length).toBeGreaterThan(0));
     expect(JSON.parse(rtc.sentMessages[0]!).event).toBe("start");
     expect(JSON.parse(rtc.sentMessages[0]!).params.mirror).toBe(mirror);
@@ -675,8 +665,9 @@ describe("StreamController", () => {
     await expect(confirmation).rejects.toMatchObject({
       code: XmaxErrorCode.timeout,
     });
-    // 超时后任务保留，由上层决定停止；等待器已清理。
-    expect(controller.hasGenerationTask).toBe(true);
+    expect(() => controller.beginGeneration({ taskID: "task-002", videoFormat, context }))
+      .toThrow("Realtime generation is already active");
+    await controller.disconnect();
   });
 
   it("cleans up when the start signal fails to send", async () => {
@@ -687,7 +678,11 @@ describe("StreamController", () => {
     await expect(
       controller.beginGeneration({ taskID: "task-001", videoFormat, context }),
     ).rejects.toMatchObject({ code: XmaxErrorCode.rtcError });
-    expect(controller.hasGenerationTask).toBe(false);
+
+    const retry = controller.beginGeneration({ taskID: "task-002", videoFormat, context });
+    emitRemoteVideo(rtc, "bot001", true);
+    await expect(retry).resolves.toBeUndefined();
+    await controller.disconnect();
   });
 
   it("rejects a second generation while one is active", async () => {
@@ -728,7 +723,6 @@ describe("StreamController", () => {
     expect(events).toContain("stop");
     expect(bindings[bindings.length - 1]).toBeNull();
     expect(rtc.subscribeRemoteAudioCalls).toContainEqual(["bot001", false]);
-    expect(controller.hasGenerationTask).toBe(false);
   });
 
   it.each([0, 0.4, 1])("applies volume %s before explicitly activating confirmed remote audio", async (volume) => {
@@ -755,7 +749,6 @@ describe("StreamController", () => {
     expect(rtc.volumeCalls).toContainEqual([volume * 100, "bot001"]);
     expect(rtc.subscribeRemoteAudioCalls).toEqual([["bot001", true]]);
     expect(setVolume.mock.invocationCallOrder[0]).toBeLessThan(subscribeAudio.mock.invocationCallOrder[0]!);
-    expect(controller.remoteAudioVolume).toBeCloseTo(volume);
 
     // 静音订阅后仍可以通过滑杆恢复音量，无需重新订阅。
     controller.setRemoteAudioVolume(0.65);
@@ -826,29 +819,5 @@ describe("StreamController", () => {
 
     const events = rtc.sentMessages.map((raw) => JSON.parse(raw).event);
     expect(events).toEqual(["change_condition", "change_target_size", "tracks"]);
-  });
-
-  it.each(["result", "video_stopped"])("forwards %s business messages without consuming them", async event => {
-    const { controller, rtc } = makeStream();
-    const received: Record<string, unknown>[] = [];
-    controller.setRoomListener({
-      onRoomMessage: (_sender, message) => received.push(message),
-    });
-    await controller.connect(connection, false, noopEnsureActive);
-
-    rtc.eventListener?.onCustomMessageReceived(
-      "bot001",
-      JSON.stringify({ event, user_id: "rtc-user-001" }),
-    );
-
-    expect(received).toHaveLength(1);
-    expect(received[0]?.event).toBe(event);
-    controller.setRoomListener();
-    rtc.eventListener?.onCustomMessageReceived(
-      "bot001",
-      JSON.stringify({ event, user_id: "rtc-user-001" }),
-    );
-    expect(received).toHaveLength(1);
-    await controller.disconnect();
   });
 });

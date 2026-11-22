@@ -50,39 +50,50 @@ export class CameraCapture {
     onError: XmaxErrorListener,
     signal: AbortSignal
   ): Promise<{ capture: CameraCapture; track: MediaStreamTrack }> {
-    const source = await captureDeviceTrack("video", {
-      ...CameraCapture.constraints(format, rotation, captureFormat),
-      ...(camera.kind === "position"
-        ? { facingMode: { ideal: camera.position === CameraPosition.front ? "user" : "environment" } }
-        : { deviceId: { exact: camera.id } }),
-    }, signal);
-    try {
-      const { facingMode } = source.getSettings();
-      const resolvedPosition = facingMode === "user" ? CameraPosition.front
-        : facingMode === "environment" ? CameraPosition.back
-        : camera.kind === "position" ? camera.position : undefined;
-      let mirrored = mirror ?? (resolvedPosition === CameraPosition.front);
-      if (mirror === undefined && resolvedPosition === undefined && camera.kind === "device") {
-        mirrored = await CameraCapture.isSystemDefaultCamera(
-          camera.id,
-          signal
-        );
-      }
+    const constraints = CameraCapture.constraints(format, rotation, captureFormat);
+    const deviceConstraints: MediaTrackConstraints = camera.kind === "position"
+      ? { facingMode: { ideal: camera.position === CameraPosition.front ? "user" : "environment" } }
+      : { deviceId: { exact: camera.id } };
+    const orientationMismatch = new XmaxError(XmaxErrorCode.mediaError, "Camera first frame has the opposite orientation");
+    let retryDeviceId: string | undefined;
+    const openDevice = async (request: MediaTrackConstraints, checkOrientation: boolean) => {
+      const source = await captureDeviceTrack("video", request, signal);
+      try {
+        const { facingMode, deviceId } = source.getSettings();
+        const resolvedPosition = facingMode === "user" ? CameraPosition.front
+          : facingMode === "environment" ? CameraPosition.back
+          : camera.kind === "position" ? camera.position : undefined;
+        let mirrored = mirror ?? (resolvedPosition === CameraPosition.front);
+        if (mirror === undefined && resolvedPosition === undefined && camera.kind === "device") {
+          mirrored = await CameraCapture.isSystemDefaultCamera(camera.id, signal);
+        }
 
-      const capture = new CameraCapture(
-        source,
-        resolvedPosition,
-        captureFormat,
-        rotation,
-        mirrored,
-        onError
-      );
-      const track = await capture.output(format, signal);
-      return { capture, track };
+        const capture = new CameraCapture(source, resolvedPosition, captureFormat, rotation, mirrored, onError);
+        const track = await capture.output(format, constraints, signal, checkOrientation ? () => {
+          retryDeviceId = deviceId;
+          throw orientationMismatch;
+        } : undefined);
+        return { capture, track };
+      } catch (error) {
+        source.stop();
+        throw error;
+      }
+    };
+
+    try {
+      return await openDevice({ ...deviceConstraints, ...constraints }, true);
     } catch (error) {
-      source.stop();
-      throw error;
+      if (error !== orientationMismatch) {
+        throw error;
+      }
     }
+    return openDevice({
+      ...deviceConstraints,
+      ...(retryDeviceId ? { deviceId: { exact: retryDeviceId } } : {}),
+      ...constraints,
+      width: constraints.height,
+      height: constraints.width,
+    }, false);
   }
 
   /** Checks the first video input in the browser's list of available devices after capture starts. */
@@ -114,12 +125,15 @@ export class CameraCapture {
   /** Updates the active device without reacquiring it. Keeps its old constraints if preparation fails. */
   async updateFormat(format: RealtimeVideoFormat, signal: AbortSignal): Promise<MediaStreamTrack> {
     const previous = this.source.getConstraints();
+    const constraints = CameraCapture.constraints(format, this.rotation, this.captureFormat);
     await this.source.applyConstraints({
       ...previous,
-      ...CameraCapture.constraints(format, this.rotation, this.captureFormat),
+      ...constraints,
     });
     try {
-      return await this.output(format, signal);
+      return await this.output(format, constraints, signal, video =>
+        this.retryCaptureOrientation(video, constraints.width.ideal, constraints.height.ideal, signal)
+      );
     } catch (error) {
       if (this.source.readyState === "live") {
         await this.source.applyConstraints(previous).catch(() => { });
@@ -135,7 +149,12 @@ export class CameraCapture {
     this.source.stop();
   }
 
-  private async output(format: RealtimeVideoFormat, signal: AbortSignal): Promise<MediaStreamTrack> {
+  private async output(
+    format: RealtimeVideoFormat,
+    constraints: ReturnType<typeof CameraCapture.constraints>,
+    signal: AbortSignal,
+    onOppositeOrientation?: (video: HTMLVideoElement) => Promise<void>
+  ): Promise<MediaStreamTrack> {
     if (signal.aborted || this.source.readyState !== "live") {
       throw new XmaxError(XmaxErrorCode.cancelled, "Camera capture is no longer active");
     }
@@ -160,12 +179,15 @@ export class CameraCapture {
       return this.source;
     }
 
+    const requestedWidth = constraints.width.ideal;
+    const requestedHeight = constraints.height.ideal;
     const processor = new CameraRotationProcessor({
       width: outputWidth,
       height: outputHeight,
       frameRate: fps,
       rotation: this.rotation,
       mirrored: this.mirrored,
+      initialRequest: { width: requestedWidth, height: requestedHeight },
       onError: this.onError
     });
     const abort = () => processor.stop();
@@ -173,17 +195,15 @@ export class CameraCapture {
     try {
       const track = await processor.setSource(
         this.source,
-        video => {
+        onOppositeOrientation && (video => {
           const targetOrientation = Math.sign(width - height);
           const sourceOrientation = Math.sign(video.videoWidth - video.videoHeight);
-          const requestedWidth = this.captureFormat?.width ?? width;
-          const requestedHeight = this.captureFormat?.height ?? height;
           const requestedOrientation = Math.sign(requestedWidth - requestedHeight);
           if (this.rotation === 0 && targetOrientation !== 0 && requestedOrientation === targetOrientation &&
             sourceOrientation === -targetOrientation) {
-            return this.retryCaptureOrientation(video, requestedWidth, requestedHeight, signal);
+            return onOppositeOrientation(video);
           }
-        }
+        })
       );
       this.processed = { processor, track };
       return track;
@@ -241,7 +261,7 @@ export class CameraCapture {
     format: RealtimeVideoFormat,
     rotation: CameraRotation,
     captureFormat: CaptureFormat
-  ): MediaTrackConstraints {
+  ) {
     const quarterTurn = rotation === 90 || rotation === 270;
     return {
       width: { ideal: captureFormat?.width ?? (quarterTurn ? format.height : format.width) },

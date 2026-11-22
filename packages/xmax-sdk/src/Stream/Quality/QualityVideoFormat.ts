@@ -12,7 +12,6 @@ import { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat"
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { MINIMUM_QUALITY_SHORT_SIDE, QUALITY_TIERS } from "./QualityTiers";
 import { alignedVideoSize } from "../../Foundation/Media/Video/VideoSize";
-import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
 
 /**
  * Computes floating-point dimension bounds; media or encoding rules perform final alignment.
@@ -45,7 +44,6 @@ export function qualityVideoMaximumSize(
 export function qualityVideoSize(
   baseline: RealtimeVideoFormat,
   level: number,
-  preserveAspectRatio = true,
 ): {
   width: number;
   height: number
@@ -54,26 +52,11 @@ export function qualityVideoSize(
     baseline,
     level
   );
-  if (preserveAspectRatio) {
-    return alignedVideoSize(
-      baseline,
-      Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height),
-      4
-    );
-  }
-
-  const width = Math.floor(maximum.width / 4 + 1e-9) * 4;
-  const height = Math.floor(maximum.height / 4 + 1e-9) * 4;
-  if (width < 4 || height < 4) {
-    throw new XmaxError(
-      XmaxErrorCode.invalidConfiguration,
-      "No aligned video size is available within the size limits"
-    );
-  }
-  return {
-    width,
-    height
-  };
+  return alignedVideoSize(
+    baseline,
+    Math.min(1, maximum.width / baseline.width, maximum.height / baseline.height),
+    4
+  );
 }
 
 /**
@@ -98,13 +81,11 @@ export function supportsQualityEncoding(
  */
 export function qualityVideoFormat(
   baseline: RealtimeVideoFormat,
-  level: number,
-  preserveAspectRatio = true
+  level: number
 ): RealtimeVideoFormat {
   const size = qualityVideoSize(
     baseline,
-    level,
-    preserveAspectRatio
+    level
   );
   const tier = Object.values(QUALITY_TIERS)[level - 1]!;
   return new RealtimeVideoFormat({

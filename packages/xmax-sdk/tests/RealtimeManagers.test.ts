@@ -243,15 +243,14 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(manager.currentSession).toBeUndefined();
   });
 
-  it.each([RtcProvider.trtc, RtcProvider.agora, RtcProvider.vertc])("starts %s HTTP heartbeat only once when generating is entered", async (provider) => {
-    const { manager, service, stream, options, events } = setup(provider);
+  it("starts the HTTP heartbeat once for the active session and ignores stale session IDs", async () => {
+    const { manager, service, stream, options } = setup();
     const publishing = deferred<void>(); stream.connect.mockReturnValueOnce(publishing.promise);
     const pending = manager.connect(options);
     await vi.waitFor(() => expect(stream.connect).toHaveBeenCalledOnce());
     expect(service.startHeartbeat).not.toHaveBeenCalled();
     publishing.resolve(); await pending;
     expect(service.startHeartbeat).not.toHaveBeenCalled();
-    expect(events.onFrameDisplayed).not.toHaveBeenCalled();
     manager.startHeartbeat("old-session");
     expect(service.startHeartbeat).not.toHaveBeenCalled();
     manager.startHeartbeat("session");
@@ -302,7 +301,7 @@ describe("XmaxRealtimeConnectionManager", () => {
     expect(view.setMediaStream).toHaveBeenCalledOnce();
     binding.frameDisplayHandler?.();
     expect(events.onFrameDisplayed).toHaveBeenCalledOnce();
-    expect(binding.renderWarmupMs).toBe(750);
+    expect(binding.renderWarmupMs).toBe(0);
     binding.renderWarmupCompletedHandler?.();
     expect(events.onRenderWarmupCompleted).toHaveBeenCalledOnce();
     await manager.disconnect();

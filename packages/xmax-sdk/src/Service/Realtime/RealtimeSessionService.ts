@@ -9,7 +9,7 @@
 //
 
 import { XmaxError, XmaxErrorCode } from "../../Foundation/Errors/XmaxError";
-import type { RealtimeModelName } from "./RealtimeModel";
+import { RealtimeModel, type RealtimeModelName } from "./RealtimeModel";
 import { RtcProvider } from "../../Foundation/RTC/RtcProvider";
 import type { ApiServicing } from "../Network/ApiServicing";
 import { RealtimeSession } from "./RealtimeSession";
@@ -59,6 +59,11 @@ interface SessionPayload {
  * RTC credentials from modelExtra, interpreted using the configured provider.
  */
 interface ConnectionPayload {
+
+  /**
+   * The RTC provider selected by the server for this session.
+   */
+  provider?: string;
 
   /**
    * The RTC room ID returned by the server.
@@ -208,26 +213,33 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
   async createSession(
     model: RealtimeModelName
   ): Promise<RealtimeSession> {
+    const requestedProvider = model === RealtimeModel.x2_1_fix ? this.provider : undefined;
     const payload = await this.apiService.post<SessionPayload>(
       "/session",
-      {
-        model,
-      }
+      requestedProvider === undefined ? { model } : { model, provider: requestedProvider }
     );
     try {
+      const credentials = RealtimeSessionService.decodeConnectionPayload(payload.modelExtra);
+      const returnedProvider = RealtimeSessionService.nonEmpty(credentials?.provider)?.toLowerCase();
+      if (requestedProvider !== undefined && returnedProvider !== undefined && returnedProvider !== requestedProvider) {
+        throw new XmaxError(
+          XmaxErrorCode.sessionError,
+          `RTC provider mismatch: requested ${requestedProvider}, received ${returnedProvider}`,
+        );
+      }
       const session = this.makeSession(
         payload,
+        credentials,
         true
       );
       RealtimeSessionService.ensureSessionActive(session);
-      const credentials = RealtimeSessionService.decodeConnectionPayload(payload.modelExtra)!;
       this.credentials.set(
         session.id,
         this.provider === RtcProvider.vertc
           ? {
             ...credentials,
             user_id: session.connection!.userID
-          } : credentials
+          } : credentials!
       );
       return session;
     } catch (error) {
@@ -392,10 +404,8 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
       ...incoming
     } : previous;
     const session = this.makeSession(
-      {
-        ...payload,
-        modelExtra: merged
-      },
+      payload,
+      merged,
       merged !== undefined
     );
     if (session.id !== sessionID) {
@@ -434,6 +444,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    */
   private makeSession(
     payload: SessionPayload,
+    credentials: ConnectionPayload | undefined,
     requiresConnection: boolean,
   ): RealtimeSession {
     const sessionID = RealtimeSessionService.nonEmpty(payload.sessionUid);
@@ -445,7 +456,7 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
     }
 
     const connection = this.makeConnection(
-      payload.modelExtra,
+      credentials,
       payload.userUid
     );
     if (requiresConnection && !connection) {
@@ -469,10 +480,9 @@ export class RealtimeSessionService implements RealtimeSessionServicing {
    * Parses modelExtra credentials, returning undefined for incomplete or unsupported connection data.
    */
   private makeConnection(
-    modelExtra: unknown,
+    payload: ConnectionPayload | undefined,
     fallbackUserID?: string,
   ): RtcSessionConnection | undefined {
-    const payload = RealtimeSessionService.decodeConnectionPayload(modelExtra);
     if (!payload) {
       return undefined;
     }

@@ -432,7 +432,7 @@ export interface XmaxRealtimeManaging {
   /**
    * Connects if needed and starts generation.
    *
-   * Active generation updates conditions unless restart is true. The first task requires a context;
+   * Updates conditions when generation is already active. The first task requires a context;
    * later calls may reuse cached conditions. Mount the returned remote stream in an SDK video view;
    * generating is entered only after the first frame and render warmup.
    *
@@ -441,8 +441,6 @@ export interface XmaxRealtimeManaging {
    *
    * @param options.localStream - This manager's local camera, external, image, or video-file stream.
    * @param options.context - The generation conditions; omission reuses cached conditions.
-   * @param options.restart - Whether to retain RTC and start a new task without first sending stop;
-   * defaults to false.
    * @param options.faceRestoration - Whether to restore the original face; defaults to false and updates
    * active tasks through change_condition.
    * @param options.extraParams - Additional start/change_condition parameters. Not cached or included in
@@ -458,7 +456,24 @@ export interface XmaxRealtimeManaging {
     options: {
       localStream: RealtimeMediaStream;
       context?: RealtimeContext;
-      restart?: boolean;
+      faceRestoration?: boolean;
+      extraParams?: RealtimeExtraParams;
+    }
+  ): Promise<RealtimeMediaStream>;
+
+  /**
+   * Replaces the active generation task using the current local media and RTC session.
+   *
+   * @param options.context - The new conditions, defaulting to the current conditions.
+   * @param options.faceRestoration - Whether to restore the original face, defaulting to false.
+   * @param options.extraParams - Additional parameters applied to this start message.
+   * @returns The remote stream for the new generation task.
+   * @throws Rejects with invalidState when there is no active task, or with the generation error if the
+   * new task fails to start.
+   */
+  restartGeneration(
+    options?: {
+      context?: RealtimeContext;
       faceRestoration?: boolean;
       extraParams?: RealtimeExtraParams;
     }

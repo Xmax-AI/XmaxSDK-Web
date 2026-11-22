@@ -66,7 +66,7 @@ export class XmaxClient {
   /**
    * Creates a realtime media manager.
    *
-   * All model IDs use the environment's realtime endpoint for the entire session lifecycle.
+   * Uses a model-specific endpoint when provided, otherwise the client's realtime environment.
    *
    * @param options - The model and realtime generation configuration.
    * @returns A manager for local preview, realtime connections, and generation.

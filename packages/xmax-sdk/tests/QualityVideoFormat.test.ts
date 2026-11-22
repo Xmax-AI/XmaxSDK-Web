@@ -76,11 +76,10 @@ describe("qualityVideoFormat", () => {
       .toMatchObject({ width: 320, height: 180, fps: 16 });
   });
 
-  it("keeps fractional bounds separate and supports legacy independent rounding", () => {
+  it("keeps fractional bounds separate from aligned video dimensions", () => {
     const baseline = new RealtimeVideoFormat({ width: 1024, height: 1920, fps: 30 });
     expect(qualityVideoMaximumSize(baseline, 2)).toEqual({ width: 921.6, height: 1728 });
-    expect(qualityVideoSize(baseline, 2, false)).toEqual({ width: 920, height: 1728 });
-    expect(qualityVideoFormat(baseline, 3, false)).toMatchObject({ width: 768, height: 1440, fps: 24 });
+    expect(qualityVideoSize(baseline, 2)).toEqual({ width: 896, height: 1680 });
   });
 
   it("detects explicit bitrate constraints incompatible with a lower tier", () => {
@@ -91,12 +90,12 @@ describe("qualityVideoFormat", () => {
     expect(supportsQualityEncoding(new RealtimeVideoFormat({ ...baseline, minimumBitrate: 0, maximumBitrate: 99 }))).toBe(true);
   });
 
-  it.each([true, false])("aligns every tier without upscaling; preserveAspectRatio=%s", preserveAspectRatio => {
+  it("aligns every tier without upscaling", () => {
     for (const [width, height] of [[1920, 1024], [1080, 1920], [642, 362], [1000, 750]] as const) {
       const baseline = new RealtimeVideoFormat({ width, height, fps: 30 });
       for (let level = 1; level <= 5; level++) {
         const maximum = qualityVideoMaximumSize(baseline, level);
-        const size = qualityVideoSize(baseline, level, preserveAspectRatio);
+        const size = qualityVideoSize(baseline, level);
         expect(size.width % 4).toBe(0);
         expect(size.height % 4).toBe(0);
         expect(size.width).toBeGreaterThanOrEqual(4);
@@ -107,10 +106,10 @@ describe("qualityVideoFormat", () => {
     }
   });
 
-  it.each([true, false])("rejects sources too small for four-pixel alignment; preserveAspectRatio=%s", preserveAspectRatio => {
+  it("rejects sources too small for four-pixel alignment", () => {
     for (const [width, height] of [[2, 2], [2, 4], [4, 2]] as const) {
       const baseline = new RealtimeVideoFormat({ width, height, fps: 30 });
-      expect(() => qualityVideoSize(baseline, 5, preserveAspectRatio)).toThrow("No aligned video size");
+      expect(() => qualityVideoSize(baseline, 5)).toThrow("No aligned video size");
     }
   });
 

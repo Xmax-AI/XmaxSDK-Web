@@ -118,8 +118,7 @@ export class RenderController implements RenderControlling {
     VideoRenderRegistry.register(
       track,
       {
-        // Continue playback for 750 ms after the first frame before beginning fade-in.
-        renderWarmupMs: 750,
+        renderWarmupMs: 0,
         renderWarmupCompletedHandler: () => {
           if (this.track === track) {
             this.ready = true;

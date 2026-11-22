@@ -40,7 +40,7 @@ describe("custom realtime models", () => {
 
   it("exposes the built-in models and defaults media rules to X2.1", () => {
     expect(Object.values(RealtimeModel)).toEqual([
-      "x2.0", "x2.1", "x2.1-flash",
+      "x2.0", "x2.1", "x2-1-fix", "x2.1-flash",
     ]);
     expect(new XmaxClient(new XmaxConfiguration({ apiKey: "test-key" })).createMediaService())
       .toMatchObject({ model: RealtimeModel.x2_1 });
@@ -71,6 +71,23 @@ describe("realtime model capabilities", () => {
     ]);
     expect(supportedVideoFormats(RealtimeModel.x2_0)).toEqual([]);
     expect(resolutionBuckets(RealtimeModel.x2_0)).toEqual([]);
+  });
+
+  it("uses X2.1 media rules for X2.1 Fix while preserving its model ID", () => {
+    const model = RealtimeModel.x2_1_fix;
+    expect(model).toBe("x2-1-fix");
+    expect(modelDisplayName(model)).toBe("X2.1 Fix");
+    expect(modelBaseURL(model)).toBe("https://dev.22duck.cn/open/api/v1");
+    expect(defaultCameraVideoFormat(model)).toEqual(defaultCameraVideoFormat(RealtimeModel.x2_1));
+    expect(supportedVideoFormats(model)).toEqual(supportedVideoFormats(RealtimeModel.x2_1));
+    expect(maximumInputPixels(model)).toBe(maximumInputPixels(RealtimeModel.x2_1));
+    const media = new MediaService(model);
+    for (const size of resolutionBuckets(RealtimeModel.x2_1)) {
+      expect(media.resolveMediaSize(size, "camera")).toEqual(size);
+    }
+    expect(() => media.resolveMediaSize({ width: 640, height: 360 }, "camera"))
+      .toThrow("does not support input resolution");
+    expect(new RealtimeConfiguration({ model })).toMatchObject({ model, provider: RtcProvider.agora });
   });
 
   it("uses the five Flash resolutions for camera capture and file generation", () => {

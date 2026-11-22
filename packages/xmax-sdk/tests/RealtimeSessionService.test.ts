@@ -437,6 +437,17 @@ describe("RealtimeSessionService", () => {
 describe("caller-selected RTC provider", () => {
   const vertc = { room_id: "000123", rtc_app_id: "69a177e226e9b90176a86b96", room_token: "token-v1", user_id: "ve-user", bot_name: "bot_001" };
 
+  it("closes the X2.1 Fix session if the server responds with a different RTC provider", async () => {
+    const api = new ApiServicingStub();
+    api.postResponses = [sessionPayload({ modelExtra: JSON.stringify(agoraModelExtra) })];
+    api.deleteResponses = [{}];
+    await expect(makeService(api, RtcProvider.vertc).createSession(RealtimeModel.x2_1_fix)).rejects.toMatchObject({
+      code: XmaxErrorCode.sessionError,
+      message: "RTC provider mismatch: requested vertc, received agora",
+    });
+    expect(api.requests.at(-1)).toMatchObject({ method: ApiMethod.delete, path: "/session/ums-001", keepalive: true });
+  });
+
   it.each([undefined, "wrong-provider", "trtc", "agora", "vertc"])("ignores backend provider %s for all configured adapters", async (backendProvider) => {
     for (const [provider, credentials] of [[RtcProvider.trtc, trtcModelExtra], [RtcProvider.agora, agoraModelExtra], [RtcProvider.vertc, vertc]] as const) {
       const api = new ApiServicingStub();

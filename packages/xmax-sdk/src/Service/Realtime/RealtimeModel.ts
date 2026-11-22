@@ -27,6 +27,8 @@ export enum RealtimeModel {
    */
   x2_1 = "x2.1",
 
+  x2_1_fix = "x2-1-fix",
+
   /**
    * The X2.1 Flash model, with Agora as its default RTC provider.
    */
@@ -58,8 +60,8 @@ function isKnownModel(
  */
 function modelDefaults(
   model: RealtimeModelName
-): RealtimeModel {
-  return isKnownModel(model) ? model : RealtimeModel.x2_1;
+): Exclude<RealtimeModel, RealtimeModel.x2_1_fix> {
+  return isKnownModel(model) && model !== RealtimeModel.x2_1_fix ? model : RealtimeModel.x2_1;
 }
 
 /**
@@ -68,6 +70,7 @@ function modelDefaults(
 const MODEL_DISPLAY_NAMES: Readonly<Record<RealtimeModel, string>> = {
   [RealtimeModel.x2_0]: "X2.0",
   [RealtimeModel.x2_1]: "X2.1",
+  [RealtimeModel.x2_1_fix]: "X2.1 Fix",
   [RealtimeModel.x2_1_flash]: "X2.1 Flash",
 };
 
@@ -90,7 +93,7 @@ export interface ModelSize {
 /**
  * Fixed input resolutions per model. An empty list selects pixel-budget and alignment rules instead.
  */
-const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
+const RESOLUTION_BUCKETS: Record<ReturnType<typeof modelDefaults>, ModelSize[]> = {
   [RealtimeModel.x2_0]: [],
   [RealtimeModel.x2_1]: [
     {
@@ -141,7 +144,7 @@ const RESOLUTION_BUCKETS: Record<RealtimeModel, ModelSize[]> = {
 /**
  * The maximum local-frame pixel count, also limiting generation canvases without fixed resolutions.
  */
-const MAXIMUM_INPUT_PIXELS: Record<RealtimeModel, number> = {
+const MAXIMUM_INPUT_PIXELS: Record<ReturnType<typeof modelDefaults>, number> = {
   [RealtimeModel.x2_0]: 1280000,
   [RealtimeModel.x2_1]: 2100000,
   [RealtimeModel.x2_1_flash]: 960 * 960,
@@ -157,13 +160,13 @@ export function modelDisplayName(
 }
 
 /**
- * Uses the client's realtime endpoint for built-in and custom model IDs.
+ * Resolves model-specific realtime endpoints, falling back to the client's environment.
  */
 export function modelBaseURL(
   model: RealtimeModelName
 ): string | undefined {
   isKnownModel(model);
-  return undefined;
+  return model === RealtimeModel.x2_1_fix ? "https://dev.22duck.cn/open/api/v1" : undefined;
 }
 
 /**
@@ -255,6 +258,7 @@ const CUSTOM_MODEL_RTC_PROVIDERS: readonly RtcProvider[] = Object.freeze([
 const MODEL_RTC_PROVIDERS: Readonly<Record<RealtimeModel, readonly RtcProvider[]>> = {
   [RealtimeModel.x2_0]: Object.freeze([RtcProvider.vertc]),
   [RealtimeModel.x2_1]: Object.freeze([RtcProvider.agora]),
+  [RealtimeModel.x2_1_fix]: CUSTOM_MODEL_RTC_PROVIDERS,
   [RealtimeModel.x2_1_flash]: CUSTOM_MODEL_RTC_PROVIDERS,
 };
 

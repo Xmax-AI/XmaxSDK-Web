@@ -88,6 +88,7 @@ export class CameraRotationProcessor {
       frameRate: number;
       rotation: CameraRotation;
       mirrored?: boolean;
+      initialRequest?: CameraFrameGeometry["initialRequest"];
       onError: (
         error: XmaxError
       ) => void;
@@ -112,7 +113,7 @@ export class CameraRotationProcessor {
   }
 
   /**
-   * Waits for a successfully drawn first frame, reusing the output track across camera switches.
+   * Attaches a source and waits for a successfully drawn first frame.
    */
   async setSource(
     source: MediaStreamTrack,
@@ -176,52 +177,64 @@ export class CameraRotationProcessor {
           XmaxErrorCode.cancelled,
           "Camera processing source changed"
         ));
-        // Late play() completion must not revive rendering after a stop or source change.
-        void this.video.play().then(
-          () => {
-            if (settled || this.stopped || version !== this.version) {
-              return;
-            }
-            const firstFrame = async () => {
-              if (settled || this.stopped || version !== this.version) {
-                return;
-              }
-              try {
-                if (prepareSource && this.video.readyState >= 2 && this.video.videoWidth && this.video.videoHeight) {
-                  const prepare = prepareSource;
-                  prepareSource = undefined;
-                  const preparation = prepare(this.video);
-                  if (preparation) {
-                    await preparation;
-                    if (settled || this.stopped || version !== this.version) {
-                      return;
-                    }
-                  }
-                }
-                let geometry: CameraFrameGeometry | undefined;
-                if (!this.draw(value => { geometry = value; })) {
-                  this.schedule(firstFrame);
+        const isCurrent = () => !settled && !this.stopped && version === this.version;
+        const firstFrame = async () => {
+          if (!isCurrent()) {
+            return;
+          }
+          try {
+            if (prepareSource && this.video.readyState >= 2 && this.video.videoWidth && this.video.videoHeight) {
+              const prepare = prepareSource;
+              prepareSource = undefined;
+              const preparation = prepare(this.video);
+              if (preparation) {
+                await preparation;
+                if (!isCurrent()) {
                   return;
                 }
-                this.stream ??= this.canvas.captureStream(this.options.frameRate);
-                const track = this.stream.getVideoTracks()[0];
-                if (!track) {
-                  throw new Error("Canvas did not produce a video track");
-                }
-                if (geometry) {
-                  cameraFrameGeometryByTrack.set(track, geometry);
-                }
-                this.requestFrame();
-                finish();
-                this.schedule(() => this.render(version));
-              } catch (error) {
-                finish(error);
               }
-            };
-            this.schedule(firstFrame);
-          },
-          finish
-        );
+            }
+            let geometry: CameraFrameGeometry | undefined;
+            if (!this.draw(value => { geometry = value; })) {
+              this.schedule(firstFrame);
+              return;
+            }
+            this.stream ??= this.canvas.captureStream(this.options.frameRate);
+            const track = this.stream.getVideoTracks()[0];
+            if (!track) {
+              throw new Error("Canvas did not produce a video track");
+            }
+            if (geometry) {
+              cameraFrameGeometryByTrack.set(track, geometry);
+            }
+            this.requestFrame();
+            finish();
+            this.schedule(() => this.render(version));
+          } catch (error) {
+            finish(error);
+          }
+        };
+        const startPlayback = (retryOnAbort: boolean) => {
+          void this.video.play().then(
+            () => {
+              if (isCurrent()) {
+                this.schedule(firstFrame);
+              }
+            },
+            error => {
+              if (!isCurrent()) {
+                return;
+              }
+              if (retryOnAbort && source.readyState === "live" &&
+                error instanceof DOMException && error.name === "AbortError") {
+                startPlayback(false);
+                return;
+              }
+              finish(error);
+            }
+          );
+        };
+        startPlayback(true);
       });
       if (this.stopped || version !== this.version) {
         throw new XmaxError(
@@ -236,23 +249,6 @@ export class CameraRotationProcessor {
       }
       throw XmaxError.from(error);
     }
-  }
-
-  /**
-   * Unbinds the old source before a device change while retaining the last canvas frame and output
-   * track.
-   */
-  pauseSource(): void {
-    ++this.version;
-    this.cancelPending?.();
-    this.cancelFrame();
-    this.source?.removeEventListener(
-      "ended",
-      this.sourceEnded
-    );
-    this.source = undefined;
-    this.video.pause();
-    this.video.srcObject = null;
   }
 
   /**
@@ -363,6 +359,7 @@ export class CameraRotationProcessor {
       const requestedHeight = typeof constraints?.height === "number" ? constraints.height : constraints?.height?.ideal;
       const crop = { width: Math.round(cropWidth), height: Math.round(cropHeight) };
       onGeometry({
+        initialRequest: this.options.initialRequest,
         requested: requestedWidth && requestedHeight ? { width: requestedWidth, height: requestedHeight } : undefined,
         source: { width, height },
         crop,

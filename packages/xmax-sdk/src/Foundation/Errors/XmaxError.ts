@@ -24,6 +24,11 @@ export enum XmaxErrorCode {
   invalidConfiguration = "INVALID_CONFIGURATION",
 
   /**
+   * The current lifecycle state does not permit the operation.
+   */
+  invalidState = "INVALID_STATE",
+
+  /**
    * An unexpected SDK failure without a more specific category.
    */
   internalError = "INTERNAL_ERROR",

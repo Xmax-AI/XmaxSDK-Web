@@ -12,12 +12,10 @@ import { RtcProvider } from "../RtcProvider";
 import type { IRTCEngine } from "@volcengine/rtc";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
-import { CameraPosition } from "../../Media/Camera/CameraPosition";
-import type { RtcManaging, RtcCameraCaptureOptions, RtcRoomMessageDelivery } from "../RtcManaging";
+import type { RtcManaging, RtcLocalMediaTracks, RtcRoomMessageDelivery } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, VeRtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
-import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
 import type { DownlinkVideoStatistics } from "../VideoStatistics";
 import { VeRtcStatistics } from "./VeRtcStatistics";
 import { networkQualityLevel } from "../RtcQualityConverter";
@@ -44,7 +42,7 @@ export interface VeRtcManagerOptions {
 }
 
 /**
- * A VeRTC capture and room-text adapter using browser tracks for shared rendering.
+ * A VeRTC media and room-text adapter using browser tracks for shared rendering.
  */
 export class VeRtcManager implements RtcManaging {
 
@@ -72,21 +70,6 @@ export class VeRtcManager implements RtcManaging {
    * The lifecycle revision invalidating work after release.
    */
   private lifecycle = 0;
-
-  /**
-   * The capture revision rejecting late results after switching or stopping.
-   */
-  private captureVersion = 0;
-
-  /**
-   * The active camera video track.
-   */
-  private camera?: MediaStreamTrack;
-
-  /**
-   * Whether microphone capture is active.
-   */
-  private microphone = false;
 
   /**
    * The adapter-owned external-video clone.
@@ -267,14 +250,11 @@ export class VeRtcManager implements RtcManaging {
    */
   async destroy(): Promise<void> {
     this.lifecycle++;
-    this.captureVersion++;
     const engine = this.engine;
     const sdk = this.sdk;
     this.clearRoom();
     this.engine = undefined;
     this.sdk = undefined;
-    this.camera = undefined;
-    this.microphone = false;
     engine?.removeAllListeners();
     try {
       if (engine && sdk) {
@@ -292,14 +272,11 @@ export class VeRtcManager implements RtcManaging {
    * Binds cloned external tracks to the main stream without device capture or automatic publication.
    */
   async setExternalMediaTracks(
-    tracks: {
-      videoTrack: MediaStreamTrack;
-      audioTrack?: MediaStreamTrack
-    }
+    tracks: RtcLocalMediaTracks
   ): Promise<void> {
     const engine = this.requireEngine();
     const sdk = this.sdk!;
-    if (this.camera || this.microphone || this.externalVideo) {
+    if (this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Release the current local media before attaching external tracks"
@@ -391,160 +368,16 @@ export class VeRtcManager implements RtcManaging {
   }
 
   /**
-   * Starts camera capture without publication; nonzero rotation is unsupported.
-   */
-  async startCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack> {
-    if (options.rotation !== undefined && options.rotation !== 0) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera rotation currently requires Agora"
-      );
-    }
-    const engine = this.requireEngine();
-    if (this.camera || this.externalVideo) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Local video is already prepared"
-      );
-    }
-    const version = ++this.captureVersion;
-    await this.run(() => engine.setVideoEncoderConfig({
-      ...rtcOrientedVideoSize({
-        width: options.width,
-        height: options.height
-      }),
-      frameRate: options.frameRate,
-      maxKbps: 1000,
-      preferCodecName: this.sdk!.VideoCodecType.H264,
-      contentHint: "motion",
-    }));
-    if (engine !== this.engine || version !== this.captureVersion) {
-      throw this.cancelled();
-    }
-    try {
-      await engine.startVideoCapture(options.position === CameraPosition.front ? "user" : "environment");
-      if (engine !== this.engine || version !== this.captureVersion) {
-        await engine.stopVideoCapture().catch(() => { });
-        throw this.cancelled();
-      }
-      const track = engine.getLocalStreamTrack(
-        this.sdk!.StreamIndex.STREAM_INDEX_MAIN,
-        "video"
-      );
-      if (!track) {
-        await engine.stopVideoCapture();
-        throw new XmaxError(
-          XmaxErrorCode.rtcError,
-          "VeRTC camera track is unavailable"
-        );
-      }
-      this.camera = track;
-      return track;
-    } catch (error) {
-      throw this.mapError(
-        error,
-        XmaxErrorCode.cameraPermissionDenied
-      );
-    }
-  }
-
-  /**
-   * Updates disconnected capture settings while retaining the engine and device.
-   */
-  async updateCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack> {
-    const engine = this.requireEngine();
-    this.requireCamera();
-    if (this.connection) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Disconnect VeRTC before updating camera capture"
-      );
-    }
-    const version = this.captureVersion;
-    const size = rtcOrientedVideoSize(options);
-    await this.run(() => engine.setVideoEncoderConfig({
-      width: size.width,
-      height: size.height,
-      frameRate: options.frameRate,
-      maxKbps: 1000,
-      preferCodecName: this.sdk!.VideoCodecType.H264,
-      contentHint: "motion",
-    }));
-    if (engine !== this.engine || version !== this.captureVersion) {
-      throw this.cancelled();
-    }
-    const track = engine.getLocalStreamTrack(
-      this.sdk!.StreamIndex.STREAM_INDEX_MAIN,
-      "video"
-    );
-    if (!track) {
-      throw new XmaxError(
-        XmaxErrorCode.rtcError,
-        "VeRTC camera track is unavailable"
-      );
-    }
-    this.camera = track;
-    return track;
-  }
-
-  /**
-   * Switches cameras and returns the resulting video track.
-   */
-  async switchCameraCapture(
-    to: CameraPosition
-  ): Promise<MediaStreamTrack> {
-    const engine = this.requireEngine();
-    this.requireCamera();
-    const version = this.captureVersion;
-    await this.run(() => engine.setVideoCaptureDevice(to === CameraPosition.front ? "user" : "environment"));
-    if (engine !== this.engine || version !== this.captureVersion) {
-      throw this.cancelled();
-    }
-    const track = engine.getLocalStreamTrack(
-      this.sdk!.StreamIndex.STREAM_INDEX_MAIN,
-      "video"
-    );
-    if (!track) {
-      throw new XmaxError(
-        XmaxErrorCode.rtcError,
-        "VeRTC camera track is unavailable"
-      );
-    }
-    this.camera = track;
-    return track;
-  }
-
-  /**
-   * Stops camera capture and clears its track reference.
-   */
-  async stopCameraCapture(): Promise<void> {
-    if (this.externalVideo) {
-      return;
-    }
-    this.captureVersion++;
-    this.camera = undefined;
-    if (this.engine) {
-      await this.run(() => this.engine!.stopVideoCapture());
-    }
-  }
-
-  /**
-   * Applies oriented video dimensions, frame rate, and bitrate limits to the encoder.
+   * Applies video dimensions, frame rate, and bitrate limits to the encoder.
    */
   async configureVideoEncoding(
     config: VideoEncodingConfiguration
   ): Promise<void> {
     const engine = this.requireEngine();
     this.requireLocalVideo();
-    // External Canvas input does not require native camera orientation compensation.
-    const size = this.externalVideo ? config : rtcOrientedVideoSize(config);
     await this.run(() => engine.setVideoEncoderConfig({
-      width: size.width,
-      height: size.height,
+      width: config.width,
+      height: config.height,
       frameRate: config.frameRate,
       maxKbps: config.maximumBitrate,
       contentHint: config.encoderPreference === RtcVideoEncoderPreference.maintainFramerate ? "motion" : "detail",
@@ -561,10 +394,22 @@ export class VeRtcManager implements RtcManaging {
     await this.joining?.catch(() => { });
     await this.recovery?.catch(() => { });
     const engine = this.requireEngine();
-    if (config.provider !== RtcProvider.vertc || config.appID !== VERTC_APP_ID || this.connection) {
+    if (config.provider !== RtcProvider.vertc) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
-        "VeRTC credentials for the configured AppID and an idle room are required"
+        "VeRTC room join requires VeRTC credentials"
+      );
+    }
+    if (config.appID !== VERTC_APP_ID) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        `VeRTC AppID mismatch: engine ${VERTC_APP_ID}, session ${config.appID}`
+      );
+    }
+    if (this.connection) {
+      throw new XmaxError(
+        XmaxErrorCode.invalidConfiguration,
+        "VeRTC room join requires an idle engine"
       );
     }
     this.clearRoom();
@@ -753,7 +598,7 @@ export class VeRtcManager implements RtcManaging {
           throw this.cancelled();
         }
       }
-      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.videoRequested && (this.camera || this.externalVideo)) {
+      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.videoRequested && this.externalVideo) {
         await this.run(() => engine.publishStream(this.sdk!.MediaType.VIDEO));
         this.ensureCurrent(
           engine,
@@ -767,7 +612,7 @@ export class VeRtcManager implements RtcManaging {
           );
         }
       }
-      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.audioRequested && (this.microphone || this.externalAudio)) {
+      if ((this.tokenExpired || this.publishPrivilegeExpired) && this.audioRequested && this.externalAudio) {
         await this.run(() => engine.publishStream(this.sdk!.MediaType.AUDIO));
         this.ensureCurrent(
           engine,
@@ -834,11 +679,11 @@ export class VeRtcManager implements RtcManaging {
   }
 
   /**
-   * Publishes external audio or starts and publishes microphone input in device-capture mode.
+   * Publishes the supplied audio track and remembers its publication across room recovery.
    */
   async publishLocalAudio(): Promise<void> {
     const engine = this.requireEngine();
-    if (this.externalVideo && !this.externalAudio) {
+    if (!this.externalAudio) {
       return;
     }
     this.audioRequested = true;
@@ -848,28 +693,10 @@ export class VeRtcManager implements RtcManaging {
       engine,
       version
     );
-    try {
-      if (!this.externalVideo && !this.microphone) {
-        await engine.startAudioCapture();
-        if (!this.isCurrent(
-          engine,
-          version
-        )) {
-          await engine.stopAudioCapture().catch(() => { });
-          throw this.cancelled();
-        }
-        this.microphone = true;
-      }
-      if (!this.audioRequested) {
-        throw this.cancelled();
-      }
-      await engine.publishStream(this.sdk!.MediaType.AUDIO);
-    } catch (error) {
-      throw this.mapError(
-        error,
-        this.externalVideo ? XmaxErrorCode.rtcError : XmaxErrorCode.microphonePermissionDenied
-      );
+    if (!this.audioRequested) {
+      throw this.cancelled();
     }
+    await this.run(() => engine.publishStream(this.sdk!.MediaType.AUDIO));
   }
 
   /**
@@ -1501,26 +1328,13 @@ export class VeRtcManager implements RtcManaging {
   }
 
   /**
-   * Returns a prepared external or camera video track.
+   * Returns the prepared local video track.
    */
   private requireLocalVideo(): MediaStreamTrack {
-    if (this.externalVideo) {
-      return this.externalVideo;
+    if (!this.externalVideo) {
+      throw new XmaxError(XmaxErrorCode.invalidConfiguration, "Local video source is not prepared");
     }
-    return this.requireCamera();
-  }
-
-  /**
-   * Returns the active camera track or throws a configuration error.
-   */
-  private requireCamera(): MediaStreamTrack {
-    if (!this.camera) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera capture is not running"
-      );
-    }
-    return this.camera;
+    return this.externalVideo;
   }
 
   /**
@@ -1537,23 +1351,20 @@ export class VeRtcManager implements RtcManaging {
   }
 
   /**
-   * Maps native failures to permission or RTC errors as appropriate.
+   * Maps native failures to SDK errors.
    */
   private mapError(
-    error: unknown,
-    permissionCode?: XmaxErrorCode
+    error: unknown
   ): XmaxError {
     if (error instanceof XmaxError) {
       return error;
     }
     const value = error as {
-      code?: unknown;
-      name?: unknown
+      code?: unknown
     } | null;
     const code = typeof value?.code === "string" && /^[A-Z_0-9-]{1,64}$/.test(value.code) ? value.code : "UNKNOWN";
-    const denied = value?.name === "NotAllowedError" || code === "PERMISSION_DENIED" || code === "DEVICE_PERMISSION_DENIED";
     return new XmaxError(
-      permissionCode && denied ? permissionCode : XmaxErrorCode.rtcError,
+      XmaxErrorCode.rtcError,
       `VeRTC operation failed (${code})`
     );
   }

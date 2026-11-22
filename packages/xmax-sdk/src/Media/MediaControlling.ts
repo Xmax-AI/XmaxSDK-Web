@@ -56,13 +56,6 @@ export interface MediaControlling extends InteractionControlling {
   ensureNoLocalSource(): void;
 
   /**
-   * Validates RTC support for external media input.
-   */
-  validateExternalMediaSupport(
-    kind: "local" | "external" | "image"
-  ): void;
-
-  /**
    * Creates camera capture and preview.
    */
   createLocalCameraStream(

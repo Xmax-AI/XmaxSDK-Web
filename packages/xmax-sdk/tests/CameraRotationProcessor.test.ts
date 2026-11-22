@@ -83,15 +83,14 @@ describe("CameraRotationProcessor", () => {
     expect(await started).toBe(s.output);
   });
 
-  it("reuses output on camera switching and detaches the previous source", async () => {
+  it("reuses the output and detaches the previous source when replacing it", async () => {
     const s = setup();
     const started = s.processor.setSource(s.source);
     await Promise.resolve(); s.frame(); await started;
-    s.processor.pauseSource();
-    s.source.dispatchEvent(new Event("ended"));
-    expect(s.onError).not.toHaveBeenCalled();
     const replacement = new EventTarget() as MediaStreamTrack;
     const switched = s.processor.setSource(replacement);
+    s.source.dispatchEvent(new Event("ended"));
+    expect(s.onError).not.toHaveBeenCalled();
     await Promise.resolve(); s.frame();
     expect(await switched).toBe(s.output);
     expect(s.canvas.captureStream).toHaveBeenCalledOnce();
@@ -113,6 +112,47 @@ describe("CameraRotationProcessor", () => {
     expect(s.canvas.captureStream).not.toHaveBeenCalled();
     expect(s.video.srcObject).toBeNull();
     expect(s.source.stop).not.toHaveBeenCalled();
+  });
+
+  it("retries aborted playback on the same camera stream and draws the first frame", async () => {
+    const s = setup();
+    s.video.play.mockRejectedValueOnce(new DOMException("The operation was aborted.", "AbortError"));
+    const started = s.processor.setSource(s.source);
+    const attachedStream = s.video.srcObject;
+
+    await vi.waitFor(() => expect(s.callbacks.size).toBe(1));
+    s.frame();
+    expect(await started).toBe(s.output);
+    expect(s.video.play).toHaveBeenCalledTimes(2);
+    expect(s.video.srcObject).toBe(attachedStream);
+    expect(s.source.stop).not.toHaveBeenCalled();
+  });
+
+  it("preserves the rejection after two playback aborts", async () => {
+    const s = setup();
+    const error = new DOMException("The operation was aborted.", "AbortError");
+    s.video.play.mockRejectedValue(error);
+
+    await expect(s.processor.setSource(s.source)).rejects.toMatchObject({ code: "INTERNAL_ERROR", message: error.message });
+    expect(s.video.play).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry aborted playback after stopping the processor", async () => {
+    const s = setup();
+    s.video.play.mockRejectedValueOnce(new DOMException("The operation was aborted.", "AbortError"));
+    const rejected = expect(s.processor.setSource(s.source)).rejects.toMatchObject({ code: "CANCELLED" });
+    s.processor.stop();
+    await rejected;
+    expect(s.video.play).toHaveBeenCalledOnce();
+  });
+
+  it("propagates other playback errors on the first attempt", async () => {
+    const s = setup();
+    const error = new DOMException("Playback was denied", "NotAllowedError");
+    s.video.play.mockRejectedValueOnce(error);
+
+    await expect(s.processor.setSource(s.source)).rejects.toMatchObject({ message: error.message });
+    expect(s.video.play).toHaveBeenCalledOnce();
   });
 
   it("times out and releases scheduling resources if there are no frames", async () => {

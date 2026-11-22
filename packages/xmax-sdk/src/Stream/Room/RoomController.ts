@@ -18,7 +18,7 @@ import type { RealtimeExtraParams } from "../../Service/Realtime/RealtimeExtraPa
 import type { RealtimePoint } from "../../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFormat";
-import type { RoomControlling, RoomListener } from "./RoomControlling";
+import type { RoomControlling } from "./RoomControlling";
 import { RoomEvent, type RoomEventTargetSize } from "./RoomEvent";
 import { EncodingBitratePolicy } from "../Encoding/EncodingBitratePolicy";
 import { RoomHeartbeat } from "./RoomHeartbeat";
@@ -92,18 +92,13 @@ export interface RoomControllerOptions {
    * An optional heartbeat scheduler.
    */
   heartbeat?: RoomHeartbeat;
-
-  /**
-   * An optional room message codec.
-   */
-  codec?: RoomMessageCodec;
 }
 
 /**
  * Manages RTC room membership, heartbeats, and generation signaling.
  *
  * Incoming messages are reassembled, filtered by the target `user_id` in the broadcast payload, and
- * delivered to the listener.
+ * logged. Command acknowledgments are passed to the retry controller.
  */
 export class RoomController implements RoomControlling {
 
@@ -123,11 +118,6 @@ export class RoomController implements RoomControlling {
   private codec: RoomMessageCodec;
 
   /**
-   * Whether the message codec was supplied by the caller.
-   */
-  private readonly customCodec: boolean;
-
-  /**
    * The room's command receipt, retry, and supersession controller.
    */
   private readonly commands: RoomCommandController;
@@ -141,11 +131,6 @@ export class RoomController implements RoomControlling {
    * The transport chain for ordinary controls and multipart snapshots, independent of command ACK waits.
    */
   private sendTail: Promise<void> = Promise.resolve();
-
-  /**
-   * The receiver for complete room messages.
-   */
-  private listener?: RoomListener;
 
   /**
    * The current membership and user identity.
@@ -166,8 +151,7 @@ export class RoomController implements RoomControlling {
     this.rtcManager = options.rtcManager;
     this.heartbeat =
       options.heartbeat ?? new RoomHeartbeat({ rtcManager: options.rtcManager });
-    this.codec = options.codec ?? new RoomMessageCodec();
-    this.customCodec = options.codec !== undefined;
+    this.codec = new RoomMessageCodec();
     this.commands = new RoomCommandController(
       (message, signal) => this.sendCommandAttempt(
         message,
@@ -209,13 +193,11 @@ export class RoomController implements RoomControlling {
     this.heartbeat.stop();
 
     try {
-      if (!this.customCodec) {
-        this.codec = new RoomMessageCodec(
-          connection.provider === RtcProvider.vertc
-            ? null
-            : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
-        );
-      }
+      this.codec = new RoomMessageCodec(
+        connection.provider === RtcProvider.vertc
+          ? null
+          : connection.provider === RtcProvider.agora ? "__agora_chunk__" : "__trtc_chunk__",
+      );
       const configuration = toRoomJoinConfiguration(connection);
       const completeRtcJoin = measureRtcJoin?.();
       await this.rtcManager.joinRoom(configuration);
@@ -457,15 +439,6 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * Sets the room message listener; an undefined value clears it.
-   */
-  setListener(
-    listener?: RoomListener
-  ): void {
-    this.listener = listener;
-  }
-
-  /**
    * Resets room state, stops heartbeats, clears partial messages, and leaves the room.
    */
   private async performLeave(): Promise<void> {
@@ -484,7 +457,7 @@ export class RoomController implements RoomControlling {
   }
 
   /**
-   * Reassembles incoming messages and delivers those addressed to the current user.
+   * Logs complete messages for the current user and handles command acknowledgments.
    */
   handleIncomingMessage(
     senderUserID: string,
@@ -515,18 +488,10 @@ export class RoomController implements RoomControlling {
         `└─ ${XmaxLogger.localized("内容：", "Content:")}\n${JSON.stringify(message, null, 2)}`,
     );
 
-    if (message.event === "xid_ack") {
-      if (this.state.kind === "joined" && senderUserID !== ownUserID &&
-        (!this.botID || senderUserID === this.botID)) {
-        this.commands.acknowledge(message);
-      }
-      return;
+    if (message.event === "xid_ack" && this.state.kind === "joined" && senderUserID !== ownUserID &&
+      (!this.botID || senderUserID === this.botID)) {
+      this.commands.acknowledge(message);
     }
-
-    this.listener?.onRoomMessage(
-      senderUserID,
-      message
-    );
   }
 
   /**

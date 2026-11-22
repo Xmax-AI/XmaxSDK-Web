@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternalVideoFrameSink } from "../src/Media/External/ExternalVideoFrameSink";
 import type { RealtimeExternalAudioFrame as AudioData } from "../src/Foundation/Media/Audio/RealtimeExternalAudioFrame";
 import { ExternalVideoController } from "../src/Media/External/ExternalVideoController";
-import type { RealtimeExternalVideoSource, RealtimeExternalFrameSink } from "../src/Media/External/RealtimeExternalVideoSource";
+import type { RealtimeExternalFrameSink } from "../src/Media/External/RealtimeExternalVideoSource";
 import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 import { MediaService } from "../src/Service/Media/MediaService";
 import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";

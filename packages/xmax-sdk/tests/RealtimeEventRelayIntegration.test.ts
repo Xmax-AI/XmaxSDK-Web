@@ -79,10 +79,37 @@ afterEach(() => {
 
 describe("HTTP event relay assembly", () => {
   it.each([
-    [XmaxEnvironment.china, RealtimeModel.x2_1],
-    [XmaxEnvironment.global, RealtimeModel.x2_1],
-  ] as const)("uses both RTC and the %s HTTP endpoint for %s controls with the assigned instance", async (environment, model) => {
-    const s = setup(environment, RtcProvider.agora, model);
+    [XmaxEnvironment.china, RtcProvider.agora],
+    [XmaxEnvironment.china, RtcProvider.trtc],
+    [XmaxEnvironment.china, RtcProvider.vertc],
+    [XmaxEnvironment.global, RtcProvider.agora],
+  ] as const)("routes X2.1 Fix session requests to development with the selected provider for %s / %s", async (environment, provider) => {
+    const s = setup(environment, provider, RealtimeModel.x2_1_fix);
+    try {
+      await s.connect();
+      expect(JSON.parse(s.fetch.mock.calls[0]![1].body as string)).toEqual({ model: "x2-1-fix", provider });
+      await s.change();
+      await vi.advanceTimersByTimeAsync(6000);
+      const relay = JSON.parse(s.relays()[0]![1].body as string);
+      expect(relay).toMatchObject({ sessionId: "session-1", modelId: "model-instance-1", data: { event: "change_condition" } });
+      expect(s.rtc.sendRoomMessage.mock.calls.map(([message]) => JSON.parse(message))).toEqual(
+        Array.from({ length: 6 }, () => relay.data),
+      );
+      s.components.connectionManager.startHeartbeat("session-1");
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      await s.components.connectionManager.disconnect();
+    }
+    expect(s.fetch.mock.calls.map(([url, init]) => [init.method, url])).toEqual([
+      ["POST", "https://dev.22duck.cn/open/api/v1/session"],
+      ["POST", "https://dev.22duck.cn/open/api/v1/client-event/relay"],
+      ["PUT", "https://dev.22duck.cn/open/api/v1/session/session-1/heartbeat"],
+      ["DELETE", "https://dev.22duck.cn/open/api/v1/session/session-1"],
+    ]);
+  });
+
+  it.each([XmaxEnvironment.china, XmaxEnvironment.global])("uses RTC and the %s HTTP endpoint for X2.1 controls", async environment => {
+    const s = setup(environment);
     const origin = environment === XmaxEnvironment.china ? "https://cloud.xmax.22duck.cn" : "https://api.xmax.ai";
     try {
       expect(s.fetch).not.toHaveBeenCalled();
@@ -90,7 +117,7 @@ describe("HTTP event relay assembly", () => {
       await s.change();
       const [sessionURL, sessionRequest] = s.fetch.mock.calls[0]!;
       expect(sessionURL).toBe(`${origin}/open/api/v1/session`);
-      expect(JSON.parse(sessionRequest.body as string)).toEqual({ model });
+      expect(JSON.parse(sessionRequest.body as string)).toEqual({ model: RealtimeModel.x2_1 });
       expect(s.relays()).toHaveLength(1);
       const [url, request] = s.relays()[0]!;
       expect(url).toBe(`${origin}/open/api/v1/client-event/relay`);
@@ -111,12 +138,8 @@ describe("HTTP event relay assembly", () => {
 
   it.each([
     [XmaxEnvironment.china, RealtimeModel.x2_0, RtcProvider.vertc],
-    [XmaxEnvironment.global, RealtimeModel.x2_0, RtcProvider.vertc],
     [XmaxEnvironment.china, "x2.1-trtc", RtcProvider.trtc],
-    [XmaxEnvironment.global, "x2.1-trtc", RtcProvider.trtc],
-    [XmaxEnvironment.china, "x2.1-debug", RtcProvider.agora],
-    [XmaxEnvironment.global, "x2.1-debug", RtcProvider.agora],
-    [XmaxEnvironment.china, "custom-model", RtcProvider.agora],
+    [XmaxEnvironment.global, RealtimeModel.x2_1_flash, RtcProvider.agora],
     [XmaxEnvironment.global, "X2.1", RtcProvider.agora],
   ] as const)("uses one RTC send per control and no HTTP relay for %s / %s", async (environment, model, provider) => {
     const s = setup(environment, provider, model);

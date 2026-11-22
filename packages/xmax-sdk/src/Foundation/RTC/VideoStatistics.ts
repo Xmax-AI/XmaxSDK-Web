@@ -30,7 +30,8 @@ interface VideoStatistics {
 }
 
 /**
- * Runtime statistics for local outgoing video.
+ * Runtime statistics for local outgoing video. Each frame rate describes a separate stage.
+ * Unavailable frame rates are undefined, and a reported zero is valid.
  */
 export interface UplinkVideoStatistics extends VideoStatistics {
 
@@ -40,12 +41,12 @@ export interface UplinkVideoStatistics extends VideoStatistics {
   readonly captureFrameRate?: number;
 
   /**
-   * The actual encoding frame rate, in fps; unavailable values are not replaced with send rate.
+   * The number of output frames produced by the encoder per second.
    */
   readonly encodeFrameRate?: number;
 
   /**
-   * The actual send frame rate, in fps.
+   * The number of video frames sent by the RTC transport per second.
    */
   readonly sendFrameRate?: number;
 

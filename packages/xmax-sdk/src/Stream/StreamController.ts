@@ -18,7 +18,7 @@ import type { RealtimeNetworkQualityListener } from "../Service/Realtime/Realtim
 import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
-import type { RoomListener, RoomControlling } from "./Room/RoomControlling";
+import type { RoomControlling } from "./Room/RoomControlling";
 import { RoomController } from "./Room/RoomController";
 import type { ModelSize } from "../Service/Realtime/RealtimeModel";
 import type { EncodingControlling } from "./Encoding/EncodingControlling";
@@ -168,11 +168,6 @@ export interface StreamControllerOptions {
   roomController?: RoomControlling;
 
   /**
-   * An optional video encoding controller.
-   */
-  encodingController?: EncodingControlling;
-
-  /**
    * The runtime error listener.
    */
   errorListener?: XmaxErrorListener;
@@ -259,11 +254,6 @@ export class StreamController implements StreamControlling {
   private state: StreamState = makeInitialState();
 
   /**
-   * The current receiver for room messages.
-   */
-  private roomListener?: RoomListener;
-
-  /**
    * Creates a media transport controller.
    */
   constructor(
@@ -273,27 +263,13 @@ export class StreamController implements StreamControlling {
     this.roomController =
       options.roomController ??
       new RoomController({ rtcManager: options.rtcManager });
-    this.encodingController =
-      options.encodingController ??
-      new EncodingController({ rtcManager: options.rtcManager });
+    this.encodingController = new EncodingController({ rtcManager: options.rtcManager });
 
     this.errorListener = options.errorListener ?? (() => { });
     this.remoteStreamListener = options.remoteStreamListener ?? (() => { });
     this.generationTimeoutMs = options.generationTimeoutMs ?? 30_000;
 
-    this.roomController.setListener({
-      onRoomMessage: (
-        sender,
-        message
-      ) => {
-        this.roomListener?.onRoomMessage(
-          sender,
-          message
-        );
-      },
-    });
-
-    // The transport owns RTC events and delegates room message reassembly and delivery.
+    // The transport owns RTC events and delegates incoming room messages to the room controller.
     this.rtcManager.setEventListener({
       onTokenWillExpire: options.onCredentialsRequired,
       onTokenExpired: options.onCredentialsRequired,
@@ -339,13 +315,6 @@ export class StreamController implements StreamControlling {
         }
       },
     });
-  }
-
-  /**
-   * Whether a generation task is starting or running.
-   */
-  get hasGenerationTask(): boolean {
-    return this.state.generationTaskID !== undefined;
   }
 
   /**
@@ -410,13 +379,6 @@ export class StreamController implements StreamControlling {
     listener?: DownlinkVideoStatisticsListener
   ): void {
     this.remoteVideoStatisticsListener = listener;
-  }
-
-  /**
-   * The generated audio playback volume, from 0 to 1.
-   */
-  get remoteAudioVolume(): number {
-    return this.remoteAudioVolumePercentage / 100;
   }
 
   /**
@@ -750,15 +712,6 @@ export class StreamController implements StreamControlling {
     } catch (error) {
       throw XmaxError.from(error);
     }
-  }
-
-  /**
-   * Sets the room message listener; an undefined value clears it.
-   */
-  setRoomListener(
-    listener?: RoomListener
-  ): void {
-    this.roomListener = listener;
   }
 
   /**

@@ -14,23 +14,18 @@ import type {
   IAgoraRTC,
   IAgoraRTCClient,
   IAgoraRTCRemoteUser,
-  ICameraVideoTrack,
-  IMicrophoneAudioTrack,
   ILocalVideoTrack,
   ILocalAudioTrack,
   VideoEncoderConfiguration
 } from "agora-rtc-sdk-ng";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
-import { CameraPosition } from "../../Media/Camera/CameraPosition";
 import { XmaxEnvironment } from "../../../Core/XmaxEnvironment";
-import type { RtcManaging, RtcCameraCaptureOptions, RtcRoomMessageDelivery } from "../RtcManaging";
+import type { RtcManaging, RtcLocalMediaTracks, RtcRoomMessageDelivery } from "../RtcManaging";
 import type { RtcEventListener } from "../RtcEventListener";
 import type { RtcRoomJoinConfiguration, AgoraRoomJoinConfiguration } from "../RoomJoinConfiguration";
 import { RtcVideoEncoderPreference, type VideoEncodingConfiguration } from "../VideoEncodingConfiguration";
 import { AgoraRtcStatistics } from "./AgoraRtcStatistics";
-import { validateCameraRotation } from "../../Media/Camera/CameraRotation";
-import { CameraRotationProcessor } from "../../Media/Camera/CameraRotationProcessor";
 
 /**
  * The pinned Agora SDK's DataStream extension, absent from its public client type.
@@ -147,31 +142,6 @@ export class AgoraRtcManager implements RtcManaging {
    * The lifecycle revision invalidating work after destruction.
    */
   private lifecycle = 0;
-
-  /**
-   * The camera's local video output track.
-   */
-  private camera?: ILocalVideoTrack;
-
-  /**
-   * The original camera capture track before rotation.
-   */
-  private cameraSource?: ICameraVideoTrack;
-
-  /**
-   * The camera rotation processor.
-   */
-  private cameraRotation?: CameraRotationProcessor;
-
-  /**
-   * The capture revision rejecting results after a switch or stop.
-   */
-  private captureVersion = 0;
-
-  /**
-   * The active microphone capture track.
-   */
-  private microphone?: IMicrophoneAudioTrack;
 
   /**
    * The external-video clone owned by this adapter.
@@ -380,7 +350,7 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Invalidates asynchronous work before releasing room, capture, event, and region resources.
+   * Invalidates asynchronous work before releasing room, local tracks, events, and the SDK region.
    */
   async destroy(): Promise<void> {
     this.lifecycle++;
@@ -389,8 +359,6 @@ export class AgoraRtcManager implements RtcManaging {
     this.clearRoom();
     this.client = undefined;
     client?.removeAllListeners();
-    this.releaseCameraCapture();
-    this.microphone?.close();
     this.externalVideo?.close();
     this.externalAudio?.close();
     this.externalVideo = undefined;
@@ -398,8 +366,6 @@ export class AgoraRtcManager implements RtcManaging {
     this.externalCameraEncoding = undefined;
     this.videoUpdateTail = Promise.resolve();
     this.externalAudio = undefined;
-    this.camera = undefined;
-    this.microphone = undefined;
 
     const sdk = this.sdk;
     this.sdk = undefined;
@@ -416,193 +382,14 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Captures camera video without publishing and returns its native track for shared rendering.
-   */
-  async startCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack> {
-    const client = this.requireClient();
-    if (this.camera || this.cameraSource || this.externalVideo) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "A local video source is already active"
-      );
-    }
-
-    const rotation = options.rotation ?? 0;
-    validateCameraRotation(rotation);
-    const version = ++this.captureVersion;
-    let source: ICameraVideoTrack | undefined;
-    try {
-      const captureSize = rotation === 90 || rotation === 270
-        ? {
-          width: options.height,
-          height: options.width
-        } : options;
-      source = await this.sdk!.createCameraVideoTrack({
-        facingMode: options.position === CameraPosition.front ? "user" : "environment",
-        encoderConfig: {
-          width: captureSize.width,
-          height: captureSize.height,
-          frameRate: options.frameRate
-        },
-      });
-      if (this.client !== client || version !== this.captureVersion) {
-        source.close();
-        throw this.cancelled();
-      }
-      this.cameraSource = source;
-      let camera: ILocalVideoTrack = source;
-      if (rotation !== 0) {
-        const processor = new CameraRotationProcessor({
-          ...options,
-          rotation,
-          onError: error => this.listener?.onError?.(error),
-        });
-        this.cameraRotation = processor;
-        const output = await processor.setSource(source.getMediaStreamTrack());
-        if (this.client !== client || version !== this.captureVersion) {
-          throw this.cancelled();
-        }
-        camera = this.sdk!.createCustomVideoTrack({
-          mediaStreamTrack: output,
-          width: options.width,
-          height: options.height,
-          frameRate: options.frameRate,
-        });
-      }
-      this.camera = camera;
-      return camera.getMediaStreamTrack();
-    } catch (error) {
-      if (version === this.captureVersion) {
-        this.releaseCameraCapture();
-      }
-      throw this.mapError(
-        error,
-        XmaxErrorCode.cameraPermissionDenied
-      );
-    }
-  }
-
-  /**
-   * Updates unpublished camera capture while retaining the local track and rotation output.
-   */
-  async updateCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack> {
-    const source = this.requireCamera();
-    const camera = this.camera!;
-    const client = this.requireClient();
-    const version = this.captureVersion;
-    if (this.connection || this.videoPublishRequested) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Disconnect Agora before updating camera capture"
-      );
-    }
-    const rotation = options.rotation ?? 0;
-    validateCameraRotation(rotation);
-    if ((rotation !== 0) !== !!this.cameraRotation) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera format updates must preserve rotation"
-      );
-    }
-    const ensureCurrent = () => {
-      if (this.camera !== camera || this.cameraSource !== source || this.client !== client || version !== this.captureVersion) {
-        throw this.cancelled();
-      }
-    };
-    const size = rotation === 90 || rotation === 270
-      ? {
-        width: options.height,
-        height: options.width
-      } : options;
-    await this.run(() => source.setEncoderConfiguration({
-      width: size.width,
-      height: size.height,
-      frameRate: options.frameRate
-    }));
-    ensureCurrent();
-    if (this.cameraRotation) {
-      await this.cameraRotation.updateFormat(
-        options.width,
-        options.height,
-        options.frameRate
-      );
-      ensureCurrent();
-    }
-    return camera.getMediaStreamTrack();
-  }
-
-  /**
-   * Switches the Agora camera device and returns its current native track.
-   */
-  async switchCameraCapture(
-    to: CameraPosition
-  ): Promise<MediaStreamTrack> {
-    const source = this.requireCamera();
-    const camera = this.camera!;
-    // setDevice may end the old source; retain the last frame and output track during switching.
-    this.cameraRotation?.pauseSource();
-    try {
-      await this.run(() => source.setDevice({ facingMode: to === CameraPosition.front ? "user" : "environment" }));
-    } catch (error) {
-      if (this.camera === camera && this.cameraRotation) {
-        await this.cameraRotation.setSource(source.getMediaStreamTrack()).catch(restoreError => {
-          this.listener?.onError?.(XmaxError.from(restoreError));
-        });
-      }
-      throw error;
-    }
-    if (this.camera !== camera || this.cameraSource !== source) {
-      throw this.cancelled();
-    }
-    if (this.cameraRotation) {
-      await this.cameraRotation.setSource(source.getMediaStreamTrack());
-      if (this.camera !== camera) {
-        throw this.cancelled();
-      }
-    }
-    return camera.getMediaStreamTrack();
-  }
-
-  /**
-   * Stops capture and releases the camera.
-   */
-  async stopCameraCapture(): Promise<void> {
-    this.releaseCameraCapture();
-  }
-
-  /**
-   * Releases camera capture and rotation output.
-   */
-  private releaseCameraCapture(): void {
-    ++this.captureVersion;
-    const camera = this.camera;
-    this.camera = undefined;
-    camera?.close();
-    this.cameraRotation?.stop();
-    this.cameraRotation = undefined;
-    if (this.cameraSource !== camera) {
-      this.cameraSource?.close();
-    }
-    this.cameraSource = undefined;
-  }
-
-  /**
    * Wraps cloned external tracks as Agora local tracks without device access, releasing clones on
    * failure.
    */
   async setExternalMediaTracks(
-    tracks: {
-      videoTrack: MediaStreamTrack;
-      audioTrack?: MediaStreamTrack;
-      source?: "camera";
-    }
+    tracks: RtcLocalMediaTracks
   ): Promise<void> {
     this.requireClient();
-    if (this.camera || this.cameraSource || this.microphone || this.externalVideo) {
+    if (this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Release the current local media before attaching external tracks"
@@ -683,7 +470,7 @@ export class AgoraRtcManager implements RtcManaging {
     const version = this.roomVersion;
     const published = this.videoPublishRequested;
     const ensureActive = () => {
-      if ((this.externalVideo ?? this.camera) !== video || this.client !== client || this.roomVersion !== version ||
+      if (this.externalVideo !== video || this.client !== client || this.roomVersion !== version ||
         (published && !this.videoPublishRequested)) {
         throw this.cancelled();
       }
@@ -947,7 +734,7 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Rejoins with updated credentials, reusing capture tracks and restoring remote audio subscriptions.
+   * Rejoins with updated credentials, restoring local publication and remote audio subscriptions.
    */
   private async performRejoin(
     client: AgoraDataStreamClient,
@@ -984,8 +771,8 @@ export class AgoraRtcManager implements RtcManaging {
       throw this.cancelled();
     }
 
-    const video = this.externalVideo ?? this.camera;
-    const audio = this.externalVideo ? this.externalAudio : this.microphone;
+    const video = this.externalVideo;
+    const audio = this.externalAudio;
     if (this.videoPublishRequested && video) {
       await this.run(() => client.publish(video));
       this.ensureRoomCurrent(
@@ -1042,67 +829,47 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Unpublishes video while retaining capture and preview.
+   * Unpublishes video while retaining the prepared track.
    */
   async unpublishLocalVideo(): Promise<void> {
     this.videoPublishRequested = false;
     if (this.rejoinTask || this.tokenExpired) {
       return;
     }
-    const video = this.externalVideo ?? this.camera;
+    const video = this.externalVideo;
     if (this.client && video) {
       await this.run(() => this.client!.unpublish(video));
     }
   }
 
   /**
-   * Publishes external audio only when supplied, or starts microphone capture for a camera source;
-   * obsolete capture results are released.
+   * Publishes the supplied audio track and remembers its publication across room recovery.
    */
   async publishLocalAudio(): Promise<void> {
     const client = this.requireClient();
+    const audio = this.externalAudio;
+    if (!audio) {
+      return;
+    }
     this.audioPublishRequested = true;
     await this.rejoinOperation;
-    const version = this.roomVersion;
     if (client !== this.client || !this.audioPublishRequested) {
       throw this.cancelled();
     }
-    if (this.externalVideo) {
-      const audio = this.externalAudio;
-      if (audio && !client.localTracks.includes(audio)) {
-        await this.run(() => client.publish(audio));
-      }
-      return;
-    }
-    try {
-      if (!this.microphone) {
-        const track = await this.sdk!.createMicrophoneAudioTrack();
-        if (client !== this.client || version !== this.roomVersion) {
-          track.close();
-          throw this.cancelled();
-        }
-        this.microphone = track;
-      }
-      if (!client.localTracks.includes(this.microphone)) {
-        await client.publish(this.microphone);
-      }
-    } catch (error) {
-      throw this.mapError(
-        error,
-        XmaxErrorCode.microphonePermissionDenied
-      );
+    if (!client.localTracks.includes(audio)) {
+      await this.run(() => client.publish(audio));
     }
   }
 
   /**
-   * Unpublishes audio while leaving capture cleanup to closure.
+   * Unpublishes audio while retaining the prepared track.
    */
   async unpublishLocalAudio(): Promise<void> {
     this.audioPublishRequested = false;
     if (this.rejoinTask || this.tokenExpired) {
       return;
     }
-    const audio = this.externalVideo ? this.externalAudio : this.microphone;
+    const audio = this.externalAudio;
     if (this.client && audio) {
       await this.run(() => this.client!.unpublish(audio));
     }
@@ -1632,7 +1399,7 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Clears room state, playback, and queues without stopping local video capture.
+   * Clears room state, playback, and queues while retaining prepared tracks.
    */
   private clearRoom(): void {
     this.roomVersion++;
@@ -1698,23 +1465,10 @@ export class AgoraRtcManager implements RtcManaging {
   }
 
   /**
-   * Returns the active original camera capture track.
-   */
-  private requireCamera(): ICameraVideoTrack {
-    if (!this.cameraSource || !this.camera) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera capture is not running"
-      );
-    }
-    return this.cameraSource;
-  }
-
-  /**
-   * Returns a publishable local video track from either camera or external media.
+   * Returns the prepared local video track.
    */
   private requireLocalVideo(): ILocalVideoTrack {
-    const video = this.externalVideo ?? this.camera;
+    const video = this.externalVideo;
     if (!video) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
@@ -1742,8 +1496,7 @@ export class AgoraRtcManager implements RtcManaging {
    * Preserves provider error codes without exposing raw messages that may contain tokens.
    */
   private mapError(
-    error: unknown,
-    permissionCode?: XmaxErrorCode
+    error: unknown
   ): XmaxError {
     if (error instanceof XmaxError) {
       return error;
@@ -1751,7 +1504,7 @@ export class AgoraRtcManager implements RtcManaging {
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "UNKNOWN";
     const safeCode = /^[A-Z_0-9-]+$/.test(code) ? code : "UNKNOWN";
     return new XmaxError(
-      permissionCode && safeCode === "PERMISSION_DENIED" ? permissionCode : XmaxErrorCode.rtcError,
+      XmaxErrorCode.rtcError,
       `Agora operation failed (${safeCode})`
     );
   }

@@ -240,6 +240,10 @@ videoView.remoteTrack = remoteStream.videoTrack
 await realtime.close()
 ```
 
+To replace an active generation task in the same RTC session, call `realtime.restartGeneration()`.
+It uses the current local stream and generation conditions. Pass `{ context }` to use new conditions.
+Migrate calls that previously passed `restart: true` to `startGeneration()` to this method.
+
 <br>
 
 Session HTTP heartbeats begin when the session first enters `generating`, then continue

@@ -8,8 +8,6 @@
 //  Copyright (c) 2026 XMAX.AI PTE. LTD.
 //
 
-import type { CameraPosition } from "../Media/Camera/CameraPosition";
-import type { CameraRotation } from "../Media/Camera/CameraRotation";
 import type { RtcEventListener } from "./RtcEventListener";
 import type { RtcRoomJoinConfiguration } from "./RoomJoinConfiguration";
 import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
@@ -21,40 +19,17 @@ import type { VideoEncodingConfiguration } from "./VideoEncodingConfiguration";
  */
 export type RtcRoomMessageDelivery = "ordered" | "latest" | "barrier" | "concurrent";
 
-/**
- * Camera capture settings.
- */
-export interface RtcCameraCaptureOptions {
-
-  /**
-   * The requested capture width after model sizing, in pixels.
-   */
-  width: number;
-
-  /**
-   * The requested capture height, in pixels.
-   */
-  height: number;
-
-  /**
-   * The requested capture frame rate.
-   */
-  frameRate: number;
-
-  /**
-   * The initial camera position.
-   */
-  position: CameraPosition;
-
-  /**
-   * Clockwise input rotation; dimensions describe the rotated output. Defaults to 0.
-   */
-  rotation?: CameraRotation;
+/** Tracks owned by the media source and supplied to an RTC adapter for publication. */
+export interface RtcLocalMediaTracks {
+  videoTrack: MediaStreamTrack;
+  audioTrack?: MediaStreamTrack;
+  /** Identifies camera media for provider-specific audio profiles and video track replacement. */
+  source?: "camera";
 }
 
 /**
- * The RTC engine, room, media-transport, and messaging capabilities. Capture does not publish media;
- * local tracks are published only when connecting.
+ * The RTC engine, room, media-transport, and messaging capabilities. The media layer owns capture
+ * and supplies tracks for RTC publication.
  */
 export interface RtcManaging {
 
@@ -64,7 +39,7 @@ export interface RtcManaging {
   readonly isInitialized: boolean;
 
   /**
-   * Initializes the engine without requiring credentials, including during local preview.
+   * Initializes the engine independently of room credentials and device capture.
    */
   initialize(): Promise<void>;
 
@@ -74,50 +49,10 @@ export interface RtcManaging {
   destroy(): Promise<void>;
 
   /**
-   * Starts camera capture without publishing.
-   *
-   * @returns The captured video track.
-   * @throws Rejects if the engine is uninitialized, the device is unavailable, or permission is denied.
+   * Prepares clones of the supplied tracks without publishing. The adapter releases the clones
+   * on destruction. Audio is optional and comes from the supplied track.
    */
-  startCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack>;
-
-  /**
-   * Updates preview capture settings and returns the native output track without switching devices or
-   * publishing.
-   */
-  updateCameraCapture?(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack>;
-
-  /**
-   * Switches between front and rear cameras.
-   *
-   * @returns The replacement capture track.
-   * @throws Rejects if capture has not started or switching fails.
-   */
-  switchCameraCapture(
-    to: CameraPosition
-  ): Promise<MediaStreamTrack>;
-
-  /**
-   * Stops camera capture.
-   */
-  stopCameraCapture(): Promise<void>;
-
-  /**
-   * Prepares external audio/video tracks without publication, retaining clones while the media source
-   * owns the originals. Unsupported providers omit this capability; missing external audio must not fall
-   * back to microphone capture.
-   */
-  setExternalMediaTracks?(
-    tracks: {
-      videoTrack: MediaStreamTrack;
-      audioTrack?: MediaStreamTrack;
-      source?: "camera";
-    }
-  ): Promise<void>;
+  setExternalMediaTracks(tracks: RtcLocalMediaTracks): Promise<void>;
 
   /** Replaces the published SDK camera track, retaining the current room and encoding configuration. */
   replaceCameraVideoTrack(track: MediaStreamTrack): Promise<void>;
@@ -125,7 +60,7 @@ export interface RtcManaging {
   /**
    * Configures uplink video encoding on the provider's local track.
    *
-   * @throws Rejects if capture has not started or encoding configuration fails.
+   * @throws Rejects if no video track is prepared or encoding configuration fails.
    */
   configureVideoEncoding(
     configuration: VideoEncodingConfiguration,
@@ -150,14 +85,14 @@ export interface RtcManaging {
   ): Promise<void>;
 
   /**
-   * Leaves the current RTC room, doing nothing when no room is joined.
+   * Leaves the current RTC room and cancels pending room entry.
    */
   leaveRoom(): Promise<void>;
 
   /**
    * Publishes local video.
    *
-   * @throws Rejects if capture has not started or publication fails.
+   * @throws Rejects if no video track is prepared or publication fails.
    */
   publishLocalVideo(): Promise<void>;
 
@@ -167,14 +102,14 @@ export interface RtcManaging {
   unpublishLocalVideo(): Promise<void>;
 
   /**
-   * Publishes local audio, starting microphone capture on first use when applicable.
+   * Publishes the prepared audio track when supplied.
    *
-   * @throws Rejects for denied microphone permission or publication failure.
+   * @throws Rejects if publication fails.
    */
   publishLocalAudio(): Promise<void>;
 
   /**
-   * Unpublishes local audio while retaining microphone capture.
+   * Unpublishes local audio while retaining the prepared track.
    */
   unpublishLocalAudio(): Promise<void>;
 

@@ -12,6 +12,9 @@ type FrameSize = Readonly<{ width: number; height: number }>;
 
 /** Dimensions measured when the first camera frame is drawn. */
 export interface CameraFrameGeometry {
+  /** Capture dimensions originally requested by the SDK. */
+  readonly initialRequest?: FrameSize;
+  /** Capture constraints reported by the browser when the first output frame is drawn. */
   readonly requested?: FrameSize;
   readonly source: FrameSize;
   readonly crop: FrameSize;

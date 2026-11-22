@@ -16,20 +16,6 @@ import type { RealtimeVideoFormat } from "../../Service/Realtime/RealtimeVideoFo
 import type { RoomEventTargetSize } from "./RoomEvent";
 
 /**
- * Receives room-level business messages.
- */
-export interface RoomListener {
-
-  /**
-   * Receives a complete message after fragment reassembly and recipient filtering.
-   */
-  onRoomMessage(
-    senderUserID: string,
-    message: Record<string, unknown>
-  ): void;
-}
-
-/**
  * Defines RTC room membership and generation signaling.
  */
 export interface RoomControlling {
@@ -141,14 +127,7 @@ export interface RoomControlling {
   ): Promise<void>;
 
   /**
-   * Sets the room message listener; an undefined value clears it.
-   */
-  setListener(
-    listener?: RoomListener
-  ): void;
-
-  /**
-   * Reassembles RTC messages, filters their recipients, and delivers complete messages.
+   * Reassembles RTC messages, filters their recipients, logs them, and handles command acknowledgments.
    *
    * Called by the transport component that owns the RTC event listener.
    */

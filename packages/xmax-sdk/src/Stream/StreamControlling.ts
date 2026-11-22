@@ -17,7 +17,6 @@ import type { RealtimePoint } from "../Service/Realtime/RealtimePoint";
 import type { RtcSessionConnection } from "../Service/Realtime/RealtimeSessionConnection";
 import type { RealtimeVideoFormat } from "../Service/Realtime/RealtimeVideoFormat";
 import type { ModelSize } from "../Service/Realtime/RealtimeModel";
-import type { RoomListener } from "./Room/RoomControlling";
 import type { RoomEventTargetSize } from "./Room/RoomEvent";
 import type { RemoteMediaTracks } from "../Foundation/Media/RemoteMediaTracks";
 
@@ -122,16 +121,6 @@ export interface StreamControlling {
   setNetworkQualityListener(
     listener?: RealtimeNetworkQualityListener
   ): void;
-
-  /**
-   * Whether a generation task is starting or running.
-   */
-  readonly hasGenerationTask: boolean;
-
-  /**
-   * The generated audio playback volume, from 0 to 1.
-   */
-  readonly remoteAudioVolume: number;
 
   /**
    * Sets the playback volume for all subscribed result audio.
@@ -271,13 +260,6 @@ export interface StreamControlling {
     taskID: string,
     points: RealtimePoint[]
   ): Promise<void>;
-
-  /**
-   * Sets the room message listener; an undefined value clears it.
-   */
-  setRoomListener(
-    listener?: RoomListener
-  ): void;
 
   /**
    * Sets the uplink video statistics listener; undefined clears it.

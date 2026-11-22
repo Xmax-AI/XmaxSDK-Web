@@ -10,22 +10,13 @@
 
 import { RtcProvider } from "../RtcProvider";
 import { XmaxError, XmaxErrorCode } from "../../Errors/XmaxError";
-import type { NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
+import type { default as TRTC, NetworkQuality, TRTCStatistics } from "trtc-sdk-v5";
 import { XmaxLogger } from "../../Logging/XmaxLogger";
-import { CameraPosition } from "../../Media/Camera/CameraPosition";
-import {
-  RtcEngineManager,
-  type RtcEngine,
-  type RtcEngineLease,
-} from "./RtcEngineManager";
 import type { RtcEventListener } from "../RtcEventListener";
-import { networkQualityLevel } from "../RtcQualityConverter";
 import type { RtcRoomJoinConfiguration } from "../RoomJoinConfiguration";
-import type { RtcCameraCaptureOptions, RtcManaging, RtcRoomMessageDelivery } from "../RtcManaging";
-import { RtcStatsLogger } from "../RtcStatsLogger";
-import type { UplinkVideoStatistics, DownlinkVideoStatistics } from "../VideoStatistics";
-import { rtcOrientedVideoSize } from "../RtcVideoOrientation";
+import type { RtcLocalMediaTracks, RtcManaging, RtcRoomMessageDelivery } from "../RtcManaging";
 import { canControlTrtcRemoteAudioVolume } from "./TrtcAudioVolumeSupport";
+import { TrtcRtcStatistics } from "./TrtcRtcStatistics";
 import {
   RtcVideoEncoderPreference,
   type VideoEncodingConfiguration,
@@ -58,11 +49,6 @@ const CUSTOM_MESSAGE_CMD_ID = 1;
  * The encoded room-message byte limit.
  */
 const ROOM_MESSAGE_MAX_BYTES = 1000;
-
-/**
- * The placeholder capture bitrate, in kbps, replaced before publication by the encoding controller.
- */
-const CAPTURE_PLACEHOLDER_BITRATE = 1000;
 
 /**
  * The mapping from encoding preferences to TRTC network-adaptation modes.
@@ -135,33 +121,22 @@ interface RtcCustomMessageEvent {
   data: ArrayBuffer;
 }
 
-/**
- * The TRTC media and room adapter.
- *
- * TRTC owns capture and browser compatibility. Unpublished capture tracks are rendered through SDK
- * views, and room signaling uses custom messages with cmdId 1.
- */
+type TrtcSdk = Pick<typeof TRTC, "create" | "setLogLevel">;
+
+/** Owns a TRTC client and adapts media publication, subscription, and room events. */
 export class TrtcRtcManager implements RtcManaging {
 
-  /**
-   * The manager supplying exclusive TRTC engine leases.
-   */
-  private readonly engineManager: RtcEngineManager;
+  /** Lazily loads the TRTC runtime. */
+  private readonly loadSDK: () => Promise<TrtcSdk>;
 
-  /**
-   * The active engine lease.
-   */
-  private lease?: RtcEngineLease;
+  /** The client owned by this adapter. */
+  private engine?: TRTC;
 
-  /**
-   * Whether camera capture is active.
-   */
-  private isCapturing = false;
+  /** Shares initialization within this adapter and invalidates it on destroy. */
+  private initialization?: Promise<void>;
 
-  /**
-   * Whether local audio capture is active.
-   */
-  private isAudioCapturing = false;
+  /** Invalidates obsolete initialization after destruction. */
+  private lifecycle = 0;
 
   /**
    * The adapter-owned external-video clone.
@@ -178,6 +153,9 @@ export class TrtcRtcManager implements RtcManaging {
    */
   private isInRoom = false;
 
+  /** Lets teardown finish an in-flight room transition before destroying its client. */
+  private roomOperation?: { kind: "join" | "leave"; promise: Promise<void> };
+
   /**
    * The shared RTC event listener.
    */
@@ -189,72 +167,113 @@ export class TrtcRtcManager implements RtcManaging {
   private removeStatsListeners?: () => void;
 
   /**
-   * Creates a TRTC adapter.
+   * Creates an adapter without loading browser dependencies or requesting device permission.
    */
   constructor(
-    engineManager: RtcEngineManager = RtcEngineManager.shared
+    options: { loadSDK?: () => Promise<TrtcSdk> } = {}
   ) {
-    this.engineManager = engineManager;
+    this.loadSDK = options.loadSDK ?? (async () => (await import("trtc-sdk-v5")).default);
   }
 
   /**
    * Whether the RTC engine is initialized.
    */
   get isInitialized(): boolean {
-    return this.lease !== undefined;
+    return this.engine !== undefined;
   }
 
   /**
-   * Acquires an exclusive engine and registers event bridges, doing nothing when already initialized.
+   * Initializes one client per adapter and shares simultaneous calls on that adapter.
    */
   async initialize(): Promise<void> {
-    if (this.lease) {
+    if (this.engine) {
       return;
     }
-    const lease = await this.engineManager.acquire();
-    this.registerEventBridge(lease.engine);
-    this.lease = lease;
+    if (this.initialization) {
+      return this.initialization;
+    }
+
+    const operation = this.performInitialize(this.lifecycle);
+    this.initialization = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.initialization === operation) {
+        this.initialization = undefined;
+      }
+    }
+  }
+
+  private async performInitialize(version: number): Promise<void> {
+    const sdk = await this.loadSDK();
+    if (version !== this.lifecycle) {
+      throw new XmaxError(XmaxErrorCode.cancelled, "TRTC initialization was cancelled");
+    }
+
+    // Silence vendor console logs while retaining TRTC's default diagnostic uploads.
+    sdk.setLogLevel(5);
+    const engine = sdk.create();
+    if (!engine) {
+      throw new XmaxError(XmaxErrorCode.rtcError, "Failed to create RTC Engine");
+    }
+    this.engine = engine;
+    try {
+      this.registerEventBridge(engine);
+    } catch (error) {
+      await this.destroy();
+      throw error;
+    }
   }
 
   /**
-   * Releases capture, publication, the engine, and its lease; repeated calls without initialization do
-   * nothing.
+   * Invalidates pending initialization, leaves the room, and releases this adapter's resources.
    */
   async destroy(): Promise<void> {
-    const lease = this.lease;
-    this.lease = undefined;
+    this.lifecycle++;
+    this.initialization = undefined;
+    const engine = this.engine;
+    const wasInRoom = this.isInRoom;
+    const roomOperation = this.roomOperation;
     const externalVideo = this.externalVideo;
     const externalAudio = this.externalAudio;
+    this.engine = undefined;
+    this.roomOperation = undefined;
     this.externalVideo = undefined;
     this.externalAudio = undefined;
-    this.isCapturing = false;
-    this.isAudioCapturing = false;
     this.isInRoom = false;
 
     this.removeStatsListeners?.();
     this.removeStatsListeners = undefined;
 
-    if (!lease) {
+    if (!engine) {
       externalVideo?.stop();
       externalAudio?.stop();
       return;
     }
 
-    try {
-      await lease.engine.stopLocalAudio();
-    } catch {
-      // Audio-stop failure must not prevent engine-lease release.
+    const roomOperationCompleted = await roomOperation?.promise.then(() => true, () => false);
+    if (wasInRoom || (roomOperation?.kind === "join" && roomOperationCompleted)) {
+      await this.exitEngineRoom(engine);
     }
 
     try {
-      await lease.engine.stopLocalVideo();
+      await engine.stopLocalAudio();
     } catch {
-      // Capture-stop failure must not prevent engine-lease release.
+      // Continue releasing the owned engine and tracks.
     }
-
+    try {
+      await engine.stopLocalVideo();
+    } catch {
+      // Continue releasing the owned engine and tracks.
+    }
     externalVideo?.stop();
     externalAudio?.stop();
-    this.engineManager.release(lease);
+
+    try {
+      engine.destroy();
+    } catch (error) {
+      XmaxLogger.rtc.warning(() => `TRTC 引擎销毁失败 (TRTC Destroy Failed)\n└─ ${XmaxError.from(error).message}`);
+    }
   }
 
   /**
@@ -262,13 +281,10 @@ export class TrtcRtcManager implements RtcManaging {
    * at the source.
    */
   async setExternalMediaTracks(
-    tracks: {
-      videoTrack: MediaStreamTrack;
-      audioTrack?: MediaStreamTrack
-    }
+    tracks: RtcLocalMediaTracks
   ): Promise<void> {
     const engine = this.requireEngine();
-    if (this.isCapturing || this.isAudioCapturing || this.externalVideo) {
+    if (this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Release the current local media before attaching external tracks"
@@ -292,7 +308,7 @@ export class TrtcRtcManager implements RtcManaging {
         publish: false,
         option: { videoTrack: video }
       });
-      if (this.lease?.engine !== engine) {
+      if (this.engine !== engine) {
         throw new XmaxError(
           XmaxErrorCode.cancelled,
           "External media preparation was cancelled"
@@ -308,7 +324,7 @@ export class TrtcRtcManager implements RtcManaging {
             noiseSuppression: false
           },
         });
-        if (this.lease?.engine !== engine) {
+        if (this.engine !== engine) {
           throw new XmaxError(
             XmaxErrorCode.cancelled,
             "External media preparation was cancelled"
@@ -316,7 +332,7 @@ export class TrtcRtcManager implements RtcManaging {
         }
       }
     } catch (error) {
-      if (this.lease?.engine === engine) {
+      if (this.engine === engine) {
         await engine.stopLocalAudio().catch(() => { });
         await engine.stopLocalVideo().catch(() => { });
       }
@@ -340,164 +356,13 @@ export class TrtcRtcManager implements RtcManaging {
     const replacement = track.clone();
     try {
       await engine.updateLocalVideo({ option: { videoTrack: replacement } });
-      if (this.lease?.engine !== engine || this.externalVideo !== previous) {
+      if (this.engine !== engine || this.externalVideo !== previous) {
         throw new XmaxError(XmaxErrorCode.cancelled, "Camera publication changed during replacement");
       }
       this.externalVideo = replacement;
       previous.stop();
     } catch (error) {
       replacement.stop();
-      throw this.mapError(error);
-    }
-  }
-
-  /**
-   * Updates disconnected camera dimensions and frame rate without replacing its device or capture
-   * lifecycle.
-   */
-  async updateCameraCapture(
-    options: RtcCameraCaptureOptions
-  ): Promise<MediaStreamTrack> {
-    const engine = this.requireEngine();
-    if (!this.isCapturing || this.externalVideo || this.isInRoom) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "A disconnected camera preview is required"
-      );
-    }
-    const size = rtcOrientedVideoSize(options);
-    try {
-      await engine.updateLocalVideo({
-        option: {
-          profile: {
-            width: size.width,
-            height: size.height,
-            frameRate: options.frameRate,
-            bitrate: CAPTURE_PLACEHOLDER_BITRATE,
-          }
-        }
-      });
-      if (this.lease?.engine !== engine || !this.isCapturing) {
-        throw new XmaxError(
-          XmaxErrorCode.cancelled,
-          "Camera capture stopped during format update"
-        );
-      }
-      const track = engine.getVideoTrack();
-      if (!track) {
-        throw new XmaxError(
-          XmaxErrorCode.mediaError,
-          "RTC engine did not produce a camera video track"
-        );
-      }
-      return track;
-    } catch (error) {
-      throw this.mapError(error);
-    }
-  }
-
-  /**
-   * Starts camera capture without publication.
-   *
-   * @returns The captured video track.
-   * @throws Rejects for uninitialized or active capture, unavailable devices, or denied permission.
-   */
-  async startCameraCapture(
-    options: RtcCameraCaptureOptions,
-  ): Promise<MediaStreamTrack> {
-    if (options.rotation !== undefined && options.rotation !== 0) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera rotation currently requires Agora"
-      );
-    }
-    const engine = this.requireEngine();
-    if (this.isCapturing || this.externalVideo) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera capture is already running",
-      );
-    }
-    try {
-      // Compensate for mobile portrait transposition so the transmitted orientation matches the request.
-      const captureSize = rtcOrientedVideoSize({
-        width: options.width,
-        height: options.height,
-      });
-      await engine.startLocalVideo({
-        publish: false,
-        option: {
-          useFrontCamera: options.position === CameraPosition.front,
-          profile: {
-            width: captureSize.width,
-            height: captureSize.height,
-            frameRate: options.frameRate,
-            bitrate: CAPTURE_PLACEHOLDER_BITRATE,
-          },
-        },
-      });
-      const track = engine.getVideoTrack();
-      if (!track) {
-        throw new XmaxError(
-          XmaxErrorCode.mediaError,
-          "RTC engine did not produce a camera video track",
-        );
-      }
-      this.isCapturing = true;
-      return track;
-    } catch (error) {
-      throw this.mapError(error);
-    }
-  }
-
-  /**
-   * Switches between front and rear cameras.
-   *
-   * @returns The current capture video track.
-   * @throws Rejects without initialized capture or if switching fails.
-   */
-  async switchCameraCapture(
-    to: CameraPosition
-  ): Promise<MediaStreamTrack> {
-    const engine = this.requireEngine();
-    if (!this.isCapturing) {
-      throw new XmaxError(
-        XmaxErrorCode.invalidConfiguration,
-        "Camera capture is not running",
-      );
-    }
-    try {
-      await engine.updateLocalVideo({
-        option: { useFrontCamera: to === CameraPosition.front },
-      });
-      const track = engine.getVideoTrack();
-      if (!track) {
-        throw new XmaxError(
-          XmaxErrorCode.mediaError,
-          "RTC engine did not produce a camera video track after switching",
-        );
-      }
-      return track;
-    } catch (error) {
-      throw this.mapError(error);
-    }
-  }
-
-  /**
-   * Stops camera capture, doing nothing when capture or the engine is inactive.
-   */
-  async stopCameraCapture(): Promise<void> {
-    if (this.externalVideo) {
-      return;
-    }
-    const engine = this.lease?.engine;
-    this.isCapturing = false;
-    if (!engine) {
-      return;
-    }
-    try {
-      await engine.stopLocalVideo();
-    } catch (error) {
       throw this.mapError(error);
     }
   }
@@ -524,15 +389,16 @@ export class TrtcRtcManager implements RtcManaging {
         "RTC sdkAppID is invalid",
       );
     }
-    if (this.isInRoom) {
+    if (this.isInRoom || this.roomOperation) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Already in an RTC room",
       );
     }
 
+    let join: Promise<void> | undefined;
     try {
-      await engine.enterRoom({
+      join = engine.enterRoom({
         sdkAppId,
         userId: configuration.userID,
         userSig: configuration.userSig,
@@ -541,22 +407,56 @@ export class TrtcRtcManager implements RtcManaging {
         // Require explicit audio subscription after applying volume to avoid initial playback at TRTC defaults.
         autoReceiveAudio: false,
       });
-      this.isInRoom = true;
+      this.roomOperation = { kind: "join", promise: join };
+      await join;
+      if (this.roomOperation?.promise === join) {
+        this.isInRoom = true;
+        return;
+      }
     } catch (error) {
-      throw this.mapError(error);
+      if (!join || this.roomOperation?.promise === join) {
+        throw this.mapError(error);
+      }
+    } finally {
+      if (this.roomOperation?.promise === join) {
+        this.roomOperation = undefined;
+      }
     }
+    throw new XmaxError(XmaxErrorCode.cancelled, "TRTC room join was cancelled");
   }
 
   /**
-   * Leaves the active room when initialized; failures are logged without rejecting cleanup.
+   * Cancels pending room entry and leaves any room opened by that entry.
    */
   async leaveRoom(): Promise<void> {
-    const engine = this.lease?.engine;
-    if (!engine || !this.isInRoom) {
+    const engine = this.engine;
+    if (!engine) {
+      return;
+    }
+    const pending = this.roomOperation;
+    if (pending?.kind === "leave") {
+      return pending.promise;
+    }
+    if (!this.isInRoom && !pending) {
       return;
     }
 
     this.isInRoom = false;
+    const promise = pending
+      ? pending.promise.then(() => this.exitEngineRoom(engine), () => { })
+      : this.exitEngineRoom(engine);
+    const operation = { kind: "leave", promise } as const;
+    this.roomOperation = operation;
+    try {
+      await operation.promise;
+    } finally {
+      if (this.roomOperation === operation) {
+        this.roomOperation = undefined;
+      }
+    }
+  }
+
+  private async exitEngineRoom(engine: TRTC): Promise<void> {
     try {
       await engine.exitRoom();
     } catch (error) {
@@ -569,7 +469,7 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * Configures video encoding using minimumBitrate as TRTC's single target bitrate and mapping the
+   * Configures video encoding using maximumBitrate as TRTC's target bitrate and mapping the
    * encoding preference to its adaptation mode.
    *
    * @throws Rejects if local video is unavailable or configuration fails.
@@ -578,25 +478,20 @@ export class TrtcRtcManager implements RtcManaging {
     configuration: VideoEncodingConfiguration,
   ): Promise<void> {
     const engine = this.requireEngine();
-    if (!this.isCapturing && !this.externalVideo) {
+    if (!this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Local video is not prepared",
       );
     }
     try {
-      // External Canvas orientation is already resolved; only native camera input requires mobile transposition.
-      const encodingSize = this.externalVideo ? configuration : rtcOrientedVideoSize({
-        width: configuration.width,
-        height: configuration.height,
-      });
       await engine.updateLocalVideo({
         option: {
           profile: {
-            width: encodingSize.width,
-            height: encodingSize.height,
+            width: configuration.width,
+            height: configuration.height,
             frameRate: configuration.frameRate,
-            bitrate: configuration.minimumBitrate,
+            bitrate: configuration.maximumBitrate,
           },
           qosPreference: QOS_PREFERENCE_MAP[configuration.encoderPreference],
         },
@@ -613,7 +508,7 @@ export class TrtcRtcManager implements RtcManaging {
    */
   async publishLocalVideo(): Promise<void> {
     const engine = this.requireEngine();
-    if (!this.isCapturing && !this.externalVideo) {
+    if (!this.externalVideo) {
       throw new XmaxError(
         XmaxErrorCode.invalidConfiguration,
         "Local video is not prepared",
@@ -627,11 +522,11 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * Unpublishes video while retaining capture and preview.
+   * Unpublishes video while retaining the prepared track.
    */
   async unpublishLocalVideo(): Promise<void> {
-    const engine = this.lease?.engine;
-    if (!engine || (!this.isCapturing && !this.externalVideo)) {
+    const engine = this.engine;
+    if (!engine || !this.externalVideo) {
       return;
     }
     try {
@@ -642,34 +537,28 @@ export class TrtcRtcManager implements RtcManaging {
   }
 
   /**
-   * Publishes file audio or microphone input, never starting a microphone for an audio-free file source.
+   * Publishes the supplied audio track when available.
    *
-   * @throws Rejects for an uninitialized engine, denied permission, or publication failure.
+   * @throws Rejects for an uninitialized engine or a publication failure.
    */
   async publishLocalAudio(): Promise<void> {
     const engine = this.requireEngine();
+    if (!this.externalAudio) {
+      return;
+    }
     try {
-      if (this.externalVideo) {
-        if (this.externalAudio) {
-          await engine.updateLocalAudio({ publish: true });
-        }
-      } else if (!this.isAudioCapturing) {
-        await engine.startLocalAudio();
-        this.isAudioCapturing = true;
-      } else {
-        await engine.updateLocalAudio({ publish: true });
-      }
+      await engine.updateLocalAudio({ publish: true });
     } catch (error) {
       throw this.mapError(error);
     }
   }
 
   /**
-   * Unpublishes local audio while retaining microphone capture.
+   * Unpublishes local audio while retaining the prepared track.
    */
   async unpublishLocalAudio(): Promise<void> {
-    const engine = this.lease?.engine;
-    if (!engine || (!this.isAudioCapturing && !this.externalAudio)) {
+    const engine = this.engine;
+    if (!engine || !this.externalAudio) {
       return;
     }
     try {
@@ -845,114 +734,21 @@ export class TrtcRtcManager implements RtcManaging {
    * Bridges native media, message, and performance events.
    */
   private registerEventBridge(
-    engine: RtcEngine
+    engine: TRTC
   ): void {
     const source = engine as unknown as RtcEventSource;
+    const receivesRoomEvents = () => this.engine === engine && this.roomOperation?.kind !== "leave";
 
     // Use TRTC's statistics cadence without another timer, ignoring events from left rooms or obsolete engines.
     const onStatistics = (stats: TRTCStatistics) => {
-      if (this.isInRoom && this.lease?.engine === engine) {
-        RtcStatsLogger.logConnectionStatistics({
-          rttMs: stats.rtt,
-          uplinkLossPercent: stats.upLoss,
-          downlinkLossPercent: stats.downLoss,
-          sentBytes: stats.bytesSent,
-          receivedBytes: stats.bytesReceived,
-        });
-        const video = stats.localStatistics?.video?.find((item) => item.videoType === "big");
-        const valid = (
-          value: number | undefined,
-          minimum: number
-        ) =>
-          typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : undefined;
-        // TRTC uplink frameRate is an encoding rate, not a capture or send rate.
-        const localVideo: UplinkVideoStatistics | undefined = video ? Object.freeze({
-          width: valid(
-            video.width,
-            1
-          ),
-          height: valid(
-            video.height,
-            1
-          ),
-          encodeFrameRate: valid(
-            video.frameRate,
-            0
-          ),
-          bitrateKbps: valid(
-            video.bitrate,
-            0
-          ),
-          packetLossPercent: stats.upLoss <= 100 ? valid(
-            stats.upLoss,
-            0
-          ) : undefined,
-        }) : undefined;
-        this.eventListener?.onLocalVideoStatistics?.(localVideo);
-        if (localVideo) {
-          RtcStatsLogger.logUplinkVideoStatistics(localVideo);
-        }
-
-        const remoteVideo: readonly DownlinkVideoStatistics[] = Object.freeze(
-          (stats.remoteStatistics ?? []).flatMap((remote) => {
-            const video = remote.video?.find((item) => item.videoType === "big");
-            if (!video) {
-              return [];
-            }
-            // Use the optional runtime E2E field absent from native typings; do not substitute buffering delay.
-            const playback = video as typeof video & {
-              point2pointDelay?: number;
-            };
-            return [Object.freeze({
-              userID: remote.userId,
-              width: valid(
-                video.width,
-                1
-              ),
-              height: valid(
-                video.height,
-                1
-              ),
-              decodeFrameRate: valid(
-                video.frameRate,
-                0
-              ),
-              bitrateKbps: valid(
-                video.bitrate,
-                0
-              ),
-              packetLossPercent: stats.downLoss <= 100 ? valid(
-                stats.downLoss,
-                0
-              ) : undefined,
-              endToEndDelayMs: valid(
-                playback.point2pointDelay,
-                0
-              ),
-            })];
-          }),
-        );
-        this.eventListener?.onRemoteVideoStatistics?.(remoteVideo);
-        for (const video of remoteVideo) {
-          RtcStatsLogger.logDownlinkVideoStatistics(video);
-        }
+      if (this.isInRoom && this.engine === engine) {
+        TrtcRtcStatistics.collect(stats, this.eventListener);
       }
     };
 
     const onNetworkQuality = (stats: NetworkQuality) => {
-      if (this.isInRoom && this.lease?.engine === engine) {
-        const quality = Object.freeze({
-          uplink: networkQualityLevel(stats.uplinkNetworkQuality),
-          downlink: networkQualityLevel(stats.downlinkNetworkQuality),
-        });
-        RtcStatsLogger.logNetworkQuality({
-          ...quality,
-          uplinkRTT: stats.uplinkRTT,
-          downlinkRTT: stats.downlinkRTT,
-          uplinkLoss: stats.uplinkLoss,
-          downlinkLoss: stats.downlinkLoss,
-        });
-        this.eventListener?.onNetworkStatistics?.(quality);
+      if (this.isInRoom && this.engine === engine) {
+        TrtcRtcStatistics.network(stats, this.eventListener);
       }
     };
 
@@ -965,7 +761,7 @@ export class TrtcRtcManager implements RtcManaging {
       onNetworkQuality
     );
     const onAudioChanged = (event: RtcRemoteVideoEvent) => {
-      if (this.isInRoom && this.lease?.engine === engine) {
+      if (this.isInRoom && this.engine === engine) {
         this.eventListener?.onRemoteAudioTrackChanged?.(event.userId);
       }
     };
@@ -999,7 +795,7 @@ export class TrtcRtcManager implements RtcManaging {
     source.on(
       RTC_EVENT.remoteVideoAvailable,
       (event: RtcRemoteVideoEvent) => {
-        if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
+        if (!receivesRoomEvents() || event.streamType !== STREAM_TYPE_MAIN) {
           return;
         }
         this.eventListener?.onRemoteVideoPublished(
@@ -1012,7 +808,7 @@ export class TrtcRtcManager implements RtcManaging {
     source.on(
       RTC_EVENT.remoteVideoUnavailable,
       (event: RtcRemoteVideoEvent) => {
-        if (this.lease?.engine !== engine || event.streamType !== STREAM_TYPE_MAIN) {
+        if (!receivesRoomEvents() || event.streamType !== STREAM_TYPE_MAIN) {
           return;
         }
         this.eventListener?.onRemoteVideoPublished(
@@ -1025,7 +821,7 @@ export class TrtcRtcManager implements RtcManaging {
     source.on(
       RTC_EVENT.customMessage,
       (event: RtcCustomMessageEvent) => {
-        if (this.lease?.engine !== engine || event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
+        if (!receivesRoomEvents() || event.cmdId !== CUSTOM_MESSAGE_CMD_ID) {
           return;
         }
         let message: string;
@@ -1046,8 +842,8 @@ export class TrtcRtcManager implements RtcManaging {
   /**
    * Returns the current engine or throws if uninitialized.
    */
-  private requireEngine(): RtcEngine {
-    const engine = this.lease?.engine;
+  private requireEngine(): TRTC {
+    const engine = this.engine;
     if (!engine) {
       throw new XmaxError(
         XmaxErrorCode.rtcError,

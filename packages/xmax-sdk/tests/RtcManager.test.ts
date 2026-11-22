@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type TRTC from "trtc-sdk-v5";
 import { RealtimeNetworkQualityLevel } from "../src/Service/Realtime/RealtimeNetworkQuality";
 import { networkQualityLevel } from "../src/Foundation/RTC/RtcQualityConverter";
 import { XmaxLogger, XmaxLoggerOption } from "../src/Foundation/Logging/XmaxLogger";
 import { XmaxErrorCode } from "../src/Foundation/Errors/XmaxError";
-import { CameraPosition } from "../src/Foundation/Media/Camera/CameraPosition";
 import { RemoteStream } from "../src/Foundation/RTC/RemoteStream";
 import { RoomJoinConfiguration } from "../src/Foundation/RTC/RoomJoinConfiguration";
 import type { RtcEventListener } from "../src/Foundation/RTC/RtcEventListener";
-import { RtcEngineManager, type RtcEngine } from "../src/Foundation/RTC/TRTC/RtcEngineManager";
 import { TrtcRtcManager } from "../src/Foundation/RTC/TRTC/TrtcRtcManager";
 import { RtcStatsLogger } from "../src/Foundation/RTC/RtcStatsLogger";
 import { RtcVideoEncoderPreference } from "../src/Foundation/RTC/VideoEncodingConfiguration";
@@ -123,11 +122,22 @@ class FakeRtcEngine {
   }
 }
 
+function track(kind: string) {
+  const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
+  const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
+  return { original, cloned };
+}
+
 function makeManager() {
   const engine = new FakeRtcEngine();
-  const engineManager = new RtcEngineManager(async () => engine as unknown as RtcEngine);
-  const manager = new TrtcRtcManager(engineManager);
+  const manager = managerWithEngine(() => engine);
   return { manager, engine };
+}
+
+function managerWithEngine(create: () => FakeRtcEngine) {
+  return new TrtcRtcManager({ loadSDK: async () => ({
+    setLogLevel: () => {}, create: () => create() as unknown as TRTC,
+  }) });
 }
 
 const joinConfig = new RoomJoinConfiguration({
@@ -141,11 +151,7 @@ const joinConfig = new RoomJoinConfiguration({
 describe("TrtcRtcManager file media", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  function track(kind: string) {
-    const cloned = { kind, readyState: "live", stop: vi.fn() } as unknown as MediaStreamTrack;
-    const original = { kind, readyState: "live", stop: vi.fn(), clone: vi.fn(() => cloned) } as unknown as MediaStreamTrack;
-    return { original, cloned };
-  }
+
 
   it.each([true, false])("prepares, publishes and rejoins with file audio=%s without device capture", async (includeAudio) => {
     const { manager, engine } = makeManager();
@@ -165,7 +171,7 @@ describe("TrtcRtcManager file media", () => {
     vi.stubGlobal("window", { screen: { orientation: { type: "portrait-primary" } } });
     await manager.configureVideoEncoding({ width: 1024, height: 1920, frameRate: 30, minimumBitrate: 4000, maximumBitrate: 8000, encoderPreference: RtcVideoEncoderPreference.maintainFramerate });
     expect(engine.updateLocalVideoCalls).toContainEqual({ option: {
-      profile: { width: 1024, height: 1920, frameRate: 30, bitrate: 4000 }, qosPreference: "smooth",
+      profile: { width: 1024, height: 1920, frameRate: 30, bitrate: 8000 }, qosPreference: "smooth",
     } });
     await manager.joinRoom(joinConfig);
     await manager.publishLocalVideo();
@@ -180,10 +186,7 @@ describe("TrtcRtcManager file media", () => {
     expect(engine.startLocalAudioCalls).toBe(includeAudio ? 1 : 0);
     expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ publish: true });
     expect(engine.updateLocalAudioCalls).toEqual(includeAudio ? [{ publish: true }, { publish: false }, { publish: true }] : []);
-    await manager.stopCameraCapture();
     expect(engine.stopLocalVideoCalls).toBe(0);
-    await expect(manager.switchCameraCapture(CameraPosition.back)).rejects.toThrow("Camera capture is not running");
-    await expect(manager.startCameraCapture({ width: 640, height: 480, frameRate: 30, position: CameraPosition.front })).rejects.toThrow();
     await manager.destroy();
     expect(video.cloned.stop).toHaveBeenCalled();
     expect(video.original.stop).not.toHaveBeenCalled();
@@ -207,7 +210,7 @@ describe("TrtcRtcManager file media", () => {
 
   it("keeps event delivery after engine recreation and ignores old engine events", async () => {
     const engines = [new FakeRtcEngine(), new FakeRtcEngine()];
-    const manager = new TrtcRtcManager(new RtcEngineManager(async () => engines.shift()! as unknown as RtcEngine));
+    const manager = managerWithEngine(() => engines.shift()!);
     const old = engines[0]!, next = engines[1]!;
     const listener = { onRemoteVideoPublished: vi.fn(), onCustomMessageReceived: vi.fn() };
     manager.setEventListener(listener);
@@ -236,11 +239,11 @@ describe("TrtcRtcManager file media", () => {
     expect(video.cloned.stop).toHaveBeenCalled();
   });
 
-  it("rejects invalid tracks and an existing camera without replacing media", async () => {
+  it("rejects invalid tracks and a second source without replacing media", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
     await expect(manager.setExternalMediaTracks({ videoTrack: track("audio").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
-    await manager.startCameraCapture({ width: 640, height: 480, frameRate: 30, position: CameraPosition.front });
+    await manager.setExternalMediaTracks({ videoTrack: track("video").original, source: "camera" });
     await expect(manager.setExternalMediaTracks({ videoTrack: track("video").original })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
     expect(engine.startLocalVideoCalls).toHaveLength(1);
     await manager.destroy();
@@ -347,27 +350,6 @@ describe("TrtcRtcManager performance logging", () => {
 });
 
 describe("TrtcRtcManager", () => {
-  it("updates the preview profile without restarting capture or publishing", async () => {
-    const { manager, engine } = makeManager();
-    await manager.initialize();
-    const options = { width: 1080, height: 1920, frameRate: 30, position: CameraPosition.front };
-    await manager.startCameraCapture(options);
-    expect(await manager.updateCameraCapture({ ...options, width: 1408, height: 1408, frameRate: 24 })).toBe(engine.localVideoTrack);
-    expect(engine.updateLocalVideoCalls.at(-1)).toMatchObject({ option: { profile: { width: 1408, height: 1408, frameRate: 24 } } });
-    expect(engine.startLocalVideoCalls).toHaveLength(1);
-    expect(engine.stopLocalVideoCalls).toBe(0);
-    expect(engine.enterRoomCalls).toHaveLength(0);
-    await manager.joinRoom(joinConfig);
-    await expect(manager.updateCameraCapture(options)).rejects.toThrow("disconnected camera preview");
-    await manager.destroy();
-  });
-
-  it("rejects nonzero camera rotation instead of silently ignoring it", async () => {
-    const { manager, engine } = makeManager();
-    await expect(manager.startCameraCapture({ width: 1024, height: 1920, frameRate: 30,
-      position: CameraPosition.front, rotation: 90 })).rejects.toThrow("Camera rotation currently requires Agora");
-    expect(engine.startLocalVideoCalls).toHaveLength(0);
-  });
   it("maps directional network quality without requiring logs or remote video", async () => {
     const { manager, engine } = makeManager();
     const listener = vi.fn();
@@ -555,7 +537,7 @@ describe("TrtcRtcManager", () => {
     await manager.destroy();
   });
 
-  it("initializes once and destroys the engine with the lease", async () => {
+  it("initializes once and destroys the owned engine", async () => {
     const { manager, engine } = makeManager();
     expect(manager.isInitialized).toBe(false);
 
@@ -617,7 +599,7 @@ describe("TrtcRtcManager", () => {
     });
   });
 
-  it("publishes and unpublishes local video while capture keeps running", async () => {
+  it("publishes and unpublishes local video while retaining its prepared track", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
 
@@ -625,12 +607,7 @@ describe("TrtcRtcManager", () => {
       code: XmaxErrorCode.invalidConfiguration,
     });
 
-    await manager.startCameraCapture({
-      width: 832,
-      height: 1472,
-      frameRate: 30,
-      position: CameraPosition.front,
-    });
+    await manager.setExternalMediaTracks({ videoTrack: track("video").original, source: "camera" });
     expect(engine.startLocalVideoCalls[0]).toMatchObject({ publish: false });
 
     await manager.publishLocalVideo();
@@ -651,10 +628,7 @@ describe("TrtcRtcManager", () => {
       height: Math.floor(1920 * tier.scale / 2) * 2,
       frameRate: tier.frameRate,
     }));
-    await manager.startCameraCapture({
-      ...tiers[0]!,
-      position: CameraPosition.front,
-    });
+    await manager.setExternalMediaTracks({ videoTrack: track("video").original, source: "camera" });
     await manager.joinRoom(joinConfig);
     await manager.publishLocalVideo();
     engine.updateLocalVideoCalls.length = 0;
@@ -667,7 +641,7 @@ describe("TrtcRtcManager", () => {
         encoderPreference: RtcVideoEncoderPreference.maintainFramerate,
       });
       expect(engine.updateLocalVideoCalls.at(-1)).toEqual({ option: {
-        profile: { width: tier.width, height: tier.height, frameRate: tier.frameRate, bitrate: 1000 },
+        profile: { width: tier.width, height: tier.height, frameRate: tier.frameRate, bitrate: 4000 },
         qosPreference: "smooth",
       } });
     }
@@ -678,47 +652,6 @@ describe("TrtcRtcManager", () => {
     expect(engine.enterRoomCalls).toHaveLength(1);
     expect(engine.exitRoomCalls).toBe(0);
     await manager.destroy();
-  });
-
-  it("never enables TRTC encode mirroring, which routes through its canvas pipeline", async () => {
-    // mirror: "publish" 会让 TRTC 用内部 canvas 重采每一帧：
-    // iOS 上帧率暴跌且竖屏几何异常。镜像只由渲染层 CSS 和服务端处理。
-    const { manager, engine } = makeManager();
-    await manager.initialize();
-
-    await manager.startCameraCapture({
-      width: 832,
-      height: 1472,
-      frameRate: 30,
-      position: CameraPosition.front,
-    });
-    expect(engine.startLocalVideoCalls[0]).toMatchObject({
-      option: { useFrontCamera: true },
-    });
-    const captureOption = (engine.startLocalVideoCalls[0] as { option: object }).option;
-    expect(captureOption).not.toHaveProperty("mirror");
-
-    await manager.switchCameraCapture(CameraPosition.back);
-    expect(engine.updateLocalVideoCalls[0]).toEqual({
-      option: { useFrontCamera: false },
-    });
-  });
-
-  it("starts microphone capture on first audio publish and unpublishes afterwards", async () => {
-    const { manager, engine } = makeManager();
-    await manager.initialize();
-
-    await manager.publishLocalAudio();
-    expect(engine.startLocalAudioCalls).toBe(1);
-
-    await manager.publishLocalAudio();
-    expect(engine.updateLocalAudioCalls).toEqual([{ publish: true }]);
-
-    await manager.unpublishLocalAudio();
-    expect(engine.updateLocalAudioCalls).toEqual([
-      { publish: true },
-      { publish: false },
-    ]);
   });
 
   it("subscribes remote video and returns the remote track", async () => {
@@ -859,15 +792,10 @@ describe("TrtcRtcManager", () => {
     ]);
   });
 
-  it("leaves the room on leaveRoom and keeps capture preview alive", async () => {
+  it("leaves the room while retaining its prepared local track", async () => {
     const { manager, engine } = makeManager();
     await manager.initialize();
-    await manager.startCameraCapture({
-      width: 832,
-      height: 1472,
-      frameRate: 30,
-      position: CameraPosition.front,
-    });
+    await manager.setExternalMediaTracks({ videoTrack: track("video").original, source: "camera" });
     await manager.joinRoom(joinConfig);
 
     await manager.leaveRoom();

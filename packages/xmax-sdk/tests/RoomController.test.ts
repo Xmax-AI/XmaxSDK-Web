@@ -29,13 +29,7 @@ class RtcManagingStub implements RtcManaging {
 
   async initialize(): Promise<void> {}
   async destroy(): Promise<void> {}
-  async startCameraCapture(): Promise<MediaStreamTrack> {
-    throw new XmaxError(XmaxErrorCode.rtcError, "not supported in stub");
-  }
-  async switchCameraCapture(): Promise<MediaStreamTrack> {
-    throw new XmaxError(XmaxErrorCode.rtcError, "not supported in stub");
-  }
-  async stopCameraCapture(): Promise<void> {}
+  async setExternalMediaTracks(): Promise<void> {}
 
   encodingConfigurations: VideoEncodingConfiguration[] = [];
 
@@ -160,7 +154,15 @@ function makeController(relayMessage?: (message: string, signal: AbortSignal) =>
   return { controller, rtc, heartbeat };
 }
 
+function recordRoomInfoLogs(): string[] {
+  const logs: string[] = [];
+  vi.spyOn(XmaxLogger.room, "info").mockImplementation(message => { logs.push(message()); });
+  return logs;
+}
+
 const noopEnsureActive = () => {};
+
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("RoomController", () => {
   it("measures RTC join without heartbeat setup or teardown", async () => {
@@ -216,12 +218,11 @@ describe("RoomController", () => {
       decoded = receiver.processIncoming("rtc-uid", message) ?? decoded;
     }
     expect(decoded).toMatchObject({ event: "start", user_id: "rtc-uid", uid: "task" });
-    const incoming = vi.fn();
-    controller.setListener({ onRoomMessage: incoming });
+    const logs = recordRoomInfoLogs();
     controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "business-uid" }));
-    expect(incoming).not.toHaveBeenCalled();
+    expect(logs).toHaveLength(0);
     controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "rtc-uid" }));
-    expect(incoming).toHaveBeenCalledOnce();
+    expect(logs).toHaveLength(1);
     await controller.leave();
   });
   it("joins with mapped configuration and starts heartbeat", async () => {
@@ -447,30 +448,28 @@ describe("RoomController", () => {
     expect(rtc.joinRoomCalls).toHaveLength(2);
   });
 
-  it("dispatches inbound business messages after user_id filtering", async () => {
+  it("logs inbound business messages after user_id filtering", async () => {
     const { controller } = makeController();
-    const received: Array<[string, Record<string, unknown>]> = [];
-    controller.setListener({
-      onRoomMessage: (sender, message) => received.push([sender, message]),
-    });
     await controller.join(connection, noopEnsureActive);
+    const logs = recordRoomInfoLogs();
 
-    const emit = (sender: string, payload: unknown) =>
-      controller.handleIncomingMessage(sender, JSON.stringify(payload));
+    const targeted = { event: "tracks", user_id: "rtc-user-001", values: [] };
+    const broadcast = { event: "tracks", values: [] };
+    controller.handleIncomingMessage("bot001", JSON.stringify(targeted));
+    controller.handleIncomingMessage("bot001", JSON.stringify({ ...targeted, user_id: "someone-else" }));
+    controller.handleIncomingMessage("bot001", JSON.stringify(broadcast));
 
-    emit("bot001", { event: "tracks", user_id: "rtc-user-001", values: [] });
-    emit("bot001", { event: "tracks", user_id: "someone-else", values: [] });
-    emit("bot001", { event: "tracks", values: [] });
-
-    expect(received).toHaveLength(2);
-    expect(received[0]?.[0]).toBe("bot001");
-    expect(received[0]?.[1].event).toBe("tracks");
+    expect(logs).toEqual([
+      expect.stringContaining(JSON.stringify(targeted, null, 2)),
+      expect.stringContaining(JSON.stringify(broadcast, null, 2)),
+    ]);
+    expect(logs[0]).toContain("bot001");
+    await controller.leave();
   });
 
   it.each([false, true])("parses each inbound payload only once (chunked: %s)", (chunked) => {
     const { controller } = makeController();
-    const onRoomMessage = vi.fn();
-    controller.setListener({ onRoomMessage });
+    const logs = recordRoomInfoLogs();
     const payload = { event: "tracks", note: "x".repeat(chunked ? 1200 : 10) };
     const raw = JSON.stringify(payload);
     const packets = new RoomMessageCodec().encodeOutgoing(raw);
@@ -481,8 +480,7 @@ describe("RoomController", () => {
         controller.handleIncomingMessage("bot001", packet);
       }
 
-      expect(onRoomMessage).toHaveBeenCalledOnce();
-      expect(onRoomMessage).toHaveBeenCalledWith("bot001", payload);
+      expect(logs).toEqual([expect.stringContaining(JSON.stringify(payload, null, 2))]);
       expect(parse.mock.calls.filter(([input]) => input === raw)).toHaveLength(1);
       expect(parse).toHaveBeenCalledTimes(chunked ? packets.length + 1 : 1);
     } finally {
@@ -492,8 +490,7 @@ describe("RoomController", () => {
 
   it("ignores malformed JSON and non-object payloads while preserving warnings", () => {
     const { controller } = makeController();
-    const onRoomMessage = vi.fn();
-    controller.setListener({ onRoomMessage });
+    const logs = recordRoomInfoLogs();
     const warning = vi.spyOn(XmaxLogger.room, "warning").mockImplementation(() => {});
 
     try {
@@ -501,7 +498,7 @@ describe("RoomController", () => {
         controller.handleIncomingMessage("bot001", raw);
       }
 
-      expect(onRoomMessage).not.toHaveBeenCalled();
+      expect(logs).toHaveLength(0);
       expect(warning).toHaveBeenCalledOnce();
       expect(warning.mock.calls[0]![0]()).toContain("Room Message Is Not Valid JSON");
     } finally {
@@ -509,19 +506,17 @@ describe("RoomController", () => {
     }
   });
 
-  it("reassembles chunked inbound messages before dispatching", async () => {
+  it("logs a chunked inbound message after reassembly", async () => {
     const { controller } = makeController();
-    const received: Record<string, unknown>[] = [];
-    controller.setListener({
-      onRoomMessage: (_sender, message) => received.push(message),
-    });
     await controller.join(connection, noopEnsureActive);
+    const logs = recordRoomInfoLogs();
 
-    const business = JSON.stringify({
+    const payload = {
       event: "tracks",
       user_id: "rtc-user-001",
       note: "长文本".repeat(100),
-    });
+    };
+    const business = JSON.stringify(payload);
     // 手工构造二分片并乱序投递。
     const half = Math.ceil(business.length / 2);
     const chunks = [
@@ -529,11 +524,11 @@ describe("RoomController", () => {
       { event: "__trtc_chunk__", eventId: "evt-9", index: 1, count: 2, data: business.slice(half) },
     ];
     controller.handleIncomingMessage("bot001", JSON.stringify(chunks[1]));
-    expect(received).toHaveLength(0);
+    expect(logs).toHaveLength(0);
     controller.handleIncomingMessage("bot001", JSON.stringify(chunks[0]));
 
-    expect(received).toHaveLength(1);
-    expect(received[0]?.note).toBe("长文本".repeat(100));
+    expect(logs).toEqual([expect.stringContaining(JSON.stringify(payload, null, 2))]);
+    await controller.leave();
   });
 });
 
@@ -553,9 +548,9 @@ describe("VeRTC room protocol", () => {
       model: "default", prompt, size: [832, 1472], target_size: [416, 736], ref_image_path: "ref/1.png",
     } });
     expect(sent).not.toHaveProperty("session_uid");
-    const incoming = vi.fn(); controller.setListener({ onRoomMessage: incoming });
+    const logs = recordRoomInfoLogs();
     controller.handleIncomingMessage("bot", JSON.stringify({ event: "ack", user_id: "ve-user", uid: "task" }));
-    expect(incoming).toHaveBeenCalledOnce();
+    expect(logs).toHaveLength(1);
     await controller.leave();
   });
 });
@@ -585,12 +580,10 @@ describe("room command receipt", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("filters broadcast ACKs by recipient, sender and pending xid without forwarding them as business events", async () => {
+  it("stops retries only for ACKs that match the recipient, sender and pending xid", async () => {
     const { controller, rtc } = makeController();
     rtc.reply = undefined;
     await controller.join(connection, noopEnsureActive);
-    const listener = vi.fn();
-    controller.setListener({ onRoomMessage: listener });
     const sent = vi.fn(async () => {});
     const start = controller.startGeneration({ taskID: "task", videoFormat, context, onSent: sent });
     await vi.advanceTimersByTimeAsync(0);
@@ -607,7 +600,6 @@ describe("room command receipt", () => {
     await start;
     await vi.advanceTimersByTimeAsync(6000);
     expect(rtc.sentMessages).toHaveLength(2);
-    expect(listener).not.toHaveBeenCalled();
     await controller.leave();
   });
 

@@ -31,11 +31,6 @@ export class RenderWarmupController {
   private started = false;
 
   /**
-   * Whether the current warmup has completed.
-   */
-  private completed = false;
-
-  /**
    * The next fade-in duration, in milliseconds.
    */
   private currentFadeInDurationMs = 300;
@@ -79,13 +74,6 @@ export class RenderWarmupController {
   }
 
   /**
-   * Whether presentation is waiting for a first frame or warmup completion.
-   */
-  get isPending(): boolean {
-    return this.durationMs !== undefined && !this.completed;
-  }
-
-  /**
    * Hides new media during warmup; undefined displays immediately without warmup.
    */
   prepare(
@@ -113,19 +101,20 @@ export class RenderWarmupController {
     }
 
     this.started = true;
-    this.timer = setTimeout(
-      () => {
-        this.timer = undefined;
-        this.completed = true;
-        const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-        this.element.style.transition = reduceMotion || this.fadeInDurationMs === 0
-          ? "none" : `opacity ${this.fadeInDurationMs}ms ease-in-out`;
-        this.element.style.opacity = "1";
-        this.element.style.pointerEvents = "";
-        onCompleted();
-      },
-      this.durationMs
-    );
+    const complete = () => {
+      this.timer = undefined;
+      const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      this.element.style.transition = reduceMotion || this.fadeInDurationMs === 0
+        ? "none" : `opacity ${this.fadeInDurationMs}ms ease-in-out`;
+      this.element.style.opacity = "1";
+      this.element.style.pointerEvents = "";
+      onCompleted();
+    };
+    if (this.durationMs === 0) {
+      complete();
+    } else {
+      this.timer = setTimeout(complete, this.durationMs);
+    }
   }
 
   /**
@@ -135,7 +124,6 @@ export class RenderWarmupController {
     clearTimeout(this.timer);
     this.timer = undefined;
     this.started = false;
-    this.completed = false;
     if (this.durationMs !== undefined) {
       this.element.style.transition = "";
       this.element.style.opacity = "";

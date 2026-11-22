@@ -5,7 +5,6 @@ import { XmaxRealtimeDualVideoView } from "../src/Render/Video/XmaxRealtimeDualV
 import { RenderController } from "../src/Render/RenderController";
 import { RealtimeVideoTrack } from "../src/Service/Realtime/RealtimeVideoTrack";
 import { VideoRenderRegistry } from "../src/Render/Video/VideoRenderRegistry";
-import { RealtimeVideoFormat } from "../src/Service/Realtime/RealtimeVideoFormat";
 
 class ElementStub extends EventTarget {
   style: Record<string, string> = {};
@@ -269,7 +268,7 @@ describe("remote render warmup", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps the SDK first-frame, 750ms warmup and default fade sequence without an auxiliary video canvas", async () => {
+  it("starts the default fade on the first SDK frame without a warmup timer or auxiliary video canvas", async () => {
     const { view, video } = makeView();
     const onFrame = vi.fn(), onWarmup = vi.fn();
     const render = new RenderController({ onFrameDisplayed: onFrame, onRenderWarmupCompleted: onWarmup });
@@ -286,13 +285,9 @@ describe("remote render warmup", () => {
 
     video.nextFrame();
     expect(onFrame).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(749);
-    expect(render.isReady).toBe(false);
-    expect(onWarmup).not.toHaveBeenCalled();
-    expect(mediaLayer(view).style.opacity).toBe("0");
-    await vi.advanceTimersByTimeAsync(1);
     expect(render.isReady).toBe(true);
     expect(onWarmup).toHaveBeenCalledOnce();
+    expect(onFrame.mock.invocationCallOrder[0]).toBeLessThan(onWarmup.mock.invocationCallOrder[0]!);
     expect(mediaLayer(view).style.opacity).toBe("1");
     expect(mediaLayer(view).style.transition).toBe("opacity 300ms ease-in-out");
     render.resetRemoteTrack();
